@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { condoCorrection, smallResidentialReduction, valueAsset } from "../valuation";
 import { depthCorrection } from "../valuation/depth";
+import { parseRouteNotation } from "../valuation/rosenka";
 import type { CondoAsset } from "../types";
 
 describe("区分所有補正率（国税庁タックスアンサーNo.4667の計算例）", () => {
@@ -85,4 +86,13 @@ describe("小規模宅地等の特例（措法69条の4）", () => {
   it("330㎡超は330㎡分だけ80%減額", () => {
     expect(smallResidentialReduction(66_000_000, 660)).toBe(26_400_000);
   });
+});
+
+describe("路線価図の表記", () => {
+  it("420D は 1㎡当たり42万円・借地権割合60%", () => {
+    expect(parseRouteNotation("420D")).toEqual({ routePrice: 420_000, letter: "D", leaseholdRatio: 0.6 });
+  });
+  it("全角や空白を含んでも読む", () => expect(parseRouteNotation("１，２５０ Ｃ")?.routePrice).toBe(1_250_000));
+  it("記号なしも可", () => expect(parseRouteNotation("95")).toEqual({ routePrice: 95_000, letter: undefined, leaseholdRatio: undefined }));
+  it("読めない表記は null", () => expect(parseRouteNotation("H12")).toBeNull());
 });

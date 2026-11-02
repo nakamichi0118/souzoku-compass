@@ -1,0 +1,62 @@
+/** 路線価図（PDF・画像）をブラウザで画像にする */
+import type { Sheet } from "./MapView";
+
+const TARGET_WIDTH = 3000;
+
+export async function pdfPageCount(data: ArrayBuffer): Promise<number> {
+  const pdf = await loadPdf(data);
+  return pdf.numPages;
+}
+
+async function loadPdf(data: ArrayBuffer) {
+  const pdfjs = await import("pdfjs-dist");
+  pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
+  return pdfjs.getDocument({ data: new Uint8Array(data.slice(0)) }).promise;
+}
+
+/** PDF の1ページを高解像度の画像にする */
+export async function renderPdfPage(data: ArrayBuffer, pageNo = 1): Promise<Sheet & { pages: number }> {
+  const pdf = await loadPdf(data);
+  const page = await pdf.getPage(Math.min(Math.max(1, pageNo), pdf.numPages));
+  const base = page.getViewport({ scale: 1 });
+  const viewport = page.getViewport({ scale: TARGET_WIDTH / base.width });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(viewport.width);
+  canvas.height = Math.round(viewport.height);
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  const blob = await new Promise<Blob>((ok) => canvas.toBlob((b) => ok(b!), "image/png"));
+  return { src: URL.createObjectURL(blob), width: canvas.width, height: canvas.height, pages: pdf.numPages };
+}
+
+export async function loadImage(file: Blob): Promise<Sheet> {
+  const src = URL.createObjectURL(file);
+  const img = new Image();
+  img.src = src;
+  await img.decode();
+  return { src, width: img.naturalWidth, height: img.naturalHeight };
+}
+
+/** 土地の位置の周辺を切り出し、中心に赤い印を付けた PNG を作る（Claude の読み取り用） */
+export async function cropAround(sheet: Sheet, at: [number, number], w = 900, h = 700): Promise<Blob> {
+  const img = new Image();
+  img.src = sheet.src;
+  await img.decode();
+  const cx = at[0] * sheet.width;
+  const cy = at[1] * sheet.height;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(img, cx - w / 2, cy - h / 2, w, h, 0, 0, w, h);
+  ctx.strokeStyle = "#e11d48";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(w / 2, h / 2, 16, 0, Math.PI * 2);
+  ctx.stroke();
+  return new Promise((ok) => canvas.toBlob((b) => ok(b!), "image/png"));
+}

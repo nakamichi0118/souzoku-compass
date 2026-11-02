@@ -86,6 +86,15 @@ export type LandMethod =
   | { type: "multiplier"; fixedAssetValue: number; multiplier: number }
   | { type: "manual"; value: number };
 
+export interface RosenkaSheet {
+  /** 国税庁の路線価図PDFのURL（アップロードした場合はなし） */
+  url?: string;
+  page?: number;
+  points: { img: [number, number]; latlng: [number, number] }[];
+  /** 読み取った路線価の表記（例：420D） */
+  notation?: string;
+}
+
 export interface LandAsset extends AssetBase {
   kind: "land";
   location: string;
@@ -94,6 +103,8 @@ export interface LandAsset extends AssetBase {
   method: LandMethod;
   /** 地図で選択した地点 */
   geo?: { lat: number; lng: number };
+  /** 地図に重ねた路線価図（基準点は画像の幅・高さを1とした座標と緯度経度の組） */
+  rosenkaSheet?: RosenkaSheet;
   /** 小規模宅地等の特例（特定居住用宅地等）を適用する */
   smallResidential?: { applies: boolean; acquirerId?: string };
 }
