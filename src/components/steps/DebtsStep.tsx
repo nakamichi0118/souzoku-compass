@@ -39,6 +39,12 @@ export function DebtsStep() {
               <Field label="内容">
                 <TextInput value={d.label} onChange={(e) => patch(d.id, { label: e.target.value })} />
               </Field>
+              <Field label={d.kind === "debt" ? "債権者（支払先）" : "支払先"} hint="申告書（第13表）に記載します">
+                <TextInput value={d.creditor ?? ""} onChange={(e) => patch(d.id, { creditor: e.target.value })} placeholder={d.kind === "debt" ? "〇〇銀行、〇〇市役所など" : "〇〇斎場など"} />
+              </Field>
+              <Field label="債権者・支払先の住所">
+                <TextInput value={d.creditorAddress ?? ""} onChange={(e) => patch(d.id, { creditorAddress: e.target.value })} />
+              </Field>
               <Field label="金額">
                 <YenInput value={d.amount} onChange={(v) => patch(d.id, { amount: v, bearers: d.bearers.length === 1 ? [{ ...d.bearers[0], amount: v }] : d.bearers })} />
               </Field>

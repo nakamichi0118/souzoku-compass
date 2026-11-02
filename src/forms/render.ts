@@ -30,16 +30,17 @@ const A4 = { w: 595.22, h: 842 };
 const ROOT = process.cwd();
 
 let fontBytes: Uint8Array | undefined;
-async function loadFont() {
+export async function loadFont() {
   fontBytes ??= await fs.readFile(path.join(ROOT, "assets/fonts/ipag.ttf"));
   return fontBytes;
 }
 
-function wrap(font: PDFFont, text: string, size: number, width: number): string[] {
+export function wrap(font: PDFFont, text: string, size: number, width: number): string[] {
   const out: string[] = [];
   let line = "";
   for (const ch of text) {
-    if (font.widthOfTextAtSize(line + ch, size) > width && line) {
+    // 句読点・閉じ括弧は行頭に置かない（ぶら下げ）
+    if (font.widthOfTextAtSize(line + ch, size) > width && line && !"、。，．）」』".includes(ch)) {
       out.push(line);
       line = ch;
     } else line += ch;
