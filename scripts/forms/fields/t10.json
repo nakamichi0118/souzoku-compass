@@ -1,0 +1,465 @@
+{
+ "page": "t10",
+ "title": "第10表",
+ "fields": [
+  {
+   "id": "d.name",
+   "seed": [
+    2125,
+    438
+   ],
+   "size": 11
+  },
+  {
+   "id": "r0.address",
+   "seed": [
+    400,
+    852
+   ],
+   "size": 8,
+   "lines": 3
+  },
+  {
+   "id": "r0.company",
+   "seed": [
+    800,
+    852
+   ],
+   "size": 9,
+   "lines": 3
+  },
+  {
+   "id": "r0.kind",
+   "seed": [
+    1670,
+    852
+   ],
+   "size": 8,
+   "lines": 3
+  },
+  {
+   "id": "r0.amount",
+   "seed": [
+    1975,
+    852
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "r0.recipient",
+   "seed": [
+    2287,
+    852
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "r1.address",
+   "seed": [
+    400,
+    1047
+   ],
+   "size": 8,
+   "lines": 3
+  },
+  {
+   "id": "r1.company",
+   "seed": [
+    800,
+    1047
+   ],
+   "size": 9,
+   "lines": 3
+  },
+  {
+   "id": "r1.kind",
+   "seed": [
+    1670,
+    1047
+   ],
+   "size": 8,
+   "lines": 3
+  },
+  {
+   "id": "r1.amount",
+   "seed": [
+    1975,
+    1047
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "r1.recipient",
+   "seed": [
+    2287,
+    1047
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "r2.address",
+   "seed": [
+    400,
+    1242
+   ],
+   "size": 8,
+   "lines": 3
+  },
+  {
+   "id": "r2.company",
+   "seed": [
+    800,
+    1242
+   ],
+   "size": 9,
+   "lines": 3
+  },
+  {
+   "id": "r2.kind",
+   "seed": [
+    1670,
+    1242
+   ],
+   "size": 8,
+   "lines": 3
+  },
+  {
+   "id": "r2.amount",
+   "seed": [
+    1975,
+    1242
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "r2.recipient",
+   "seed": [
+    2287,
+    1242
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "r3.address",
+   "seed": [
+    400,
+    1437
+   ],
+   "size": 8,
+   "lines": 3
+  },
+  {
+   "id": "r3.company",
+   "seed": [
+    800,
+    1437
+   ],
+   "size": 9,
+   "lines": 3
+  },
+  {
+   "id": "r3.kind",
+   "seed": [
+    1670,
+    1437
+   ],
+   "size": 8,
+   "lines": 3
+  },
+  {
+   "id": "r3.amount",
+   "seed": [
+    1975,
+    1437
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "r3.recipient",
+   "seed": [
+    2287,
+    1437
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "r4.address",
+   "seed": [
+    400,
+    1632
+   ],
+   "size": 8,
+   "lines": 3
+  },
+  {
+   "id": "r4.company",
+   "seed": [
+    800,
+    1632
+   ],
+   "size": 9,
+   "lines": 3
+  },
+  {
+   "id": "r4.kind",
+   "seed": [
+    1670,
+    1632
+   ],
+   "size": 8,
+   "lines": 3
+  },
+  {
+   "id": "r4.amount",
+   "seed": [
+    1975,
+    1632
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "r4.recipient",
+   "seed": [
+    2287,
+    1632
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "count",
+   "seed": [
+    1012,
+    2175
+   ],
+   "size": 11,
+   "align": "center"
+  },
+  {
+   "id": "limit",
+   "seed": [
+    2200,
+    2155
+   ],
+   "size": 11,
+   "align": "right",
+   "suffix": true
+  },
+  {
+   "id": "h0.name",
+   "seed": [
+    450,
+    2432
+   ],
+   "size": 10,
+   "lines": 2
+  },
+  {
+   "id": "h0.received",
+   "seed": [
+    1000,
+    2432
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "h0.exempt",
+   "seed": [
+    1600,
+    2432
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "h0.taxable",
+   "seed": [
+    2150,
+    2432
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "h1.name",
+   "seed": [
+    450,
+    2572
+   ],
+   "size": 10,
+   "lines": 2
+  },
+  {
+   "id": "h1.received",
+   "seed": [
+    1000,
+    2572
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "h1.exempt",
+   "seed": [
+    1600,
+    2572
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "h1.taxable",
+   "seed": [
+    2150,
+    2572
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "h2.name",
+   "seed": [
+    450,
+    2712
+   ],
+   "size": 10,
+   "lines": 2
+  },
+  {
+   "id": "h2.received",
+   "seed": [
+    1000,
+    2712
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "h2.exempt",
+   "seed": [
+    1600,
+    2712
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "h2.taxable",
+   "seed": [
+    2150,
+    2712
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "h3.name",
+   "seed": [
+    450,
+    2852
+   ],
+   "size": 10,
+   "lines": 2
+  },
+  {
+   "id": "h3.received",
+   "seed": [
+    1000,
+    2852
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "h3.exempt",
+   "seed": [
+    1600,
+    2852
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "h3.taxable",
+   "seed": [
+    2150,
+    2852
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "h4.name",
+   "seed": [
+    450,
+    2992
+   ],
+   "size": 10,
+   "lines": 2
+  },
+  {
+   "id": "h4.received",
+   "seed": [
+    1000,
+    2992
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "h4.exempt",
+   "seed": [
+    1600,
+    2992
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "h4.taxable",
+   "seed": [
+    2150,
+    2992
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "total.received",
+   "seed": [
+    1000,
+    3125
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "total.exempt",
+   "seed": [
+    1600,
+    3125
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "total.taxable",
+   "seed": [
+    2150,
+    3125
+   ],
+   "size": 11,
+   "align": "right"
+  }
+ ]
+}

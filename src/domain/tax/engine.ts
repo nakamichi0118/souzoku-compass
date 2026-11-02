@@ -14,7 +14,7 @@ import { Fraction, frac, mulYen, toNumber } from "../fraction";
 import { HeirResult, civilHeirIds, determineHeirs, isSurchargeTarget } from "../heirs";
 import { floor100, floor1000 } from "../rounding";
 import type { Asset, Case, LandAsset, Person } from "../types";
-import { Valuation, smallResidentialReduction, valueAsset } from "../valuation";
+import { Valuation, smallResidentialSelection, valueAsset } from "../valuation";
 
 /** 速算表（相続税法16条） */
 export const RATE_TABLE: readonly { upTo: number; rate: number; deduction: number }[] = [
@@ -51,6 +51,20 @@ export interface AssetLine {
   reduction: number;
   /** 取得者ごとの取得価額（減額後） */
   byPerson: { personId: string; amount: number }[];
+  /** 小規模宅地等の特例の明細（第11・11の2表の付表1） */
+  small?: SmallResidentialDetail;
+}
+
+export interface SmallResidentialDetail {
+  acquirerId: string;
+  /** ③ 取得者の持分に応ずる宅地等の面積（㎡） */
+  area: number;
+  /** ④ 取得者の持分に応ずる宅地等の価額 */
+  value: number;
+  /** ⑤ 選択した面積（㎡） */
+  selectedArea: number;
+  /** ⑥ ④×⑤/③ */
+  selectedValue: number;
 }
 
 export interface PersonTax {
@@ -267,6 +281,7 @@ export function calculate(c: Case, opts: EngineOptions = {}): TaxResult {
     }
     const byPerson = splitAmount(valuation.value, alloc.shares);
     let reduction = 0;
+    let small: SmallResidentialDetail | undefined;
     const sr = (a.kind === "land" || a.kind === "condo") ? a.smallResidential : undefined;
     if (sr?.applies && sr.acquirerId) {
       const part = byPerson.find((b) => b.personId === sr.acquirerId);
@@ -287,7 +302,9 @@ export function calculate(c: Case, opts: EngineOptions = {}): TaxResult {
           warnings.push(`小規模宅地等の特例は合計330㎡までです。上限に達したため「${a.label}」には適用していません。`);
         } else {
           if (area > srLeftSqm) warnings.push(`小規模宅地等の特例は合計330㎡までのため、「${a.label}」は残り${Math.round(srLeftSqm * 100) / 100}㎡分だけ適用しています。`);
-          reduction = smallResidentialReduction(landPart, area, srLeftSqm);
+          const sel = smallResidentialSelection(landPart, area, srLeftSqm);
+          reduction = sel.reduction;
+          small = { acquirerId: sr.acquirerId, area, value: landPart, selectedArea: sel.selectedArea, selectedValue: sel.selectedValue };
           srLeftSqm -= Math.min(area, srLeftSqm);
         }
         part.amount -= reduction;
@@ -295,7 +312,7 @@ export function calculate(c: Case, opts: EngineOptions = {}): TaxResult {
         warnings.push(`「${a.label}」の小規模宅地等の特例の取得者が、この土地を取得していません。`);
       }
     }
-    assetLines.push({ asset: a, valuation, reduction, byPerson });
+    assetLines.push({ asset: a, valuation, reduction, byPerson, small });
   }
 
   // 債務・葬式費用は、負担する人ごとの金額の合計が債務の額と一致するまで確定しない

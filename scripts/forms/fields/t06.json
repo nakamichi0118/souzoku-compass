@@ -1,0 +1,394 @@
+{
+ "page": "t06",
+ "title": "第6表",
+ "fields": [
+  {
+   "id": "d.name",
+   "seed": [
+    2150,
+    415
+   ],
+   "size": 11
+  },
+  {
+   "id": "m0.name",
+   "seed": [
+    825,
+    602
+   ],
+   "size": 10
+  },
+  {
+   "id": "m0.age",
+   "seed": [
+    825,
+    702
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "m0.years",
+   "seed": [
+    945,
+    802
+   ],
+   "size": 11,
+   "align": "center"
+  },
+  {
+   "id": "m0.full",
+   "seed": [
+    825,
+    905
+   ],
+   "size": 11,
+   "align": "right",
+   "suffix": true
+  },
+  {
+   "id": "m0.tax",
+   "seed": [
+    825,
+    1022
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "m0.excess",
+   "seed": [
+    825,
+    1262
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "g0.name",
+   "seed": [
+    825,
+    2032
+   ],
+   "size": 10
+  },
+  {
+   "id": "g0.age",
+   "seed": [
+    825,
+    2135
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "g0.years",
+   "seed": [
+    945,
+    2232
+   ],
+   "size": 11,
+   "align": "center"
+  },
+  {
+   "id": "g0.full",
+   "seed": [
+    825,
+    2335
+   ],
+   "size": 11,
+   "align": "right",
+   "suffix": true
+  },
+  {
+   "id": "g0.tax",
+   "seed": [
+    825,
+    2475
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "g0.excess",
+   "seed": [
+    825,
+    2732
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "m1.name",
+   "seed": [
+    1275,
+    602
+   ],
+   "size": 10
+  },
+  {
+   "id": "m1.age",
+   "seed": [
+    1275,
+    702
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "m1.years",
+   "seed": [
+    1388,
+    802
+   ],
+   "size": 11,
+   "align": "center"
+  },
+  {
+   "id": "m1.full",
+   "seed": [
+    1275,
+    905
+   ],
+   "size": 11,
+   "align": "right",
+   "suffix": true
+  },
+  {
+   "id": "m1.tax",
+   "seed": [
+    1275,
+    1022
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "m1.excess",
+   "seed": [
+    1275,
+    1262
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "g1.name",
+   "seed": [
+    1275,
+    2032
+   ],
+   "size": 10
+  },
+  {
+   "id": "g1.age",
+   "seed": [
+    1275,
+    2135
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "g1.years",
+   "seed": [
+    1388,
+    2232
+   ],
+   "size": 11,
+   "align": "center"
+  },
+  {
+   "id": "g1.full",
+   "seed": [
+    1275,
+    2335
+   ],
+   "size": 11,
+   "align": "right",
+   "suffix": true
+  },
+  {
+   "id": "g1.tax",
+   "seed": [
+    1275,
+    2475
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "g1.excess",
+   "seed": [
+    1275,
+    2732
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "m2.name",
+   "seed": [
+    1725,
+    602
+   ],
+   "size": 10
+  },
+  {
+   "id": "m2.age",
+   "seed": [
+    1725,
+    702
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "m2.years",
+   "seed": [
+    1835,
+    802
+   ],
+   "size": 11,
+   "align": "center"
+  },
+  {
+   "id": "m2.full",
+   "seed": [
+    1725,
+    905
+   ],
+   "size": 11,
+   "align": "right",
+   "suffix": true
+  },
+  {
+   "id": "m2.tax",
+   "seed": [
+    1725,
+    1022
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "m2.excess",
+   "seed": [
+    1725,
+    1262
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "g2.name",
+   "seed": [
+    1725,
+    2032
+   ],
+   "size": 10
+  },
+  {
+   "id": "g2.age",
+   "seed": [
+    1725,
+    2135
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "g2.years",
+   "seed": [
+    1835,
+    2232
+   ],
+   "size": 11,
+   "align": "center"
+  },
+  {
+   "id": "g2.full",
+   "seed": [
+    1725,
+    2335
+   ],
+   "size": 11,
+   "align": "right",
+   "suffix": true
+  },
+  {
+   "id": "g2.tax",
+   "seed": [
+    1725,
+    2475
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "g2.excess",
+   "seed": [
+    1725,
+    2732
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "m.full",
+   "seed": [
+    2175,
+    852
+   ],
+   "size": 11,
+   "align": "right",
+   "suffix": true
+  },
+  {
+   "id": "m.tax",
+   "seed": [
+    2150,
+    1022
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "m.excess",
+   "seed": [
+    2175,
+    1262
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "g.full",
+   "seed": [
+    2175,
+    2282
+   ],
+   "size": 11,
+   "align": "right",
+   "suffix": true
+  },
+  {
+   "id": "g.tax",
+   "seed": [
+    2150,
+    2475
+   ],
+   "size": 11,
+   "align": "right"
+  },
+  {
+   "id": "g.excess",
+   "seed": [
+    2175,
+    2732
+   ],
+   "size": 11,
+   "align": "right"
+  }
+ ]
+}

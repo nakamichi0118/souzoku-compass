@@ -157,10 +157,18 @@ export function valueAsset(a: Asset): Valuation {
 }
 
 /** 小規模宅地等の特例（特定居住用宅地等：330㎡まで80%減額、租税特別措置法69条の4） */
-export function smallResidentialReduction(value: number, areaSqm: number, limitSqm = 330) {
-  if (areaSqm <= 0 || value <= 0) return 0;
+/**
+ * 小規模宅地等の特例（特定居住用宅地等・減額割合80%）。付表1の⑤⑥⑦の順に計算する。
+ * ⑥ = ④ × ⑤/③（1円未満切捨て）、⑦ = ⑥ × 80/100（1円未満切捨て）
+ */
+export function smallResidentialSelection(value: number, areaSqm: number, limitSqm = 330) {
+  if (areaSqm <= 0 || value <= 0) return { selectedArea: 0, selectedValue: 0, reduction: 0 };
   const area100 = Math.round(areaSqm * 100);
-  const target100 = Math.min(area100, Math.round(limitSqm * 100));
-  // 価額 × 限度面積/面積 × 80%（1円未満切捨て）
-  return Number((BigInt(value) * BigInt(target100) * 8n) / (BigInt(area100) * 10n));
+  const target100 = Math.min(area100, Math.max(0, Math.round(limitSqm * 100)));
+  const selectedValue = Number((BigInt(value) * BigInt(target100)) / BigInt(area100));
+  return { selectedArea: target100 / 100, selectedValue, reduction: Math.floor((selectedValue * 8) / 10) };
+}
+
+export function smallResidentialReduction(value: number, areaSqm: number, limitSqm = 330) {
+  return smallResidentialSelection(value, areaSqm, limitSqm).reduction;
 }

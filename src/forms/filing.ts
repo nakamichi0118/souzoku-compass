@@ -1,11 +1,13 @@
 /**
- * 計算結果を申告書（第1表・第2表・第5表・第11表と付表・第13表・第15表）の欄へ割り当てる。
+ * 計算結果を申告書（第1表・第2表・第5表・第6表・第9表・第10表・第11表と付表・
+ * 第11・11の2表の付表1・第13表・第15表）の欄へ割り当てる。
  */
 import { toString as fracText } from "@/domain/fraction";
 import type { PersonTax, TaxResult } from "@/domain/tax/engine";
 import type { Case, Person } from "@/domain/types";
 import { ageAt, wareki, yen, yenOrBlank } from "./format";
 import type { PageFill } from "./render";
+import { build06, build09, build10, buildF1 } from "./attachments";
 import { buildSchedule11 } from "./schedule11";
 import { build13, build15, build5, filingPersons } from "./schedules";
 
@@ -176,7 +178,11 @@ export function buildFilingPages(c: Case, r: TaxResult): PageFill[] {
   }
 
   pages.push(...build5(c, r)); // 第5表
+  pages.push(...build06(c, r)); // 第6表
+  pages.push(...build09(c, r)); // 第9表
+  pages.push(...build10(c, r)); // 第10表
   pages.push(...buildSchedule11(c, r)); // 第11表・付表1〜4
+  pages.push(...buildF1(c, r)); // 第11・11の2表の付表1
   pages.push(...build13(c, r)); // 第13表
   pages.push(...build15(c, r)); // 第15表・第15表（続）
   return pages;
@@ -188,12 +194,8 @@ export function buildFilingPages(c: Case, r: TaxResult): PageFill[] {
  */
 export function formsNotGenerated(c: Case, r: TaxResult): { form: string; reason: string }[] {
   const out: { form: string; reason: string }[] = [];
-  if (r.persons.some((p) => p.minorCredit > 0 || p.disabilityCredit > 0 || p.minorExcess > 0 || p.disabilityExcess > 0))
-    out.push({ form: "第6表（未成年者控除額・障害者控除額の計算書）", reason: "未成年者控除・障害者控除を使っています" });
-  if (c.assets.some((a) => a.kind === "insurance")) out.push({ form: "第9表（生命保険金などの明細書）", reason: "死亡保険金があります" });
-  if (c.assets.some((a) => a.kind === "retirement")) out.push({ form: "第10表（退職手当金などの明細書）", reason: "死亡退職金があります" });
-  if (r.assets.some((l) => l.reduction > 0))
-    out.push({ form: "第11・11の2表の付表1（小規模宅地等についての課税価格の計算明細書）", reason: "小規模宅地等の特例を使っています（添付書類も必要です）" });
+  if (r.persons.some((p) => p.otherCredits > 0))
+    out.push({ form: "第8の8表（税額控除額及び納付税額の計算書）", reason: "未成年者控除・障害者控除を使っています（第6表は自動で作ります）" });
   if (r.persons.some((p) => p.giftTaxCredit > 0)) out.push({ form: "第4表の2（暦年課税分の贈与税額控除額の計算書）", reason: "贈与税額控除を使っています" });
   return out;
 }

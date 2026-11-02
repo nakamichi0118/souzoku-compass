@@ -57,7 +57,7 @@ export function DocumentsStep() {
       ) : null}
       <Card title="相続税の申告書（国税庁 令和8年分様式）">
         <p className="mb-3 text-sm text-stone-600">
-          国税庁が公開している令和8年分の正式様式に、計算結果を記入したPDFを作ります。自動で作るのは第1表・第1表（続）・第2表・第5表・第11表と付表1〜4・第13表・第15表です。
+          国税庁が公開している令和8年分の正式様式に、計算結果を記入したPDFを作ります。自動で作るのは第1表・第1表（続）・第2表・第5表・第6表・第9表・第10表・第11表と付表1〜4・第11・11の2表の付表1（小規模宅地等）・第13表・第15表です（使う表だけが入ります）。
         </p>
         {missing.length > 0 && (
           <div className="mb-3 rounded-lg border border-orange-300 bg-orange-50 p-3 text-sm text-orange-950">
@@ -77,6 +77,7 @@ export function DocumentsStep() {
         </Button>
         <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-stone-600">
           <li>マイナンバー（個人番号）欄は空欄です。印刷後に記入してください。</li>
+          {result?.assets.some((l) => l.reduction > 0) && <li>小規模宅地等の特例を受けるときは、遺産分割協議書の写し・取得者の住民票などの添付書類も必要です。</li>}
           <li>PDFを作るときだけ、入力内容をこのアプリのサーバーへ送ります。サーバーには保存しません。</li>
           <li>提出前に、内容を必ず確認してください。相続コンパスは税理士による確認の代わりにはなりません。</li>
         </ul>
