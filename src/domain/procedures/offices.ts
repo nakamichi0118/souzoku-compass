@@ -28,3 +28,10 @@ export const isTokyoWard = (address: string) => {
   const { pref, city } = cityOf(address);
   return pref === "東京都" && /区$/.test(city) && !/市/.test(city);
 };
+
+/** 管轄の判定用に、番地より前（都道府県・市区町村・町名）だけを取り出す */
+export function areaOf(address: string): string {
+  const a = address.replace(/\s/g, "");
+  const m = a.match(/^(.*?)(?=[0-9０-９]|[一二三四五六七八九十]+丁目|[一二三四五六七八九十]+番)/);
+  return (m ? m[1] : a).replace(/[ー－-]$/, "");
+}

@@ -8,7 +8,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { OFFICE_LABEL, cityOf, type OfficeKind } from "@/domain/procedures/offices";
+import { OFFICE_LABEL, areaOf, cityOf, type OfficeKind } from "@/domain/procedures/offices";
 import { MODEL, getClient } from "@/server/claude";
 
 const Body = z.object({
@@ -43,7 +43,9 @@ export async function POST(req: Request) {
   const { kind, address, dept } = parsed.data;
   const { pref, city } = cityOf(address);
   if (!pref || !city) return NextResponse.json({ error: "住所から市区町村が分かりませんでした。都道府県から入力してください。" }, { status: 400 });
-  const key = `${kind}|${pref}${city}|${dept ?? ""}`;
+  // 税務署・法務局などは町名で管轄が分かれることがあるので、番地より前まで使う（番地は送らない）
+  const area = kind === "city" ? `${pref}${city}` : areaOf(address);
+  const key = `${kind}|${area}|${dept ?? ""}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < TTL) return NextResponse.json(hit.data);
 
@@ -51,8 +53,7 @@ export async function POST(req: Request) {
   if (!client) return NextResponse.json({ error: "この環境ではコンパスくんに接続していません。" }, { status: 503 });
 
   const label = OFFICE_LABEL[kind];
-  // 市区町村役場は「市区町村」まで分かれば十分なので、番地以降は送らない
-  const where = `${pref}${city}`;
+  const where = area;
   const ask =
     kind === "city"
       ? `${where}の役所（本庁舎）で、「${dept ?? "相続に関する手続き"}」を担当する窓口の名称・所在地・電話番号・受付時間を調べてください。`

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { CompassAvatar } from "@/components/compass/CompassKun";
-import { OFFICE_LABEL, cityOf, isTokyoWard, type OfficeKind } from "@/domain/procedures/offices";
+import { OFFICE_LABEL, areaOf, cityOf, isTokyoWard, type OfficeKind } from "@/domain/procedures/offices";
 
 interface Office {
   found: boolean;
@@ -29,7 +29,7 @@ const readCache = (): Record<string, Office> => {
 export function OfficeLookup({ kind, dept, address, forProperty }: { kind: OfficeKind; dept?: string; address: string; forProperty?: boolean }) {
   const actual: OfficeKind = forProperty && kind === "city" && isTokyoWard(address) ? "metroTax" : kind;
   const { pref, city } = cityOf(address);
-  const key = `${actual}|${pref}${city}|${dept ?? ""}`;
+  const key = `${actual}|${actual === "city" ? pref + city : areaOf(address)}|${dept ?? ""}`;
   const [office, setOffice] = useState<Office | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);

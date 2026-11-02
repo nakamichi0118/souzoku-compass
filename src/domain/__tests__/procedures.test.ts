@@ -5,7 +5,7 @@ import { blueReturnDue, buildTasks, vacantHomeDue } from "../procedures/rules";
 import { googleEventUrl, toICS } from "../procedures/calendar";
 import { decodeInterview, encodeInterview } from "../procedures/share";
 import { DOCS } from "../procedures/documents";
-import { cityOf, isTokyoWard } from "../procedures/offices";
+import { areaOf, cityOf, isTokyoWard } from "../procedures/offices";
 
 const iv = (p: Partial<Interview>): Interview => ({ ...blankInterview(), deathDate: "2026-01-06", ...p });
 
@@ -162,6 +162,8 @@ describe("書類と提出先", () => {
     expect(cityOf("東京都千代田区架空町一丁目2番3号")).toEqual({ pref: "東京都", city: "千代田区" });
     expect(cityOf("神奈川県横浜市中区真砂町1-1")).toEqual({ pref: "神奈川県", city: "横浜市中区" });
     expect(cityOf("北海道虻田郡倶知安町北1条")).toEqual({ pref: "北海道", city: "虻田郡倶知安町" });
+    expect(areaOf("東京都千代田区架空町一丁目2番3号")).toBe("東京都千代田区架空町");
+    expect(areaOf("神奈川県横浜市中区真砂町1-1")).toBe("神奈川県横浜市中区真砂町");
     expect(isTokyoWard("東京都千代田区架空町")).toBe(true);
     expect(isTokyoWard("東京都八王子市元本郷町")).toBe(false);
   });
