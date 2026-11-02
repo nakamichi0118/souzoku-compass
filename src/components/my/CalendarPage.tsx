@@ -96,7 +96,7 @@ export function CalendarPage() {
           </Panel>
         </div>
       </div>
-      <p className="mt-4 text-xs text-stone-500">期限は亡くなった日を起算日として計算しています。土日にあたる法律上の期限は翌月曜日にしていますが、祝日・年末年始は考慮していません。</p>
+      <p className="mt-4 text-xs text-stone-500">期限は亡くなった日を起算日として計算しています。法律上の期限が土日祝日・年末年始にあたる場合は、次の平日にしています。</p>
     </AppShell>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { reportSaveFailure } from "./saveStatus";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { demoCase } from "@/data/demo";
 import { calculate, type TaxResult } from "@/domain/tax/engine";
@@ -48,7 +49,7 @@ export function CaseProvider({ children }: { children: React.ReactNode }) {
     try {
       localStorage.setItem(KEY, JSON.stringify(data));
     } catch {
-      /* noop */
+      reportSaveFailure();
     }
   }, [data, loaded]);
 

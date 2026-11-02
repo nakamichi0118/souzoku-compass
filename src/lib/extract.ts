@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import type { Asset, Case } from "@/domain/types";
-import { newId } from "./store";
 
 /** /api/extract が返す、書類から読み取った財産の候補 */
 export interface ExtractedAsset {
@@ -25,13 +24,18 @@ export interface Extracted {
   notes: string[];
 }
 
-/** 読み取った候補を、相続税申告の財産データの形にする */
-export function toAsset(x: ExtractedAsset, c: Case): Asset {
-  const id = newId();
+/**
+ * 読み取った候補を、相続税申告の財産データの形にする。
+ * 書類に書かれていない値（土地の倍率・保険金の受取人・株価）は推定せず未入力のまま残し、
+ * 評価の段階で「未入力」として確定を止める。
+ */
+export function toAsset(x: ExtractedAsset): Asset {
+  const id = crypto.randomUUID().slice(0, 8);
   if (x.kind === "land")
-    return { id, kind: "land", label: x.label, location: x.location ?? "", areaSqm: x.areaSqm ?? 0, landUse: "宅地", method: { type: "multiplier", fixedAssetValue: x.fixedAssetValue ?? 0, multiplier: 1.1 } };
+    return { id, kind: "land", label: x.label, location: x.location ?? "", areaSqm: x.areaSqm ?? 0, landUse: "宅地", method: { type: "multiplier", fixedAssetValue: x.fixedAssetValue ?? 0, multiplier: 0 } };
   if (x.kind === "building") return { id, kind: "building", label: x.label, location: x.location ?? "", fixedAssetValue: x.fixedAssetValue ?? 0 };
-  if (x.kind === "insurance") return { id, kind: "insurance", label: x.label, amount: x.amount ?? 0, recipientId: c.persons.find((p) => !p.predeceased)?.id ?? "" };
+  if (x.kind === "insurance") return { id, kind: "insurance", label: x.label, amount: x.amount ?? 0, recipientId: "" };
+  if (x.kind === "listedStock") return { id, kind: "listedStock", label: x.label, shares: 0, prices: { close: 0, monthAvg: 0, prevMonthAvg: 0, prev2MonthAvg: 0 } };
   return {
     id,
     kind: x.kind === "deposit" ? "deposit" : "other",

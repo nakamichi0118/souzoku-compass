@@ -5,7 +5,7 @@
  *
  * 期限の起算日は、簡単のため「亡くなった日（＝亡くなったことを知った日）」とする。
  */
-import { addDays, addMonths, addYears, skipWeekend, withinDays, yearOf, monthOf, type ISODate } from "./dates";
+import { addDays, addMonths, addYears, nextOpenDay, withinDays, yearOf, monthOf, type ISODate } from "./dates";
 import type { OfficeKind } from "./offices";
 import { estimate, needsFinalReturn, type Estimate, type Interview, type Verdict } from "./interview";
 
@@ -636,7 +636,7 @@ export function buildTasks(iv: Interview, opts: { verdict?: Verdict } = {}): { t
       id: r.id,
       title: val(r.title, x),
       category: r.category,
-      date: r.hard ? skipWeekend(raw) : raw,
+      date: r.hard ? nextOpenDay(raw) : raw,
       hard: r.hard,
       optional: r.optional === undefined ? false : val(r.optional, x),
       important: r.important ? r.important(x) : false,
@@ -644,7 +644,7 @@ export function buildTasks(iv: Interview, opts: { verdict?: Verdict } = {}): { t
       where: r.where,
       bring: r.bring ?? [],
       law: r.law,
-      limit: r.limit ? { date: skipWeekend(r.limit.due(death)), text: r.limit.text } : undefined,
+      limit: r.limit ? { date: nextOpenDay(r.limit.due(death)), text: r.limit.text } : undefined,
       source: r.source,
       link: r.link,
       office: r.office === undefined ? undefined : val(r.office, x),

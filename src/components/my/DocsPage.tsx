@@ -32,7 +32,7 @@ function Reader({ docId, onRegistered }: { docId: string; onRegistered: () => vo
   const [added, setAdded] = useState<number[]>([]);
   const sample = SAMPLE[docId];
   const adopt = (x: ExtractedAsset, i: number) => {
-    update((cur) => ({ ...cur, assets: [...cur.assets, toAsset(x, cur)] }));
+    update((cur) => ({ ...cur, assets: [...cur.assets, toAsset(x)] }));
     setAdded((a) => [...a, i]);
     onRegistered();
   };
@@ -55,7 +55,7 @@ function Reader({ docId, onRegistered }: { docId: string; onRegistered: () => vo
           </a>
         )}
       </div>
-      <p className="mt-2 text-xs text-stone-500">金額や銀行名をコンパスくんが読み取ります。登録する前に、必ず書類と見比べてください。デモではダミーの書類だけを使ってください。</p>
+      <p className="mt-2 text-xs text-stone-500">金額や銀行名をコンパスくんが読み取ります。読み取りのため、選んだファイルをAI（Anthropic社のClaude）へ送ります。このアプリのサーバーには保存しません。登録する前に、必ず書類と見比べてください。デモでは架空の書類だけを使ってください。</p>
       {ex.err && <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800">{ex.err}</p>}
       {ex.res && (
         <div className="mt-3 space-y-2">
@@ -105,6 +105,11 @@ function Reader({ docId, onRegistered }: { docId: string; onRegistered: () => vo
                   )}
                 </dl>
                 <p className="mt-1 text-xs text-stone-500">読み取った箇所：「{x.evidence}」</p>
+                {(x.kind === "land" || x.kind === "insurance" || x.kind === "listedStock") && (
+                  <p className="mt-1 text-xs text-orange-700">
+                    {x.kind === "land" ? "倍率（または路線価）" : x.kind === "insurance" ? "受取人" : "株数と4つの価格"}は書類から分からないため、登録後に財産の画面で入力してください。入力するまで税額は確定しません。
+                  </p>
+                )}
                 <div className="mt-2">
                   {isAdded ? (
                     <span className="font-semibold text-emerald-700">✓ 財産に登録しました</span>

@@ -181,3 +181,19 @@ export function buildFilingPages(c: Case, r: TaxResult): PageFill[] {
   pages.push(...build15(c, r)); // 第15表・第15表（続）
   return pages;
 }
+
+/**
+ * 計算で使ったのに、相続コンパスがまだ自動で作らない帳票。
+ * 申告書一式が完成したと誤解されないよう、ダウンロードの前に一覧で示す。
+ */
+export function formsNotGenerated(c: Case, r: TaxResult): { form: string; reason: string }[] {
+  const out: { form: string; reason: string }[] = [];
+  if (r.persons.some((p) => p.minorCredit > 0 || p.disabilityCredit > 0 || p.minorExcess > 0 || p.disabilityExcess > 0))
+    out.push({ form: "第6表（未成年者控除額・障害者控除額の計算書）", reason: "未成年者控除・障害者控除を使っています" });
+  if (c.assets.some((a) => a.kind === "insurance")) out.push({ form: "第9表（生命保険金などの明細書）", reason: "死亡保険金があります" });
+  if (c.assets.some((a) => a.kind === "retirement")) out.push({ form: "第10表（退職手当金などの明細書）", reason: "死亡退職金があります" });
+  if (r.assets.some((l) => l.reduction > 0))
+    out.push({ form: "第11・11の2表の付表1（小規模宅地等についての課税価格の計算明細書）", reason: "小規模宅地等の特例を使っています（添付書類も必要です）" });
+  if (r.persons.some((p) => p.giftTaxCredit > 0)) out.push({ form: "第4表の2（暦年課税分の贈与税額控除額の計算書）", reason: "贈与税額控除を使っています" });
+  return out;
+}

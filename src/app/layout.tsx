@@ -1,3 +1,4 @@
+import { SaveWarning } from "@/components/SaveWarning";
 import type { Metadata } from "next";
 import "./globals.css";
 import { CaseProvider } from "@/lib/store";
@@ -14,7 +15,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ja">
       <body className="min-h-screen bg-stone-50 text-stone-900 antialiased">
         <CaseProvider>
-          <PlanProvider>{children}</PlanProvider>
+          <PlanProvider>
+            {children}
+            <SaveWarning />
+          </PlanProvider>
         </CaseProvider>
       </body>
     </html>

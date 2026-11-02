@@ -1,6 +1,7 @@
 "use client";
 
 import { Card, Field, Note, TextInput } from "@/components/ui";
+import { addMonths, isValidDate, nextOpenDay } from "@/domain/procedures/dates";
 import { useCase } from "@/lib/store";
 import { wareki } from "@/forms/format";
 
@@ -8,12 +9,8 @@ export function DecedentStep() {
   const { data, update } = useCase();
   const d = data.decedent;
   const set = (k: keyof typeof d, v: string) => update((c) => ({ ...c, decedent: { ...c.decedent, [k]: v } }));
-  const deadline = (() => {
-    if (!d.deathDate) return null;
-    const dt = new Date(d.deathDate + "T00:00:00Z");
-    dt.setUTCMonth(dt.getUTCMonth() + 10);
-    return dt.toISOString().slice(0, 10);
-  })();
+  // やることリスト・カレンダーと同じ計算（応当日がなければ月末、休みの日なら次の開いている日）
+  const deadline = d.deathDate && isValidDate(d.deathDate) ? nextOpenDay(addMonths(d.deathDate, 10)) : null;
   const outOfScope = d.deathDate && !d.deathDate.startsWith("2026");
 
   return (
@@ -53,7 +50,7 @@ export function DecedentStep() {
       ) : (
         deadline && (
           <Note tone="info">
-            申告と納税の期限は <strong>{wareki(deadline)?.text}</strong> ごろです（亡くなったことを知った日の翌日から10か月以内。期限日が土日祝日の場合は翌平日）。
+            申告と納税の期限は <strong>{wareki(deadline)?.text}</strong> です（亡くなったことを知った日の翌日から10か月以内。土日祝日・年末年始にあたる場合は次の平日にしています）。
           </Note>
         )
       )}

@@ -237,11 +237,18 @@ export function calculate(c: Case, opts: EngineOptions = {}): TaxResult {
   const insuranceBy = new Map<string, number>();
   const retirementBy = new Map<string, number>();
   const assetLines: AssetLine[] = [];
+  const living = new Set(c.persons.filter((p) => !p.predeceased).map((p) => p.id));
+  // 特定居住用宅地等の限度面積330㎡は、選んだ宅地全体で使う（措置法69条の4第2項）
+  let srLeftSqm = 330;
   for (const a of c.assets) {
     if (a.foreign) blockers.push(`「${a.label}」は国外財産です。国外財産がある相続は税理士にご相談ください。`);
     const valuation = valueAsset(a);
     if (valuation.needsConsultation) blockers.push(`「${a.label}」：${valuation.needsConsultation}`);
     if (a.kind === "insurance" || a.kind === "retirement") {
+      if (!living.has(a.recipientId)) {
+        // 受取人がいないと金額がどこにも集計されず課税価格から消えるため、確定させない
+        blockers.push(`「${a.label || (a.kind === "insurance" ? "死亡保険金" : "死亡退職金")}」の受取人が選ばれていません。財産の画面で受取人を選んでください。`);
+      }
       const m = a.kind === "insurance" ? insuranceBy : retirementBy;
       m.set(a.recipientId, (m.get(a.recipientId) ?? 0) + valuation.value);
       assetLines.push({ asset: a, valuation, reduction: 0, byPerson: [{ personId: a.recipientId, amount: valuation.value }] });
@@ -249,9 +256,14 @@ export function calculate(c: Case, opts: EngineOptions = {}): TaxResult {
     }
     const alloc = allocMap.get(a.id);
     if (!alloc || alloc.shares.length === 0) {
-      warnings.push(`「${a.label}」の取得者が決まっていません（未分割）。`);
+      // 未分割の財産を0円として計算すると課税価格が過少になる。未分割申告（法定相続分で取得したものとして計算）は対象外のため止める
+      blockers.push(`「${a.label}」を受け継ぐ人が決まっていません（未分割）。遺産の分け方で取得者を決めてください。未分割のまま申告する場合は税理士にご相談ください。`);
       assetLines.push({ asset: a, valuation, reduction: 0, byPerson: [] });
       continue;
+    }
+    const shareSum = alloc.shares.reduce((acc, s) => acc + s.numerator / Math.max(1, s.denominator), 0);
+    if (Math.abs(shareSum - 1) > 1e-9 || alloc.shares.some((s) => s.numerator <= 0 || s.denominator <= 0 || !living.has(s.personId))) {
+      blockers.push(`「${a.label}」の取得割合の合計が1になっていません（いま ${Math.round(shareSum * 10000) / 100}%）。遺産の分け方を確認してください。`);
     }
     const byPerson = splitAmount(valuation.value, alloc.shares);
     let reduction = 0;
@@ -271,13 +283,30 @@ export function calculate(c: Case, opts: EngineOptions = {}): TaxResult {
           fullArea = (a as LandAsset).areaSqm;
         }
         const area = (fullArea * share.numerator) / share.denominator;
-        reduction = smallResidentialReduction(landPart, area);
+        if (srLeftSqm <= 0) {
+          warnings.push(`小規模宅地等の特例は合計330㎡までです。上限に達したため「${a.label}」には適用していません。`);
+        } else {
+          if (area > srLeftSqm) warnings.push(`小規模宅地等の特例は合計330㎡までのため、「${a.label}」は残り${Math.round(srLeftSqm * 100) / 100}㎡分だけ適用しています。`);
+          reduction = smallResidentialReduction(landPart, area, srLeftSqm);
+          srLeftSqm -= Math.min(area, srLeftSqm);
+        }
         part.amount -= reduction;
       } else {
         warnings.push(`「${a.label}」の小規模宅地等の特例の取得者が、この土地を取得していません。`);
       }
     }
     assetLines.push({ asset: a, valuation, reduction, byPerson });
+  }
+
+  // 債務・葬式費用は、負担する人ごとの金額の合計が債務の額と一致するまで確定しない
+  for (const d of c.debts) {
+    const borne = d.bearers.reduce((acc, b) => acc + b.amount, 0);
+    if (borne !== d.amount) {
+      blockers.push(`「${d.label || (d.kind === "debt" ? "債務" : "葬式費用")}」の負担する人ごとの金額の合計（${borne.toLocaleString()}円）が、金額（${d.amount.toLocaleString()}円）と一致していません。`);
+    }
+    if (d.bearers.some((b) => b.amount > 0 && !living.has(b.personId))) {
+      blockers.push(`「${d.label || "債務"}」を負担する人が、相続人の一覧にいません。`);
+    }
   }
 
   const insuranceExemptLimit = INSURANCE_EXEMPT_PER_HEIR * legalHeirCount;

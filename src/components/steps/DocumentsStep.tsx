@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button, Card, Note } from "@/components/ui";
 import { buildDivisionDoc } from "@/documents/division";
+import { formsNotGenerated } from "@/forms/filing";
 import { useCase } from "@/lib/store";
 import { markCompleted } from "@/lib/progress";
 
@@ -24,6 +25,7 @@ async function download(url: string, body: unknown, filename: string) {
 
 export function DocumentsStep() {
   const { data, result, update } = useCase();
+  const missing = result ? formsNotGenerated(data, result) : [];
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -55,13 +57,27 @@ export function DocumentsStep() {
       ) : null}
       <Card title="相続税の申告書（国税庁 令和8年分様式）">
         <p className="mb-3 text-sm text-stone-600">
-          国税庁が公開している令和8年分の正式様式に、計算結果を記入したPDFを作ります。第1表・第1表（続）・第2表・第5表・第11表と付表1〜4・第13表・第15表を作成します（必要な表だけを含めます）。
+          国税庁が公開している令和8年分の正式様式に、計算結果を記入したPDFを作ります。自動で作るのは第1表・第1表（続）・第2表・第5表・第11表と付表1〜4・第13表・第15表です。
         </p>
+        {missing.length > 0 && (
+          <div className="mb-3 rounded-lg border border-orange-300 bg-orange-50 p-3 text-sm text-orange-950">
+            <p className="font-bold">このPDFだけでは申告書一式になりません。次の表は自動で作らないため、別に用意してください。</p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-5">
+              {missing.map((m) => (
+                <li key={m.form}>
+                  {m.form}（{m.reason}）
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-xs">様式は国税庁のホームページ「相続税の申告書等の様式一覧（令和8年分用）」にあります。</p>
+          </div>
+        )}
         <Button onClick={() => run("tax", "/api/forms", "相続税申告書_令和8年分.pdf")} disabled={busy !== null}>
           {busy === "tax" ? "作成中…" : "申告書PDFをダウンロード"}
         </Button>
         <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-stone-600">
           <li>マイナンバー（個人番号）欄は空欄です。印刷後に記入してください。</li>
+          <li>PDFを作るときだけ、入力内容をこのアプリのサーバーへ送ります。サーバーには保存しません。</li>
           <li>提出前に、内容を必ず確認してください。相続コンパスは税理士による確認の代わりにはなりません。</li>
         </ul>
       </Card>

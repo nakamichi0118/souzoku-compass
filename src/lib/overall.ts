@@ -33,7 +33,7 @@ export function useOverall() {
   const closed = (id: string) => done.includes(id) || done.includes(naId(id));
   const valid = isValidDate(iv.deathDate);
   // 財産の入力を「次へ」で終えるまでは、途中の金額で判定が変わらないよう聞き取りの目安を使う
-  const linked = valid && c.decedent.deathDate === iv.deathDate && c.assets.length > 0 && !!result && !!c.progress?.completed.includes("assets");
+  const linked = valid && c.decedent.deathDate === iv.deathDate && c.assets.length > 0 && !!result && !!c.progress?.completed.includes("assets") && result.blockers.length === 0;
   const precise = useMemo(
     () => (linked && result ? { taxable: result.totalTaxable, basic: result.basicDeduction, payable: result.totalPayable, needsFiling: result.needsFiling } : null),
     [linked, result],

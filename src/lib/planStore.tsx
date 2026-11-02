@@ -1,5 +1,6 @@
 "use client";
 
+import { reportSaveFailure } from "./saveStatus";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { blankInterview, demoInterview, type Interview } from "@/domain/procedures/interview";
 import { buildTasks } from "@/domain/procedures/rules";
@@ -37,7 +38,8 @@ function write(key: string, v: unknown) {
     if (v === null) localStorage.removeItem(key);
     else localStorage.setItem(key, JSON.stringify(v));
   } catch {
-    /* 保存できない環境では画面を開いている間だけ保持 */
+    // 保存できない環境では画面を開いている間だけ保持し、利用者に知らせる
+    reportSaveFailure();
   }
 }
 

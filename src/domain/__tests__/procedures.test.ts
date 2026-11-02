@@ -86,7 +86,7 @@ describe("手続きリスト", () => {
   it("期限：死亡届7日・相続放棄3か月・相続税10か月", () => {
     const { tasks } = buildTasks(iv({ spouse: true, children: 1 }));
     const at = (id: string) => tasks.find((t) => t.id === id)!;
-    expect(at("death-report").date).toBe("2026-01-12");
+    expect(at("death-report").date).toBe("2026-01-13"); // 7日目の1/12は成人の日→翌日;
     expect(at("renounce").date).toBe("2026-04-06");
     expect(at("inheritance-tax").date).toBe("2026-11-06");
     expect(at("shijuku").date).toBe("2026-02-23");
@@ -108,13 +108,13 @@ describe("手続きリスト", () => {
     const ids = all.map((t) => t.id);
     for (const id of ["pension-stop", "registration", "insurance-claim", "final-return", "business-close", "rented-home"]) expect(ids).toContain(id);
     expect(all.find((t) => t.id === "pension-stop")!.date).toBe("2026-01-15"); // 厚生年金は10日以内
-    expect(all.find((t) => t.id === "registration")!.date).toBe("2029-01-08"); // 3年後の1/6は土曜→月曜
+    expect(all.find((t) => t.id === "registration")!.date).toBe("2029-01-09"); // 3年後の1/6は土曜、1/8は成人の日→1/9
   });
   it("保険金の請求は申告に間に合う目安と、3年の期限を両方持つ", () => {
     const t = buildTasks(iv({ children: 1, insurance: 5_000_000 })).tasks.find((t) => t.id === "insurance-claim")!;
     expect(t.hard).toBe(false);
     expect(t.date).toBe("2026-03-06");
-    expect(t.limit?.date).toBe("2029-01-08");
+    expect(t.limit?.date).toBe("2029-01-09");
   });
   it("準確定申告の要否", () => {
     expect(needsFinalReturn(iv({ work: "selfEmployed" }))).toBe("required");
@@ -171,5 +171,27 @@ describe("書類と提出先", () => {
     const t = buildTasks(iv({ children: 1 }), { verdict: "likely" }).tasks.find((t) => t.id === "inheritance-tax")!;
     expect(t.optional).toBe(false);
     expect(t.title).toBe("相続税の申告と納付");
+  });
+});
+
+describe("休日と月末の期限（レビュー指摘）", () => {
+  it("月末の相続開始日は応当月末を期限にする", async () => {
+    const { addMonths: am, nextOpenDay } = await import("../procedures/dates");
+    expect(am("2026-01-31", 10)).toBe("2026-11-30");
+    expect(am("2026-04-30", 10)).toBe("2027-02-28");
+    expect(nextOpenDay(am("2026-04-30", 10))).toBe("2027-03-01"); // 2/28は日曜
+    expect(am("2026-08-31", 10)).toBe("2027-06-30");
+  });
+  it("祝日・振替休日・国民の休日・年末年始は次の平日にずらす", async () => {
+    const { nextOpenDay, holidaysOf } = await import("../procedures/dates");
+    const h = holidaysOf(2026);
+    expect(h.has("2026-03-20")).toBe(true); // 春分の日
+    expect(h.has("2026-09-23")).toBe(true); // 秋分の日
+    expect(h.has("2026-05-06")).toBe(true); // 憲法記念日（日曜）の振替休日
+    expect(h.has("2026-09-22")).toBe(true); // 敬老の日と秋分の日にはさまれた国民の休日
+    expect(h.has("2026-01-12")).toBe(true); // 成人の日
+    expect(nextOpenDay("2026-11-03")).toBe("2026-11-04"); // 文化の日
+    expect(nextOpenDay("2026-12-29")).toBe("2027-01-04"); // 年末年始
+    expect(nextOpenDay("2026-11-06")).toBe("2026-11-06");
   });
 });

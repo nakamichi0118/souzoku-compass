@@ -48,7 +48,7 @@ export default function SignupPage() {
           </label>
           <label className="flex items-start gap-2 text-sm text-stone-700">
             <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} className="mt-1 h-4 w-4 accent-sky-700" />
-            入力した内容は、この端末のブラウザにだけ保存されることを確認しました（ハッカソン用の簡易登録です）。
+            入力した内容は、この端末のブラウザにだけ保存されることを確認しました（ハッカソン用の簡易登録です）。PDFの作成・書類の読み取り・コンパスくんへの相談のときだけ、その機能に必要な内容を送ります（各画面で説明します）。
           </label>
           <button type="submit" disabled={!ok} className="w-full rounded-full bg-sky-700 px-6 py-3 font-bold text-white hover:bg-sky-800 disabled:bg-stone-300">
             マイページを作成する

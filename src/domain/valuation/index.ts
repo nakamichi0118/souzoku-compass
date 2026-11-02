@@ -72,6 +72,14 @@ export function valueLand(a: LandAsset): Valuation {
     };
   }
   if (m.type === "multiplier") {
+    if (!(m.multiplier > 0) || !(m.fixedAssetValue > 0)) {
+      return {
+        value: 0,
+        quantity: `${a.areaSqm}㎡`,
+        steps: [],
+        needsConsultation: "固定資産税評価額と倍率（国税庁の評価倍率表）が未入力です。確認して入力してください。",
+      };
+    }
     const value = Math.floor((m.fixedAssetValue * thou(m.multiplier)) / 1000);
     return {
       value,
@@ -115,6 +123,15 @@ export function valueAsset(a: Asset): Valuation {
     }
     case "listedStock": {
       const p = a.prices;
+      // 未入力（0）を最も低い価格として採用しないよう、4つの価格がそろうまで確定しない
+      if (![p.close, p.monthAvg, p.prevMonthAvg, p.prev2MonthAvg].every((x) => x > 0) || !(a.shares > 0)) {
+        return {
+          value: 0,
+          quantity: `${a.shares}株`,
+          steps: [],
+          needsConsultation: "株数と4つの価格（亡くなった日の終値、その月・前月・前々月の終値の平均）がそろっていません。証券会社の資料で確認して入力してください。",
+        };
+      }
       const unit = Math.min(p.close, p.monthAvg, p.prevMonthAvg, p.prev2MonthAvg);
       return {
         value: Math.floor(unit * a.shares),

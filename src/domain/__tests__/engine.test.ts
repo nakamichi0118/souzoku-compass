@@ -170,7 +170,7 @@ describe("債務控除・贈与加算・未成年者控除", () => {
     const r = calculate(
       mk([{ ...c1, nonResident: true }], [{ ...dep("海外口座", 1), foreign: true } as Asset], []),
     );
-    expect(r.blockers.length).toBe(2);
+    expect(r.blockers.filter((b) => b.includes("国外")).length).toBe(2);
   });
 });
 
