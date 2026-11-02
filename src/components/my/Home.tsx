@@ -7,20 +7,12 @@ import { Bubble, CompassAvatar } from "@/components/compass/CompassKun";
 import { MonthCalendar } from "@/components/plan/MonthCalendar";
 import { AppShell, PageHead } from "@/components/shell/AppShell";
 import { daysBetween, jpDate } from "@/domain/procedures/dates";
-import type { DocCategory } from "@/domain/procedures/documents";
 import type { Task } from "@/domain/procedures/rules";
 import { useOverall } from "@/lib/overall";
+import type { ItemStatus } from "@/lib/planStore";
+import { CatIcon } from "./icons";
 
 const man = (n: number) => `約${Math.round(n / 10_000).toLocaleString("ja-JP")}万円`;
-export const CAT_ICON: Partial<Record<DocCategory, string>> = { "戸籍・住民票": "👪", 預貯金: "🏦", 不動産: "🏠", 保険: "☂️", 株式: "📈", "年金・税金": "🧾", その他: "📎" };
-const MILESTONES: [string, string][] = [
-  ["death-report", "7日以内"],
-  ["pension-stop", "10〜14日以内"],
-  ["renounce", "3か月以内"],
-  ["final-return", "4か月以内"],
-  ["inheritance-tax", "10か月以内"],
-  ["registration", "3年以内"],
-];
 
 export function Panel({ title, more, children, className = "" }: { title: string; more?: { href: string; label?: string }; children: React.ReactNode; className?: string }) {
   return (
@@ -38,8 +30,9 @@ export function Panel({ title, more, children, className = "" }: { title: string
   );
 }
 
-export function taskStatus(t: Task, done: boolean, now: string) {
-  if (done) return { label: "✓ 完了", cls: "bg-emerald-100 text-emerald-800" };
+export function taskStatus(t: Task, st: ItemStatus, now: string) {
+  if (st === "na") return { label: "不要", cls: "bg-stone-200 text-stone-600" };
+  if (st === "done") return { label: "✓ 完了", cls: "bg-emerald-100 text-emerald-800" };
   const left = daysBetween(now, t.date);
   if (left < 0) return { label: `${-left}日超過`, cls: "bg-rose-100 text-rose-800" };
   if (t.hard) return { label: "期限あり", cls: "bg-orange-100 text-orange-800" };
@@ -70,7 +63,8 @@ export function Home() {
       </AppShell>
     );
 
-  const upcoming = [...o.main.filter((t) => !o.done.includes(t.id)), ...o.main.filter((t) => o.done.includes(t.id)).reverse()].slice(0, 8);
+  // ホームには、まだ済んでいない手続きを期限の近い順に（全体はやることリストで）
+  const upcoming = o.main.filter((t) => !o.closed(t.id)).slice(0, 6);
   const nextStep = o.steps.find((s) => !s.done);
   const verdict = o.verdict ?? o.est.verdict;
   const taxNeeded = verdict === "likely" || verdict === "relief";
@@ -86,16 +80,16 @@ export function Home() {
         <div className="space-y-5 lg:col-span-2">
           <Panel title="やることリスト" more={{ href: "/my/tasks", label: "すべてのタスクを見る" }}>
             <p className="-mt-2 mb-3 text-sm text-stone-500">期限の近いものから進めましょう。</p>
-            <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {upcoming.map((t) => {
-                const d = o.done.includes(t.id);
-                const st = taskStatus(t, d, o.now);
+                const d = false;
+                const st = taskStatus(t, o.statusOf(t.id), o.now);
                 return (
                   <li key={t.id}>
                     <Link href={`/my/tasks?id=${t.id}`} className={`flex h-full flex-col rounded-xl border p-3 hover:border-sky-400 ${d ? "border-emerald-200 bg-emerald-50/50" : "border-stone-200 bg-white"}`}>
                       <span className={`self-start rounded-full px-2 py-0.5 text-[11px] font-bold ${st.cls}`}>{st.label}</span>
                       <span className={`mt-2 line-clamp-2 text-sm font-bold ${d ? "text-stone-500" : "text-stone-900"}`}>{t.title}</span>
-                      <span className="mt-auto pt-2 text-xs text-stone-500">📅 {jpDate(t.date)}</span>
+                      <span className="mt-auto pt-2 text-xs text-stone-500">{t.hard ? "期限" : "目安"} {jpDate(t.date)}（{daysBetween(o.now, t.date) >= 0 ? `あと${daysBetween(o.now, t.date)}日` : "過ぎています"}）</span>
                     </Link>
                   </li>
                 );
@@ -105,15 +99,14 @@ export function Home() {
 
           <Panel title="資料集めの進み具合" more={{ href: "/my/docs" }}>
             <ul className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-              {cats.map(([k, items]) => {
+              {cats.map(([k, all]) => {
+                const items = all.filter((d) => !d.na);
                 const n = items.filter((d) => d.done).length;
-                const pct = Math.round((n / items.length) * 100);
+                const pct = items.length ? Math.round((n / items.length) * 100) : 100;
                 return (
                   <li key={k}>
                     <Link href="/my/docs" className="block rounded-xl bg-sky-50/60 p-3 text-center hover:bg-sky-100/60">
-                      <span className="text-2xl" aria-hidden>
-                        {CAT_ICON[k]}
-                      </span>
+                      <CatIcon k={k} className="mx-auto h-6 w-6" />
                       <p className="text-sm font-semibold text-stone-800">{k}</p>
                       <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white">
                         <div className={`h-full ${pct === 100 ? "bg-emerald-500" : "bg-sky-500"}`} style={{ width: `${pct}%` }} />
@@ -165,28 +158,7 @@ export function Home() {
         </div>
 
         <div className="space-y-5">
-          <Panel title="手続きの期限" more={{ href: "/my/calendar" }}>
-            <ol className="relative space-y-3 border-l-2 border-sky-100 pl-5">
-              {MILESTONES.map(([id, when]) => {
-                const t = o.tasks.find((x) => x.id === id);
-                if (!t) return null;
-                const d = o.done.includes(id);
-                const soon = !d && daysBetween(o.now, t.date) <= 30;
-                return (
-                  <li key={id} className="relative">
-                    <span className={`absolute -left-[29px] top-0.5 grid h-4 w-4 place-items-center rounded-full text-[9px] text-white ${d ? "bg-emerald-500" : soon ? "bg-orange-500" : "bg-stone-300"}`}>{d ? "✓" : ""}</span>
-                    <span className={`mr-2 rounded-full px-2 py-0.5 text-[11px] font-bold ${soon ? "bg-orange-100 text-orange-800" : "bg-sky-50 text-sky-800"}`}>{when}</span>
-                    <Link href={`/my/tasks?id=${id}`} className={`text-sm hover:underline ${d ? "text-stone-400 line-through" : "text-stone-800"}`}>
-                      {t.title}
-                    </Link>
-                    <p className="text-xs text-stone-500">{jpDate(t.date)}</p>
-                  </li>
-                );
-              })}
-            </ol>
-          </Panel>
-
-          <Panel title="相続税の見込み" more={{ href: o.precise ? "/case/tax" : "/my/assets", label: "詳しく確認" }}>
+          <Panel title="相続税の見込み" more={{ href: o.precise ? "/case/tax" : "/case/assets", label: "詳しく確認" }}>
             <p className="text-lg font-bold leading-snug text-stone-900">
               {verdict === "none" ? (
                 <>
@@ -220,7 +192,7 @@ export function Home() {
           </Panel>
 
           <Panel title="スケジュール" more={{ href: "/my/calendar", label: "すべて見る" }}>
-            <MonthCalendar tasks={o.main} done={o.done} today={o.now} compact />
+            <MonthCalendar tasks={o.live} done={o.done} today={o.now} compact />
           </Panel>
         </div>
       </div>

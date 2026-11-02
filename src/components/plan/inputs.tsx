@@ -2,7 +2,8 @@
 
 import { YenInput } from "@/components/ui";
 
-export function Choice<T extends string | boolean>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: { value: T; label: string }[] }) {
+/** 選択肢。value が undefined のときは何も選ばれていない状態 */
+export function Choice<T extends string | boolean>({ value, onChange, options }: { value: T | undefined; onChange: (v: T) => void; options: { value: T; label: string }[] }) {
   return (
     <div className="flex flex-wrap gap-2" role="radiogroup">
       {options.map((o) => {
@@ -26,7 +27,7 @@ export function Choice<T extends string | boolean>({ value, onChange, options }:
   );
 }
 
-export const YesNo = ({ value, onChange, yes = "はい", no = "いいえ" }: { value: boolean; onChange: (v: boolean) => void; yes?: string; no?: string }) => (
+export const YesNo = ({ value, onChange, yes = "はい", no = "いいえ" }: { value: boolean | undefined; onChange: (v: boolean) => void; yes?: string; no?: string }) => (
   <Choice value={value} onChange={onChange} options={[{ value: true, label: yes }, { value: false, label: no }]} />
 );
 
@@ -55,7 +56,7 @@ export function ManYen({ value, onChange }: { value: number; onChange: (v: numbe
 
 export function Q({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
-    <div className="space-y-2 border-t border-stone-100 py-4 first:border-t-0 first:pt-0">
+    <div data-q className="scroll-mt-28 space-y-2 border-t border-stone-100 py-4 first:border-t-0 first:pt-0">
       <p className="font-medium text-stone-800">{label}</p>
       {hint && <p className="text-xs leading-relaxed text-stone-500">{hint}</p>}
       {children}

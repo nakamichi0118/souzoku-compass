@@ -17,6 +17,8 @@ export type HealthInsurance = "kokuho" | "kouki" | "shaho" | "unknown";
 
 export interface Interview {
   deathDate: string;
+  /** いまの状況（これから葬儀／葬儀は終わった／四十九日も終わった）。済んだ手続きの初期チェックに使う */
+  stage: "" | "before" | "funeralDone" | "after49";
   decedentName: string;
   /** 亡くなった方の最後の住所（提出先の案内に使う） */
   address: string;
@@ -60,6 +62,7 @@ export interface Interview {
 
 export const blankInterview = (): Interview => ({
   deathDate: "",
+  stage: "",
   decedentName: "",
   address: "",
   myRelation: "",
@@ -167,6 +170,7 @@ export const demoInterview = (): Interview => ({
   ...blankInterview(),
   // デモの相続税申告（src/data/demo.ts）と同じ架空の家族
   deathDate: "2026-03-15",
+  stage: "after49",
   decedentName: "相続 太郎",
   address: "東京都千代田区架空町一丁目2番3号",
   myRelation: "父",

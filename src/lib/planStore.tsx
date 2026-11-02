@@ -41,6 +41,10 @@ function write(key: string, v: unknown) {
   }
 }
 
+export type ItemStatus = "open" | "done" | "na";
+/** 「不要」にした手続き・書類は、記録の中で na: を付けて持つ */
+export const naId = (id: string) => `na:${id}`;
+
 interface PlanCtx {
   iv: Interview;
   saveIv: (iv: Interview) => void;
@@ -50,6 +54,9 @@ interface PlanCtx {
   done: string[];
   toggle: (id: string) => void;
   setDoneIds: (ids: string[], on: boolean) => void;
+  /** 手続き・書類の状態：未・完了・不要 */
+  statusOf: (id: string) => ItemStatus;
+  setStatus: (id: string, s: ItemStatus) => void;
   account: Account | null;
   register: (a: Account) => void;
   startDemo: () => void;
@@ -85,7 +92,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
   }, []);
   const toggle = useCallback((id: string) => {
     setDone((cur) => {
-      const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+      const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur.filter((x) => x !== naId(id)), id];
       write(DONE_KEY, next);
       return next;
     });
@@ -98,6 +105,16 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
         else s.delete(id);
       }
       const next = [...s];
+      write(DONE_KEY, next);
+      return next;
+    });
+  }, []);
+  const statusOf = useCallback((id: string): ItemStatus => (done.includes(id) ? "done" : done.includes(naId(id)) ? "na" : "open"), [done]);
+  const setStatus = useCallback((id: string, st: ItemStatus) => {
+    setDone((cur) => {
+      const next = cur.filter((x) => x !== id && x !== naId(id));
+      if (st === "done") next.push(id);
+      if (st === "na") next.push(naId(id));
       write(DONE_KEY, next);
       return next;
     });
@@ -132,7 +149,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <Ctx.Provider value={{ iv, saveIv, heard, setHeard, done, toggle, setDoneIds, account, register, startDemo, signOut, loaded }}>{children}</Ctx.Provider>
+    <Ctx.Provider value={{ iv, saveIv, heard, setHeard, done, toggle, setDoneIds, statusOf, setStatus, account, register, startDemo, signOut, loaded }}>{children}</Ctx.Provider>
   );
 }
 

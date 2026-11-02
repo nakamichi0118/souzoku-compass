@@ -1,20 +1,19 @@
 "use client";
 
+import { Bell, CalendarDays, Calculator, FileText, House, ListChecks, Printer, UserRound, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { LogoMark } from "@/components/compass/CompassKun";
 import { useOverall } from "@/lib/overall";
 
-const NAV = [
-  { href: "/my", label: "ホーム", icon: "🏠", match: (p: string) => p === "/my" },
-  { href: "/my/tasks", label: "やることリスト", icon: "✅", match: (p: string) => p.startsWith("/my/tasks") },
-  { href: "/my/calendar", label: "カレンダー", icon: "📅", match: (p: string) => p.startsWith("/my/calendar") },
-  { href: "/my/docs", label: "資料集め", icon: "📄", match: (p: string) => p.startsWith("/my/docs") },
-  { href: "/my/assets", label: "財産・資料", icon: "💰", match: (p: string) => p.startsWith("/my/assets") || p === "/case/assets" || p === "/case/map" },
-  { href: "/case/division", label: "遺産分割", icon: "⚖️", match: (p: string) => p === "/case/division" },
-  { href: "/case/decedent", label: "相続税申告", icon: "🧮", match: (p: string) => p.startsWith("/case/") && !["/case/assets", "/case/map", "/case/division", "/case/registration"].includes(p) },
-  { href: "/my/papers", label: "書類・帳票", icon: "🖨️", match: (p: string) => p.startsWith("/my/papers") || p === "/case/registration" },
+const NAV: { href: string; label: string; Icon: LucideIcon; match: (p: string) => boolean }[] = [
+  { href: "/my", label: "ホーム", Icon: House, match: (p) => p === "/my" },
+  { href: "/my/tasks", label: "やることリスト", Icon: ListChecks, match: (p) => p.startsWith("/my/tasks") },
+  { href: "/my/calendar", label: "カレンダー", Icon: CalendarDays, match: (p) => p.startsWith("/my/calendar") },
+  { href: "/my/docs", label: "資料集め", Icon: FileText, match: (p) => p.startsWith("/my/docs") },
+  { href: "/case/assets", label: "財産と相続税", Icon: Calculator, match: (p) => p.startsWith("/case/") && p !== "/case/registration" },
+  { href: "/my/papers", label: "書類・帳票", Icon: Printer, match: (p) => p.startsWith("/my/papers") || p === "/case/registration" },
 ];
 
 /** マイページ共通の枠（ナビゲーション・手続き中の相続・全体の進捗） */
@@ -45,19 +44,19 @@ export function AppHeader() {
                 aria-current={on ? "page" : undefined}
                 className={`flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 text-sm font-medium ${on ? "bg-sky-100 text-sky-900" : "text-stone-600 hover:bg-stone-100"}`}
               >
-                <span aria-hidden>{n.icon}</span>
+                <n.Icon className="h-4 w-4" aria-hidden />
                 {n.label}
               </Link>
             );
           })}
         </nav>
         <Link href="/my/tasks" className="relative shrink-0 rounded-full p-2 hover:bg-stone-100" aria-label={`期限が近い手続き ${o.urgent.length}件`}>
-          🔔
+          <Bell className="h-5 w-5 text-stone-600" aria-hidden />
           {o.urgent.length > 0 && <span className="absolute right-0.5 top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-orange-500 px-1 text-[10px] font-bold text-white">{o.urgent.length}</span>}
         </Link>
         <div className="relative shrink-0">
           <button type="button" onClick={() => setMenu((m) => !m)} className="flex items-center gap-1 rounded-full px-2 py-1 text-sm text-stone-700 hover:bg-stone-100">
-            👤 <span className="hidden md:inline">{o.account?.name ?? ""}さん</span> ▾
+            <UserRound className="h-5 w-5" aria-hidden /> <span className="hidden md:inline">{o.account?.name ?? ""}さん</span> ▾
           </button>
           {menu && (
             <div className="absolute right-0 mt-1 w-52 rounded-xl border border-stone-200 bg-white p-1 text-sm shadow-lg">

@@ -1,5 +1,5 @@
-import { AssetsPage } from "@/components/my/AssetsPage";
+import { redirect } from "next/navigation";
 
 export default function Page() {
-  return <AssetsPage />;
+  redirect("/case/assets");
 }

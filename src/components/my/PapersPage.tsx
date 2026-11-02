@@ -1,5 +1,6 @@
 "use client";
 
+import { CalendarDays, Calculator, House, Scale } from "lucide-react";
 import Link from "next/link";
 import { AppShell, PageHead } from "@/components/shell/AppShell";
 import { useOverall } from "@/lib/overall";
@@ -11,7 +12,7 @@ export function PapersPage() {
   const hasRealEstate = c.assets.some((a) => a.kind === "land" || a.kind === "building" || a.kind === "condo");
   const papers = [
     {
-      icon: "🧮",
+      Icon: Calculator,
       title: "相続税の申告書",
       text: "国税庁の令和8年分の正式な様式（第1表〜第15表など）に記入したPDFを作ります。",
       href: "/case/documents",
@@ -20,7 +21,7 @@ export function PapersPage() {
       todo: "財産と相続人を入力すると作れます",
     },
     {
-      icon: "⚖️",
+      Icon: Scale,
       title: "遺産分割協議書",
       text: "誰がどの財産を受け継ぐかをまとめた協議書のPDF。銀行・登記・相続税申告で使います。",
       href: "/case/division",
@@ -29,7 +30,7 @@ export function PapersPage() {
       todo: "遺産分割で、財産を受け継ぐ人を決めると作れます",
     },
     {
-      icon: "🏠",
+      Icon: House,
       title: "相続登記の申請書",
       text: "土地・建物の名義を変える登記申請書と、登録免許税の計算。期限は相続を知った日から3年以内です。",
       href: "/case/registration",
@@ -38,7 +39,7 @@ export function PapersPage() {
       todo: "不動産を登録し、受け継ぐ人を決めると作れます",
     },
     {
-      icon: "📅",
+      Icon: CalendarDays,
       title: "手続きの予定（カレンダー）",
       text: "やることリストの期限を、Googleカレンダーやスマホのカレンダーにまとめて入れます。",
       href: "/my/calendar",
@@ -54,10 +55,8 @@ export function PapersPage() {
         {papers.map((p) => (
           <li key={p.title} className="flex flex-col rounded-2xl border border-sky-100 bg-white p-5 shadow-sm">
             <div className="flex items-start justify-between gap-2">
-              <h2 className="text-lg font-bold text-sky-950">
-                <span aria-hidden className="mr-1">
-                  {p.icon}
-                </span>
+              <h2 className="flex items-center gap-2 text-lg font-bold text-sky-950">
+                <p.Icon className="h-5 w-5 text-sky-700" aria-hidden />
                 {p.title}
               </h2>
               <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${p.ready ? "bg-emerald-100 text-emerald-800" : "bg-stone-100 text-stone-600"}`}>{p.ready ? "作成できます" : "準備中"}</span>

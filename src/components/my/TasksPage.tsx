@@ -1,5 +1,6 @@
 "use client";
 
+import { Building2, FileText, MapPin, Phone } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
@@ -13,6 +14,7 @@ import { OFFICE_LABEL, cityOf } from "@/domain/procedures/offices";
 import type { Category, Task } from "@/domain/procedures/rules";
 import { useOverall } from "@/lib/overall";
 import { taskStatus } from "./Home";
+import { DetailStatus, RowStatus } from "./StatusButtons";
 
 const CATS: (Category | "すべて")[] = ["すべて", "届出", "葬儀・法要", "調べる・決める", "お金の受け取り", "税金", "名義変更・解約", "不動産"];
 type StatusFilter = "open" | "done" | "all";
@@ -45,17 +47,18 @@ export function TasksPage() {
   const [optional, setOptional] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  const { closed } = o;
   const list = useMemo(
     () =>
       o.tasks.filter(
         (t) =>
           (optional || !t.optional) &&
           (cat === "すべて" || t.category === cat) &&
-          (status === "all" || (status === "done" ? o.done.includes(t.id) : !o.done.includes(t.id))),
+          (status === "all" || (status === "done" ? closed(t.id) : !closed(t.id))),
       ),
-    [o.tasks, o.done, cat, status, optional],
+    [o.tasks, closed, cat, status, optional],
   );
-  const selId = params.get("id") ?? list.find((t) => !o.done.includes(t.id))?.id ?? list[0]?.id;
+  const selId = params.get("id") ?? list.find((t) => !o.closed(t.id))?.id ?? list[0]?.id;
   const t = o.tasks.find((x) => x.id === selId) ?? null;
 
   const context = useCallback(
@@ -77,7 +80,8 @@ export function TasksPage() {
   }
   const select = (id: string) => router.replace(`/my/tasks?id=${id}`, { scroll: false });
   const left = t ? daysBetween(o.now, t.date) : 0;
-  const isDone = t ? o.done.includes(t.id) : false;
+  const st = t ? o.statusOf(t.id) : "open";
+  const isDone = st !== "open";
   const nextStep = o.steps.find((s) => !s.done);
   const { pref, city } = cityOf(o.iv.address);
 
@@ -112,18 +116,19 @@ export function TasksPage() {
         <ul className="space-y-2 lg:max-h-[calc(100vh-14rem)] lg:overflow-y-auto lg:pr-1">
           {list.length === 0 && <li className="rounded-xl bg-white p-6 text-center text-sm text-stone-500">該当する手続きはありません。</li>}
           {list.map((x) => {
-            const d = o.done.includes(x.id);
-            const st = taskStatus(x, d, o.now);
+            const xs = o.statusOf(x.id);
+            const d = xs !== "open";
+            const badge = taskStatus(x, xs, o.now);
             return (
               <li key={x.id} className={`flex items-center gap-3 rounded-xl border bg-white p-3 ${x.id === selId ? "border-sky-500 ring-2 ring-sky-100" : "border-stone-200"}`}>
-                <input type="checkbox" checked={d} onChange={() => o.toggle(x.id)} className="h-5 w-5 shrink-0 accent-emerald-600" aria-label={`${x.title}を完了にする`} />
+                <RowStatus status={xs} onChange={(v) => o.setStatus(x.id, v)} label={x.title} />
                 <button type="button" onClick={() => select(x.id)} className="min-w-0 flex-1 text-left">
                   <p className={`truncate font-semibold ${d ? "text-stone-400 line-through" : "text-stone-900"}`}>{x.title}</p>
                   <p className="text-xs text-stone-500">
                     {x.category}・{x.hard ? "期限" : "目安"} {jpDate(x.date)}
                   </p>
                 </button>
-                <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${st.cls}`}>{st.label}</span>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${badge.cls}`}>{badge.label}</span>
               </li>
             );
           })}
@@ -136,13 +141,7 @@ export function TasksPage() {
                 <p className="text-xs text-stone-500">{t.category}</p>
                 <h2 className="text-xl font-bold text-sky-950">{t.title}</h2>
               </div>
-              <button
-                type="button"
-                onClick={() => o.toggle(t.id)}
-                className={`rounded-full px-4 py-2 text-sm font-bold ${isDone ? "bg-emerald-100 text-emerald-800" : "bg-emerald-600 text-white hover:bg-emerald-700"}`}
-              >
-                {isDone ? "✓ 完了しました（戻す）" : "完了にする"}
-              </button>
+              <DetailStatus status={st} onChange={(v) => o.setStatus(t.id, v)} />
             </div>
 
             <div className={`rounded-xl px-4 py-3 ${isDone ? "bg-emerald-50" : t.hard ? "bg-orange-50" : "bg-sky-50"}`}>
@@ -150,7 +149,7 @@ export function TasksPage() {
                 {t.hard ? "期限" : "目安"}：{jpDate(t.date)}
                 {!isDone && <span className={`ml-2 ${left < 0 ? "text-rose-700" : left <= 7 ? "text-orange-700" : "text-stone-600"}`}>{left < 0 ? `${-left}日過ぎています` : left === 0 ? "今日です" : `あと${left}日`}</span>}
               </p>
-              {t.limit && <p className="mt-1 text-sm text-rose-800">⚠ {t.limit.text}（{jpDate(t.limit.date)}まで）</p>}
+              {t.limit && <p className="mt-1 text-sm text-rose-800">注意：{t.limit.text}（{jpDate(t.limit.date)}まで）</p>}
             </div>
 
             <p className="leading-relaxed text-stone-800">{t.what}</p>
@@ -171,7 +170,7 @@ export function TasksPage() {
             )}
 
             <section>
-              <h3 className="mb-2 font-bold text-stone-700">🏢 提出先・連絡先</h3>
+              <h3 className="mb-2 flex items-center gap-1.5 font-bold text-stone-700"><Building2 className="h-4 w-4 text-sky-700" aria-hidden />提出先・連絡先</h3>
               {t.office ? (
                 <div className="space-y-2">
                   <OfficeLookup kind={t.office} dept={t.dept} address={o.iv.address} />
@@ -183,7 +182,8 @@ export function TasksPage() {
                       rel="noreferrer"
                       className="inline-block text-sm text-sky-800 underline"
                     >
-                      🗺 地図で見る（Googleマップ）
+                      <MapPin className="mr-1 inline h-4 w-4" aria-hidden />
+                      地図で見る（Googleマップ）
                     </a>
                   )}
                 </div>
@@ -194,16 +194,17 @@ export function TasksPage() {
 
             {t.docs.length > 0 && (
               <section>
-                <h3 className="mb-2 font-bold text-stone-700">📄 必要な書類</h3>
+                <h3 className="mb-2 flex items-center gap-1.5 font-bold text-stone-700"><FileText className="h-4 w-4 text-sky-700" aria-hidden />必要な書類</h3>
                 <ul className="space-y-1.5">
                   {t.docs
                     .filter((id) => DOCS[id])
                     .map((id) => {
                       const k = `doc:${id}`;
-                      const ok = o.done.includes(k);
+                      const ds = o.statusOf(k);
+                      const ok = ds !== "open";
                       return (
                         <li key={id} className="flex items-center gap-2 text-sm">
-                          <input type="checkbox" checked={ok} onChange={() => o.toggle(k)} className="h-4 w-4 accent-emerald-600" aria-label={`${DOCS[id].name}がそろった`} />
+                          <RowStatus status={ds} onChange={(v) => o.setStatus(k, v)} label={DOCS[id].name} />
                           <span className={ok ? "text-stone-400 line-through" : "text-stone-800"}>{DOCS[id].name}</span>
                           <Link href={`/my/docs?id=${id}`} className="ml-auto shrink-0 text-xs text-sky-700 hover:underline">
                             {DOCS[id].readable ? "取り方・読み取り" : "取り方"} ›
@@ -219,7 +220,7 @@ export function TasksPage() {
             {t.office && (
               <section className="rounded-xl bg-stone-50 p-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-bold text-stone-700">📞 連絡するときの伝え方</h3>
+                  <h3 className="flex items-center gap-1.5 font-bold text-stone-700"><Phone className="h-4 w-4 text-sky-700" aria-hidden />連絡するときの伝え方</h3>
                   <button
                     type="button"
                     className="text-xs text-sky-700 hover:underline"

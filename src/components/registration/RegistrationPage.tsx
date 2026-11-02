@@ -1,5 +1,6 @@
 "use client";
 
+import { FileText } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { Bubble, CompassAvatar } from "@/components/compass/CompassKun";
@@ -172,7 +173,7 @@ export function RegistrationPage() {
           <ul className="space-y-2 text-sm">
             {DOCS.map(([n, why]) => (
               <li key={n} className="flex gap-2">
-                <span aria-hidden>📄</span>
+                <FileText className="h-4 w-4 text-sky-700" aria-hidden />
                 <span>
                   <strong>{n}</strong>
                   <span className="block text-stone-600">{why}</span>

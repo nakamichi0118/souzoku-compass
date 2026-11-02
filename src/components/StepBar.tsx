@@ -1,10 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { filingSteps } from "@/lib/progress";
 import { STEPS, stepIndex } from "@/lib/steps";
+import { useCase } from "@/lib/store";
 
 export function StepBar({ current }: { current: string }) {
   const idx = stepIndex(current);
+  const { data, result } = useCase();
+  // 「次へ」で終えて、入力もあるステップだけを済みにする
+  const done = new Set(filingSteps(data, result).filter((s) => s.done).map((s) => s.slug));
   return (
     <div className="border-b border-stone-200 bg-white">
       <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-2">
@@ -12,7 +17,7 @@ export function StepBar({ current }: { current: string }) {
         <nav aria-label="進捗" className="flex-1 overflow-x-auto">
           <ol className="flex min-w-max items-center gap-1">
             {STEPS.map((s, i) => {
-              const state = i < idx ? "done" : i === idx ? "current" : "todo";
+              const state = i === idx ? "current" : done.has(s.slug) ? "done" : "todo";
               return (
                 <li key={s.slug} className="flex items-center">
                   <Link

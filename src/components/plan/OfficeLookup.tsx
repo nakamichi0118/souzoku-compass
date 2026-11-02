@@ -1,5 +1,6 @@
 "use client";
 
+import { Clock, MapPin, Phone } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { CompassAvatar } from "@/components/compass/CompassKun";
@@ -90,16 +91,16 @@ export function OfficeLookup({ kind, dept, address, forProperty }: { kind: Offic
               {office.name || "（名称を確認できませんでした）"}
               {office.dept && <span className="ml-1 font-normal text-stone-600">{office.dept}</span>}
             </p>
-            {office.address && <p>📍 {office.address}</p>}
+            {office.address && <p className="flex items-start gap-1"><MapPin className="mt-0.5 h-4 w-4 shrink-0 text-sky-700" aria-hidden />{office.address}</p>}
             {office.phone && (
               <p>
-                📞{" "}
+                <Phone className="mr-1 inline h-4 w-4 text-sky-700" aria-hidden />
                 <a href={`tel:${office.phone.replace(/[^\d+]/g, "")}`} className="text-sky-800 underline">
                   {office.phone}
                 </a>
               </p>
             )}
-            {office.hours && <p>🕘 {office.hours}</p>}
+            {office.hours && <p className="flex items-start gap-1"><Clock className="mt-0.5 h-4 w-4 shrink-0 text-sky-700" aria-hidden />{office.hours}</p>}
             {office.note && <p className="text-stone-600">{office.note}</p>}
             {office.url && (
               <a href={office.url} target="_blank" rel="noreferrer" className="break-all text-xs text-sky-800 underline">

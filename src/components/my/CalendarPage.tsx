@@ -28,7 +28,7 @@ export function CalendarPage() {
   const appleSubscribe = `webcal://${host}${feedPath}`;
   function downloadICS() {
     const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
-    const ics = toICS(o.main, { name: "相続の手続き（相続コンパス）", stamp, appUrl: `${window.location.origin}/my` });
+    const ics = toICS(o.live, { name: "相続の手続き（相続コンパス）", stamp, appUrl: `${window.location.origin}/my` });
     const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar" }));
     const a = document.createElement("a");
     a.href = url;
@@ -38,15 +38,15 @@ export function CalendarPage() {
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  const upcoming = o.main.filter((t) => !o.done.includes(t.id) && t.date >= o.now).slice(0, 6);
-  const overdue = o.main.filter((t) => !o.done.includes(t.id) && t.date < o.now);
+  const upcoming = o.main.filter((t) => !o.closed(t.id) && t.date >= o.now).slice(0, 6);
+  const overdue = o.main.filter((t) => !o.closed(t.id) && t.date < o.now);
 
   return (
     <AppShell wide>
       <PageHead title="カレンダー" say="手続きの期限と目安の日を、月ごとに並べました。オレンジは法律上の期限がある日です。" />
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <section className="rounded-2xl border border-sky-100 bg-white p-4 shadow-sm sm:p-5">
-          <MonthCalendar tasks={o.main} done={o.done} today={o.now} />
+          <MonthCalendar tasks={o.live} done={o.done} today={o.now} />
           <p className="mt-3 flex flex-wrap gap-4 text-xs text-stone-500">
             <span>
               <span className="mr-1 inline-block h-2 w-2 rounded-full bg-orange-500" />
@@ -80,7 +80,7 @@ export function CalendarPage() {
             </ul>
           </Panel>
           <Panel title="いつものカレンダーに入れる">
-            <p className="text-sm text-stone-600">{o.main.length}件の手続きをまとめて追加します。期限のあるものは1週間前と前日に通知します。</p>
+            <p className="text-sm text-stone-600">{o.live.length}件の手続きをまとめて追加します。期限のあるものは1週間前と前日に通知します。</p>
             <div className="mt-3 flex flex-col gap-2">
               <a href={googleSubscribe} target="_blank" rel="noreferrer" className="rounded-lg bg-sky-700 px-4 py-2 text-center text-sm font-semibold text-white hover:bg-sky-800">
                 Googleカレンダーにまとめて追加

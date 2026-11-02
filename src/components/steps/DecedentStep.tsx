@@ -1,12 +1,11 @@
 "use client";
 
-import { Button, Card, Field, Note, TextInput } from "@/components/ui";
-import { demoCase } from "@/data/demo";
-import { blankCase, useCase } from "@/lib/store";
+import { Card, Field, Note, TextInput } from "@/components/ui";
+import { useCase } from "@/lib/store";
 import { wareki } from "@/forms/format";
 
 export function DecedentStep() {
-  const { data, update, replace } = useCase();
+  const { data, update } = useCase();
   const d = data.decedent;
   const set = (k: keyof typeof d, v: string) => update((c) => ({ ...c, decedent: { ...c.decedent, [k]: v } }));
   const deadline = (() => {
@@ -21,16 +20,6 @@ export function DecedentStep() {
     <div className="space-y-5">
       <Card
         title="亡くなった方の情報"
-        actions={
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => replace(structuredClone(demoCase))}>
-              デモ案件を読み込む
-            </Button>
-            <Button variant="ghost" onClick={() => confirm("入力内容を消して新しく始めますか？") && replace(blankCase())}>
-              新しく始める
-            </Button>
-          </div>
-        }
       >
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="氏名">
