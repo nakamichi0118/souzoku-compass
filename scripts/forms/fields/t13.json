@@ -1,0 +1,856 @@
+{
+ "page": "t13",
+ "title": "第13表",
+ "fields": [
+  {
+   "id": "d.name",
+   "seed": [
+    2140,
+    400
+   ],
+   "size": 11
+  },
+  {
+   "id": "d0.kind",
+   "seed": [
+    320,
+    804
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "d0.detail",
+   "seed": [
+    495,
+    804
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "d0.creditor",
+   "seed": [
+    710,
+    804
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "d0.address",
+   "seed": [
+    1030,
+    804
+   ],
+   "size": 8,
+   "lines": 2
+  },
+  {
+   "id": "d0.amount",
+   "seed": [
+    1760,
+    804
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "d0.bearer",
+   "seed": [
+    2040,
+    804
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "d0.bearerAmount",
+   "seed": [
+    2300,
+    804
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "d1.kind",
+   "seed": [
+    320,
+    934
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "d1.detail",
+   "seed": [
+    495,
+    934
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "d1.creditor",
+   "seed": [
+    710,
+    934
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "d1.address",
+   "seed": [
+    1030,
+    934
+   ],
+   "size": 8,
+   "lines": 2
+  },
+  {
+   "id": "d1.amount",
+   "seed": [
+    1760,
+    934
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "d1.bearer",
+   "seed": [
+    2040,
+    934
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "d1.bearerAmount",
+   "seed": [
+    2300,
+    934
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "d2.kind",
+   "seed": [
+    320,
+    1050
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "d2.detail",
+   "seed": [
+    495,
+    1050
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "d2.creditor",
+   "seed": [
+    710,
+    1050
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "d2.address",
+   "seed": [
+    1030,
+    1050
+   ],
+   "size": 8,
+   "lines": 2
+  },
+  {
+   "id": "d2.amount",
+   "seed": [
+    1760,
+    1050
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "d2.bearer",
+   "seed": [
+    2040,
+    1050
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "d2.bearerAmount",
+   "seed": [
+    2300,
+    1050
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "d3.kind",
+   "seed": [
+    320,
+    1162
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "d3.detail",
+   "seed": [
+    495,
+    1162
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "d3.creditor",
+   "seed": [
+    710,
+    1162
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "d3.address",
+   "seed": [
+    1030,
+    1162
+   ],
+   "size": 8,
+   "lines": 2
+  },
+  {
+   "id": "d3.amount",
+   "seed": [
+    1760,
+    1162
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "d3.bearer",
+   "seed": [
+    2040,
+    1162
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "d3.bearerAmount",
+   "seed": [
+    2300,
+    1162
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "d.total",
+   "seed": [
+    1760,
+    1276
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "f0.payee",
+   "seed": [
+    400,
+    1678
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "f0.address",
+   "seed": [
+    840,
+    1678
+   ],
+   "size": 8,
+   "lines": 2
+  },
+  {
+   "id": "f0.amount",
+   "seed": [
+    1720,
+    1678
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "f0.bearer",
+   "seed": [
+    2040,
+    1678
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "f0.bearerAmount",
+   "seed": [
+    2300,
+    1678
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "f1.payee",
+   "seed": [
+    400,
+    1812
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "f1.address",
+   "seed": [
+    840,
+    1812
+   ],
+   "size": 8,
+   "lines": 2
+  },
+  {
+   "id": "f1.amount",
+   "seed": [
+    1720,
+    1812
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "f1.bearer",
+   "seed": [
+    2040,
+    1812
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "f1.bearerAmount",
+   "seed": [
+    2300,
+    1812
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "f2.payee",
+   "seed": [
+    400,
+    1924
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "f2.address",
+   "seed": [
+    840,
+    1924
+   ],
+   "size": 8,
+   "lines": 2
+  },
+  {
+   "id": "f2.amount",
+   "seed": [
+    1720,
+    1924
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "f2.bearer",
+   "seed": [
+    2040,
+    1924
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "f2.bearerAmount",
+   "seed": [
+    2300,
+    1924
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "f3.payee",
+   "seed": [
+    400,
+    2038
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "f3.address",
+   "seed": [
+    840,
+    2038
+   ],
+   "size": 8,
+   "lines": 2
+  },
+  {
+   "id": "f3.amount",
+   "seed": [
+    1720,
+    2038
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "f3.bearer",
+   "seed": [
+    2040,
+    2038
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "f3.bearerAmount",
+   "seed": [
+    2300,
+    2038
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "f4.payee",
+   "seed": [
+    400,
+    2150
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "f4.address",
+   "seed": [
+    840,
+    2150
+   ],
+   "size": 8,
+   "lines": 2
+  },
+  {
+   "id": "f4.amount",
+   "seed": [
+    1720,
+    2150
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "f4.bearer",
+   "seed": [
+    2040,
+    2150
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "f4.bearerAmount",
+   "seed": [
+    2300,
+    2150
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "f.total",
+   "seed": [
+    1720,
+    2262
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "t.r1",
+   "seed": [
+    925,
+    2574
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "t.r2",
+   "seed": [
+    925,
+    2688
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "t.r3",
+   "seed": [
+    925,
+    2800
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "t.r4",
+   "seed": [
+    925,
+    2912
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "t.r5",
+   "seed": [
+    925,
+    3026
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "t.r6",
+   "seed": [
+    925,
+    3138
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "t.r7",
+   "seed": [
+    925,
+    3252
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p0.name",
+   "seed": [
+    1270,
+    2460
+   ],
+   "size": 9
+  },
+  {
+   "id": "p0.r1",
+   "seed": [
+    1270,
+    2574
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p0.r2",
+   "seed": [
+    1270,
+    2688
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p0.r3",
+   "seed": [
+    1270,
+    2800
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p0.r4",
+   "seed": [
+    1270,
+    2912
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p0.r5",
+   "seed": [
+    1270,
+    3026
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p0.r6",
+   "seed": [
+    1270,
+    3138
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p0.r7",
+   "seed": [
+    1270,
+    3252
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p1.name",
+   "seed": [
+    1615,
+    2460
+   ],
+   "size": 9
+  },
+  {
+   "id": "p1.r1",
+   "seed": [
+    1615,
+    2574
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p1.r2",
+   "seed": [
+    1615,
+    2688
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p1.r3",
+   "seed": [
+    1615,
+    2800
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p1.r4",
+   "seed": [
+    1615,
+    2912
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p1.r5",
+   "seed": [
+    1615,
+    3026
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p1.r6",
+   "seed": [
+    1615,
+    3138
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p1.r7",
+   "seed": [
+    1615,
+    3252
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p2.name",
+   "seed": [
+    1960,
+    2460
+   ],
+   "size": 9
+  },
+  {
+   "id": "p2.r1",
+   "seed": [
+    1960,
+    2574
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p2.r2",
+   "seed": [
+    1960,
+    2688
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p2.r3",
+   "seed": [
+    1960,
+    2800
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p2.r4",
+   "seed": [
+    1960,
+    2912
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p2.r5",
+   "seed": [
+    1960,
+    3026
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p2.r6",
+   "seed": [
+    1960,
+    3138
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p2.r7",
+   "seed": [
+    1960,
+    3252
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p3.name",
+   "seed": [
+    2280,
+    2460
+   ],
+   "size": 9
+  },
+  {
+   "id": "p3.r1",
+   "seed": [
+    2280,
+    2574
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p3.r2",
+   "seed": [
+    2280,
+    2688
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p3.r3",
+   "seed": [
+    2280,
+    2800
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p3.r4",
+   "seed": [
+    2280,
+    2912
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p3.r5",
+   "seed": [
+    2280,
+    3026
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p3.r6",
+   "seed": [
+    2280,
+    3138
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p3.r7",
+   "seed": [
+    2280,
+    3252
+   ],
+   "align": "right",
+   "size": 10
+  }
+ ]
+}

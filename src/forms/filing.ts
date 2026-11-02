@@ -1,5 +1,5 @@
 /**
- * 計算結果を申告書（第1表・第1表（続）・第2表・第11表と付表）の欄へ割り当てる。
+ * 計算結果を申告書（第1表・第2表・第5表・第11表と付表・第13表・第15表）の欄へ割り当てる。
  */
 import { toString as fracText } from "@/domain/fraction";
 import type { PersonTax, TaxResult } from "@/domain/tax/engine";
@@ -7,6 +7,7 @@ import type { Case, Person } from "@/domain/types";
 import { ageAt, wareki, yen, yenOrBlank } from "./format";
 import type { PageFill } from "./render";
 import { buildSchedule11 } from "./schedule11";
+import { build13, build15, build5, filingPersons } from "./schedules";
 
 const RELATION_LABEL: Record<Person["relation"], string> = {
   spouse: "配偶者",
@@ -76,7 +77,7 @@ export function buildFilingPages(c: Case, r: TaxResult): PageFill[] {
   const pages: PageFill[] = [];
   const death = wareki(c.decedent.deathDate)!;
   const db = wareki(c.decedent.birthDate);
-  const acquirers = r.persons.filter((p) => p.acquired > 0 || p.taxable > 0 || p.debts > 0);
+  const acquirers = filingPersons(r);
   const [first, ...rest] = acquirers;
 
   const totals = {
@@ -174,7 +175,9 @@ export function buildFilingPages(c: Case, r: TaxResult): PageFill[] {
     pages.push({ page: "t02", values });
   }
 
-  // 第11表・付表1〜4
-  pages.push(...buildSchedule11(c, r));
+  pages.push(...build5(c, r)); // 第5表
+  pages.push(...buildSchedule11(c, r)); // 第11表・付表1〜4
+  pages.push(...build13(c, r)); // 第13表
+  pages.push(...build15(c, r)); // 第15表・第15表（続）
   return pages;
 }

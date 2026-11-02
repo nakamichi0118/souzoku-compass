@@ -105,8 +105,8 @@ export const demoCase: Case = {
     { id: "cash", kind: "cash", label: "現金（自宅保管）", amount: 520_000 },
   ],
   debts: [
-    { id: "funeral", kind: "funeral", label: "葬儀費用（架空斎場ほか）", amount: 1_850_000, bearers: [{ personId: "ichiro", amount: 1_850_000 }] },
-    { id: "tax", kind: "debt", label: "令和8年度 固定資産税（未納分）", amount: 186_400, bearers: [{ personId: "hanako", amount: 186_400 }] },
+    { id: "funeral", kind: "funeral", label: "葬儀費用（架空斎場ほか）", amount: 1_850_000, creditor: "架空斎場", creditorAddress: "東京都千代田区架空町二丁目5番1号", bearers: [{ personId: "ichiro", amount: 1_850_000 }] },
+    { id: "tax", kind: "debt", label: "令和8年度 固定資産税（未納分）", amount: 186_400, creditor: "千代田区", creditorAddress: "東京都千代田区", bearers: [{ personId: "hanako", amount: 186_400 }] },
   ],
   allocations: [
     { assetId: "home-land", shares: [{ personId: "hanako", numerator: 1, denominator: 1 }] },

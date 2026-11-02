@@ -177,6 +177,9 @@ export interface Debt {
   kind: "debt" | "funeral";
   label: string;
   amount: number;
+  /** 申告書（第13表）用：債権者・支払先の氏名又は名称と住所 */
+  creditor?: string;
+  creditorAddress?: string;
   /** 負担者ごとの金額 */
   bearers: { personId: string; amount: number }[];
 }

@@ -1,0 +1,189 @@
+{
+ "page": "t05",
+ "title": "第5表",
+ "fields": [
+  {
+   "id": "d.name",
+   "seed": [
+    2000,
+    490
+   ],
+   "size": 12
+  },
+  {
+   "id": "g01",
+   "seed": [
+    800,
+    900
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  },
+  {
+   "id": "g02",
+   "seed": [
+    1240,
+    868
+   ],
+   "align": "center",
+   "size": 11
+  },
+  {
+   "id": "g03",
+   "seed": [
+    1240,
+    964
+   ],
+   "align": "center",
+   "size": 11
+  },
+  {
+   "id": "g04",
+   "seed": [
+    1620,
+    916
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "g05",
+   "seed": [
+    2160,
+    916
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "g06",
+   "seed": [
+    490,
+    1336
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "g07",
+   "seed": [
+    830,
+    1336
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "g08",
+   "seed": [
+    1170,
+    1336
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "g09",
+   "seed": [
+    1520,
+    1336
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "g10",
+   "seed": [
+    1860,
+    1336
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "g11",
+   "seed": [
+    2200,
+    1336
+   ],
+   "align": "right",
+   "size": 10,
+   "suffix": true
+  },
+  {
+   "id": "g12",
+   "seed": [
+    420,
+    1510
+   ],
+   "align": "right",
+   "size": 11,
+   "suffix": true
+  },
+  {
+   "id": "g13",
+   "seed": [
+    980,
+    1510
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "g14",
+   "seed": [
+    1540,
+    1510
+   ],
+   "align": "right",
+   "size": 11,
+   "suffix": true
+  },
+  {
+   "id": "g15",
+   "seed": [
+    2100,
+    1510
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "g16",
+   "seed": [
+    1000,
+    1676
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "g17",
+   "seed": [
+    1540,
+    1676
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "g18",
+   "seed": [
+    2120,
+    1636
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "g19",
+   "seed": [
+    2120,
+    1796
+   ],
+   "align": "right",
+   "size": 11
+  }
+ ]
+}

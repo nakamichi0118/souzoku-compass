@@ -14,12 +14,16 @@ import { yen } from "./format";
 import type { PageFill, PageKey } from "./render";
 
 const ROWS_PER_PAGE = 8;
+/** 地目 → 第15表の番号（①田 ②畑 ③宅地 ④山林 ⑤その他の土地） */
+const LAND_CAT: Record<string, number> = { 田: 1, 畑: 2, 宅地: 3, 山林: 4, 雑種地: 5, その他: 5 };
 const ACQ_PER_ROW = 3;
 
 /** 付表の1項目（財産の明細＋分割が確定した取得者） */
 export interface ScheduleItem {
   values: Record<string, string | number | undefined>;
   value: number;
+  /** 第15表の番号（①〜㉘） */
+  cat: number;
   /** 分割が確定した取得者と取得価額。空なら未分割 */
   acquirers: { personId: string; amount: number }[];
 }
@@ -43,6 +47,7 @@ function landItems(line: AssetLine): ScheduleItem[] {
     const m = a.method;
     return [
       {
+        cat: LAND_CAT[a.landUse],
         value: line.valuation.value - line.reduction,
         acquirers: net,
         values: {
@@ -61,6 +66,7 @@ function landItems(line: AssetLine): ScheduleItem[] {
     const loc = splitLocation(a.location);
     return [
       {
+        cat: 10,
         value: line.valuation.value,
         acquirers: net,
         values: { kind: "家屋", use: "自用家屋", ...loc, unit: "1.0倍", fixed: yen(a.fixedAssetValue) },
@@ -85,6 +91,7 @@ function landItems(line: AssetLine): ScheduleItem[] {
     }
     return [
       {
+        cat: 3,
         value: land - line.reduction,
         acquirers: landBy,
         values: {
@@ -96,6 +103,7 @@ function landItems(line: AssetLine): ScheduleItem[] {
         },
       },
       {
+        cat: 10,
         value: total - land,
         acquirers: bldgBy,
         values: {
@@ -117,6 +125,7 @@ function stockItems(line: AssetLine): ScheduleItem[] {
   if (a.kind !== "listedStock" && a.kind !== "unlistedStock") return [];
   return [
     {
+      cat: a.kind === "listedStock" ? 19 : 18,
       value: line.valuation.value,
       acquirers: line.byPerson,
       values: {
@@ -135,6 +144,7 @@ function moneyItems(line: AssetLine): ScheduleItem[] {
   if (a.kind !== "deposit" && a.kind !== "cash") return [];
   return [
     {
+      cat: 23,
       value: line.valuation.value,
       acquirers: line.byPerson,
       values:
@@ -155,6 +165,7 @@ function otherItems(line: AssetLine): ScheduleItem[] {
   if (a.kind !== "household" && a.kind !== "other") return [];
   return [
     {
+      cat: a.kind === "household" ? 24 : 28,
       value: line.valuation.value,
       acquirers: line.byPerson,
       values: { kind: a.kind === "household" ? "家庭用財産" : "その他の財産", name: a.label },
@@ -169,6 +180,7 @@ function deemedItems(persons: PersonTax[]): ScheduleItem[] {
     const ins = p.insurance - p.insuranceExempt;
     if (ins > 0)
       items.push({
+        cat: 25,
         value: ins,
         acquirers: [{ personId: p.person.id, amount: ins }],
         values: { kind: "生命保険金等", name: "生命保険金等（第9表の課税金額）" },
@@ -176,6 +188,7 @@ function deemedItems(persons: PersonTax[]): ScheduleItem[] {
     const ret = p.retirement - p.retirementExempt;
     if (ret > 0)
       items.push({
+        cat: 26,
         value: ret,
         acquirers: [{ personId: p.person.id, amount: ret }],
         values: { kind: "退職手当金等", name: "退職手当金等（第10表の課税金額）" },
