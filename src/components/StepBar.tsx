@@ -11,6 +11,9 @@ export function StepBar({ current }: { current: string }) {
         <Link href="/" className="shrink-0 text-base font-bold text-teal-800">
           相続コンパス
         </Link>
+        <Link href="/plan" className="hidden shrink-0 rounded-full border border-stone-300 px-2.5 py-1 text-xs text-stone-600 hover:bg-stone-50 sm:inline">
+          ← 手続きリスト
+        </Link>
         <nav aria-label="進捗" className="flex-1 overflow-x-auto">
           <ol className="flex min-w-max items-center gap-1">
             {STEPS.map((s, i) => {

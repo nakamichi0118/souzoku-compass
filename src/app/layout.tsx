@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "相続コンパス",
-  description: "相続税の専門知識がなくても、Claudeの案内で相続税申告書と遺産分割協議書をつくれるWebアプリ",
+  description: "身近な人が亡くなった後の手続きと期限、相続税がかかるかが分かり、申告書と遺産分割協議書までつくれるWebアプリ",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
