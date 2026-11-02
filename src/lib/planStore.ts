@@ -2,6 +2,21 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { demoInterview, type Interview } from "@/domain/procedures/interview";
+import { buildTasks } from "@/domain/procedures/rules";
+
+const todayISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
+/** デモの回答のままなら、今日より前が期限の手続きと主な書類は済んだ状態から始める */
+const demoDone = () => [
+  ...buildTasks(demoInterview()).tasks.filter((t) => t.date < todayISO() && t.id !== "registration").map((t) => t.id),
+  "doc:deathCert",
+  "doc:kosekiDecedent",
+  "doc:kosekiHeirs",
+  "doc:balanceCert",
+];
 
 const IV_KEY = "souzoku-compass:interview:v1";
 const DONE_KEY = "souzoku-compass:done:v1";
@@ -30,13 +45,19 @@ export function usePlan() {
 
   useEffect(() => {
     setIv({ ...demoInterview(), ...read<Partial<Interview>>(IV_KEY, {}) });
-    // デモの回答のままなら、葬儀と死亡届は済んだ状態から始める
-    setDone(read<string[]>(DONE_KEY, ["funeral", "death-report", "shonanoka"]));
+    setDone(read<string[] | null>(DONE_KEY, null) ?? demoDone());
     setLoaded(true);
   }, []);
 
   const saveIv = useCallback((next: Interview) => {
-    setIv(next);
+    setIv((prev) => {
+      // 別の相続（亡くなった日が変わった）になったら、済みの記録を消す
+      if (prev.deathDate !== next.deathDate) {
+        setDone([]);
+        write(DONE_KEY, []);
+      }
+      return next;
+    });
     write(IV_KEY, next);
   }, []);
   const toggle = useCallback((id: string) => {
@@ -51,5 +72,14 @@ export function usePlan() {
     write(DONE_KEY, []);
   }, []);
 
-  return { iv, saveIv, done, toggle, resetDone, loaded };
+  const loadDemo = useCallback(() => {
+    const d = demoInterview();
+    const dd = demoDone();
+    setIv(d);
+    write(IV_KEY, d);
+    setDone(dd);
+    write(DONE_KEY, dd);
+  }, []);
+
+  return { iv, saveIv, done, toggle, resetDone, loadDemo, loaded };
 }

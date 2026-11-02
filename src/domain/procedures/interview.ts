@@ -18,6 +18,8 @@ export type HealthInsurance = "kokuho" | "kouki" | "shaho" | "unknown";
 export interface Interview {
   deathDate: string;
   decedentName: string;
+  /** 亡くなった方の最後の住所（提出先の案内に使う） */
+  address: string;
   // 家族
   spouse: boolean;
   children: number;
@@ -57,6 +59,7 @@ export interface Interview {
 export const blankInterview = (): Interview => ({
   deathDate: "",
   decedentName: "",
+  address: "",
   spouse: false,
   children: 0,
   grandchildrenOfPredeceased: 0,
@@ -159,24 +162,29 @@ export function needsFinalReturn(iv: Interview): "required" | "maybeRefund" | "n
 /** デモ用の聞き取り結果（架空） */
 export const demoInterview = (): Interview => ({
   ...blankInterview(),
-  deathDate: "2026-10-20",
+  // デモの相続税申告（src/data/demo.ts）と同じ架空の家族
+  deathDate: "2026-03-15",
   decedentName: "相続 太郎",
+  address: "東京都千代田区架空町一丁目2番3号",
   spouse: true,
-  children: 2,
+  children: 1,
+  grandchildrenOfPredeceased: 1,
+  minorHeir: true,
   will: "none",
   debts: "some",
-  homeValue: 32_000_000,
+  homeValue: 76_000_000,
   homeToFamily: true,
-  deposits: 18_000_000,
-  securities: 4_000_000,
-  insurance: 10_000_000,
+  otherRealEstate: 18_000_000,
+  deposits: 58_000_000,
+  securities: 6_000_000,
+  insurance: 20_000_000,
   otherAssets: 500_000,
-  debtAmount: 600_000,
-  funeralCost: 1_800_000,
+  debtAmount: 200_000,
+  funeralCost: 1_850_000,
   work: "pension",
   pension: "employees",
   health: "kouki",
-  householdHead: true,
-  car: true,
+  householdHead: false,
+  car: false,
   highMedical: true,
 });

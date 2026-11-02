@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback } from "react";
+import { AskCompass, useAsk } from "./compass/AskCompass";
+import { CompassAvatar } from "./compass/CompassKun";
 import { useCase } from "@/lib/store";
 import { summarizeForAssistant } from "@/lib/summary";
 
@@ -63,68 +65,24 @@ const GUIDES: Record<string, { lead: string; points: string[] }> = {
 export function GuidePanel({ step }: { step: string }) {
   const g = GUIDES[step];
   const { data, result } = useCase();
-  const [q, setQ] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [answer, setAnswer] = useState<string | null>(null);
-
-  async function ask() {
-    if (!q.trim()) return;
-    setBusy(true);
-    setAnswer(null);
-    try {
-      const res = await fetch("/api/assist", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ step, question: q, context: summarizeForAssistant(data, result) }),
-      });
-      const json = await res.json();
-      setAnswer(json.answer ?? json.error ?? "回答を取得できませんでした。");
-    } catch {
-      setAnswer("通信に失敗しました。時間をおいてお試しください。");
-    } finally {
-      setBusy(false);
-    }
-  }
-
+  const context = useCallback(() => summarizeForAssistant(data, result), [data, result]);
+  const state = useAsk(step, context);
   return (
-    <div className="space-y-3 rounded-xl border border-teal-200 bg-teal-50/60 p-4">
-      <div className="flex items-center gap-2">
-        <span className="grid h-7 w-7 place-items-center rounded-full bg-teal-700 text-xs font-bold text-white">C</span>
-        <p className="font-bold text-teal-900">Claudeの案内</p>
-      </div>
+    <div className="space-y-3">
       {g && (
-        <>
-          <p className="text-sm leading-relaxed text-stone-800">{g.lead}</p>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-stone-700">
-            {g.points.map((p) => (
-              <li key={p}>{p}</li>
-            ))}
-          </ul>
-        </>
+        <div className="flex items-start gap-3 rounded-2xl border border-sky-200 bg-white p-4">
+          <CompassAvatar size={44} />
+          <div className="min-w-0 space-y-2">
+            <p className="text-sm leading-relaxed text-stone-800">{g.lead}</p>
+            <ul className="list-disc space-y-1 pl-5 text-sm text-stone-700">
+              {g.points.map((p) => (
+                <li key={p}>{p}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
       )}
-      <div className="space-y-2 border-t border-teal-200 pt-3">
-        <label className="block text-sm font-medium text-stone-700" htmlFor="ask">
-          わからないことを質問する
-        </label>
-        <textarea
-          id="ask"
-          rows={2}
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="例：定期預金の利息はどう調べればいい？"
-          className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm"
-        />
-        <button
-          type="button"
-          onClick={ask}
-          disabled={busy || !q.trim()}
-          className="w-full rounded-lg bg-teal-700 px-3 py-2 text-sm font-semibold text-white disabled:bg-stone-300"
-        >
-          {busy ? "考えています…" : "Claudeに聞く"}
-        </button>
-        {answer && <div className="whitespace-pre-wrap rounded-lg bg-white p-3 text-sm leading-relaxed text-stone-800">{answer}</div>}
-        <p className="text-xs text-stone-500">Claudeは説明と入力の手助けをします。税額は計算エンジンが計算します。</p>
-      </div>
+      <AskCompass state={state} placeholder="例：定期預金の利息はどう調べればいい？" />
     </div>
   );
 }

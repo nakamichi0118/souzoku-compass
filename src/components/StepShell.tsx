@@ -12,6 +12,7 @@ import { TaxStep } from "./steps/TaxStep";
 import { DocumentsStep } from "./steps/DocumentsStep";
 import { STEPS, stepIndex } from "@/lib/steps";
 import { useCase } from "@/lib/store";
+import { markCompleted } from "@/lib/progress";
 
 const COMPONENTS: Record<string, React.ComponentType> = {
   decedent: DecedentStep,
@@ -24,7 +25,7 @@ const COMPONENTS: Record<string, React.ComponentType> = {
 };
 
 export function StepShell({ step }: { step: string }) {
-  const { loaded } = useCase();
+  const { loaded, update } = useCase();
   const idx = stepIndex(step);
   const Comp = COMPONENTS[step];
   const prev = STEPS[idx - 1];
@@ -50,7 +51,7 @@ export function StepShell({ step }: { step: string }) {
               <span />
             )}
             {next && (
-              <Link href={`/case/${next.slug}`} className="rounded-lg bg-teal-700 px-5 py-2 text-sm font-semibold text-white hover:bg-teal-800">
+              <Link href={`/case/${next.slug}`} onClick={() => update((c) => markCompleted(c, step))} className="rounded-lg bg-teal-700 px-5 py-2 text-sm font-semibold text-white hover:bg-teal-800">
                 次へ：{next.title} →
               </Link>
             )}

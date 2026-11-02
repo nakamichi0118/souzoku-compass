@@ -211,4 +211,6 @@ export interface Case {
   priorGifts: PriorGift[];
   /** 申告書の提出先税務署・提出日 */
   filing?: { taxOffice: string; submitDate?: ISODate };
+  /** 相続税申告の7ステップのうち「次へ」で完了にしたもの（進捗表示用。計算には使わない） */
+  progress?: { completed: string[] };
 }

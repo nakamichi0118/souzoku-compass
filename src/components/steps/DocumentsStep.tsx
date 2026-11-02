@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button, Card, Note } from "@/components/ui";
 import { buildDivisionDoc } from "@/documents/division";
 import { useCase } from "@/lib/store";
+import { markCompleted } from "@/lib/progress";
 
 async function download(url: string, body: unknown, filename: string) {
   const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -22,7 +23,7 @@ async function download(url: string, body: unknown, filename: string) {
 }
 
 export function DocumentsStep() {
-  const { data, result } = useCase();
+  const { data, result, update } = useCase();
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -39,6 +40,7 @@ export function DocumentsStep() {
     setErr(null);
     try {
       await download(url, data, name);
+      update((c) => markCompleted(c, "documents"));
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {

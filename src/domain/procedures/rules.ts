@@ -6,7 +6,8 @@
  * 期限の起算日は、簡単のため「亡くなった日（＝亡くなったことを知った日）」とする。
  */
 import { addDays, addMonths, addYears, skipWeekend, withinDays, yearOf, monthOf, type ISODate } from "./dates";
-import { estimate, needsFinalReturn, type Estimate, type Interview } from "./interview";
+import type { OfficeKind } from "./offices";
+import { estimate, needsFinalReturn, type Estimate, type Interview, type Verdict } from "./interview";
 
 export type Category = "届出" | "葬儀・法要" | "調べる・決める" | "お金の受け取り" | "税金" | "名義変更・解約" | "不動産";
 
@@ -36,6 +37,11 @@ export interface Rule {
   source?: { label: string; url?: string };
   /** アプリ内で続けて作業できる画面 */
   link?: { href: string; label: string };
+  /** 提出先の窓口の種類と担当課（住所から具体的な窓口を調べる） */
+  office?: OfficeKind | ((x: Ctx) => OfficeKind | undefined);
+  dept?: string;
+  /** 集める書類（documents.ts の id） */
+  docs?: string[] | ((x: Ctx) => string[]);
 }
 
 const d = (n: number) => (death: ISODate) => withinDays(death, n);
@@ -62,6 +68,9 @@ export const RULES: Rule[] = [
   // ---------------------------------------------------------------- 亡くなってすぐ
   {
     id: "death-report",
+    office: "city",
+    dept: "戸籍・住民の窓口（市民課など）",
+    docs: ["deathCert"],
     title: "死亡届の提出と火葬許可の申請",
     category: "届出",
     due: d(7),
@@ -96,6 +105,8 @@ export const RULES: Rule[] = [
   },
   {
     id: "pension-stop",
+    office: "pension",
+    docs: ["pensionCert", "deathCert"],
     title: ({ iv }) => (iv.pension === "employees" ? "年金の受給停止（厚生年金）" : "年金の受給停止（国民年金）"),
     category: "届出",
     due: (death, { iv }) => withinDays(death, iv.pension === "employees" ? 10 : 14),
@@ -109,6 +120,8 @@ export const RULES: Rule[] = [
   },
   {
     id: "health-insurance",
+    office: "city",
+    dept: "国民健康保険・後期高齢者医療・介護保険の窓口",
     title: "健康保険・介護保険の資格喪失と保険証の返却",
     category: "届出",
     due: d(14),
@@ -132,6 +145,8 @@ export const RULES: Rule[] = [
   },
   {
     id: "household-head",
+    office: "city",
+    dept: "住民票の窓口（市民課など）",
     title: "世帯主の変更届",
     category: "届出",
     due: d(14),
@@ -145,6 +160,8 @@ export const RULES: Rule[] = [
   // ---------------------------------------------------------------- 1〜3か月
   {
     id: "will-search",
+    office: ({ iv }) => (iv.will === "handwritten" ? "familyCourt" : iv.will === "handwrittenStored" ? "legalAffairs" : "notary"),
+    docs: ({ iv }) => (iv.will === "handwrittenStored" ? ["willCert"] : ["kosekiDecedent"]),
     title: ({ iv }) =>
       iv.will === "notarized"
         ? "公正証書遺言の内容の確認"
@@ -172,6 +189,9 @@ export const RULES: Rule[] = [
   },
   {
     id: "koseki",
+    office: "city",
+    dept: "戸籍の窓口",
+    docs: ["kosekiDecedent", "kosekiHeirs"],
     title: "戸籍を集めて相続人を確定する",
     category: "調べる・決める",
     due: m(1),
@@ -184,6 +204,9 @@ export const RULES: Rule[] = [
   },
   {
     id: "houtei-joho",
+    office: "legalAffairs",
+    dept: "法定相続情報の窓口",
+    docs: ["kosekiDecedent", "kosekiHeirs", "juminhyoJokyo", "houteiJoho"],
     title: "法定相続情報一覧図の写しの交付（任意）",
     category: "調べる・決める",
     due: m(2),
@@ -197,6 +220,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "estate-survey",
+    docs: ({ iv }) => [...(iv.homeValue > 0 || iv.otherRealEstate > 0 ? ["nayose", "touki"] : []), "credit"],
     title: "財産と借金を調べる",
     category: "調べる・決める",
     due: m(2),
@@ -210,6 +234,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "bank-notice",
+    docs: ({ iv }) => ["balanceCert", ...(iv.securities > 0 ? ["securitiesCert"] : [])],
     title: "銀行・証券会社への連絡と残高証明書の取得",
     category: "調べる・決める",
     due: m(1),
@@ -222,6 +247,9 @@ export const RULES: Rule[] = [
   },
   {
     id: "renounce",
+    office: "familyCourt",
+    dept: "家事受付",
+    docs: ["juminhyoJokyo", "kosekiDecedent", "kosekiHeirs"],
     title: "相続放棄・限定承認をするか決める",
     category: "調べる・決める",
     due: m(3),
@@ -241,6 +269,8 @@ export const RULES: Rule[] = [
   },
   {
     id: "special-agent",
+    office: "familyCourt",
+    dept: "家事受付",
     title: "未成年の相続人の特別代理人の選任",
     category: "調べる・決める",
     due: m(3),
@@ -252,6 +282,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "insurance-claim",
+    docs: ["deathCert", "kosekiHeirs", "insurancePay"],
     title: "生命保険金の請求",
     category: "お金の受け取り",
     due: m(2),
@@ -265,6 +296,9 @@ export const RULES: Rule[] = [
   },
   {
     id: "funeral-benefit",
+    office: ({ iv }) => (iv.health === "shaho" ? undefined : "city"),
+    dept: "国民健康保険・後期高齢者医療の窓口",
+    docs: ["funeralReceipt"],
     title: ({ iv }) => (iv.health === "shaho" ? "埋葬料の申請（健康保険）" : "葬祭費の申請"),
     category: "お金の受け取り",
     due: m(2),
@@ -280,6 +314,8 @@ export const RULES: Rule[] = [
   },
   {
     id: "high-medical",
+    office: ({ iv }) => (iv.health === "shaho" ? undefined : "city"),
+    dept: "国民健康保険・後期高齢者医療の窓口",
     title: "高額療養費の請求",
     category: "お金の受け取り",
     due: m(3),
@@ -292,6 +328,8 @@ export const RULES: Rule[] = [
   },
   {
     id: "survivor-pension",
+    office: "pension",
+    docs: ["pensionCert", "kosekiDecedent", "kosekiHeirs"],
     title: "遺族年金・未支給年金の請求",
     category: "お金の受け取り",
     due: m(3),
@@ -306,6 +344,8 @@ export const RULES: Rule[] = [
   // ---------------------------------------------------------------- 4か月
   {
     id: "final-return",
+    office: "taxOffice",
+    docs: ["withholding"],
     title: ({ iv }) => (needsFinalReturn(iv) === "required" ? "準確定申告（亡くなった年の所得税）" : "準確定申告（還付を受けられる場合）"),
     category: "税金",
     due: (death) => addMonths(death, 4),
@@ -324,6 +364,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "business-close",
+    office: "taxOffice",
     title: "個人事業の廃業届",
     category: "税金",
     due: m(1),
@@ -335,6 +376,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "business-blue",
+    office: "taxOffice",
     title: "事業を引き継ぐ場合の青色申告の承認申請",
     category: "税金",
     due: (death) => blueReturnDue(death),
@@ -348,6 +390,7 @@ export const RULES: Rule[] = [
   // ---------------------------------------------------------------- 10か月
   {
     id: "division",
+    docs: ["inkan"],
     title: "遺産分割協議と協議書の作成",
     category: "調べる・決める",
     due: (death, x) => addMonths(death, taxFiling(x) ? 8 : 10),
@@ -364,6 +407,8 @@ export const RULES: Rule[] = [
   },
   {
     id: "inheritance-tax",
+    office: "taxOffice",
+    docs: ({ iv }) => ["kosekiDecedent", "kosekiHeirs", "inkan", "balanceCert", ...(iv.securities > 0 ? ["securitiesCert"] : []), ...(iv.homeValue > 0 || iv.otherRealEstate > 0 ? ["touki", "hyokaCert"] : []), ...(iv.insurance > 0 ? ["insurancePay"] : []), "funeralReceipt"],
     title: ({ est }) =>
       est.verdict === "likely"
         ? "相続税の申告と納付"
@@ -433,6 +478,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "bank-transfer",
+    docs: ["kosekiDecedent", "kosekiHeirs", "inkan"],
     title: "預貯金の解約・名義変更",
     category: "名義変更・解約",
     due: m(10),
@@ -444,6 +490,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "securities-transfer",
+    docs: ["kosekiDecedent", "inkan"],
     title: "株式・投資信託の名義変更（移管）",
     category: "名義変更・解約",
     due: m(10),
@@ -509,6 +556,9 @@ export const RULES: Rule[] = [
   },
   {
     id: "registration",
+    office: "legalAffairs",
+    dept: "不動産登記の窓口",
+    docs: ["kosekiDecedent", "kosekiHeirs", "juminhyoJokyo", "juminhyoHeir", "hyokaCert", "inkan"],
     title: "不動産の相続登記",
     category: "不動産",
     due: y(3),
@@ -522,6 +572,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "sale-cost",
+    office: "taxOffice",
     title: "相続した不動産・株を売る場合の相続税の取得費加算",
     category: "税金",
     due: (death) => addYears(addMonths(death, 10), 3),
@@ -535,6 +586,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "vacant-home",
+    office: "taxOffice",
     title: "空き家になった実家を売る場合の3,000万円特別控除",
     category: "税金",
     due: (death) => vacantHomeDue(death),
@@ -563,13 +615,18 @@ export interface Task {
   limit?: { date: ISODate; text: string };
   source?: Rule["source"];
   link?: Rule["link"];
+  office?: OfficeKind;
+  dept?: string;
+  docs: string[];
 }
 
 const val = <T,>(v: T | ((x: Ctx) => T), x: Ctx): T => (typeof v === "function" ? (v as (x: Ctx) => T)(x) : v);
 
 /** 聞き取りの答えから、その家族に必要な手続きを期限順に並べる */
-export function buildTasks(iv: Interview): { tasks: Task[]; est: Estimate } {
-  const est = estimate(iv);
+export function buildTasks(iv: Interview, opts: { verdict?: Verdict } = {}): { tasks: Task[]; est: Estimate } {
+  const rough = estimate(iv);
+  // 相続税申告の画面で財産を評価済みなら、その計算結果による判定を優先する
+  const est = opts.verdict ? { ...rough, verdict: opts.verdict } : rough;
   const x: Ctx = { iv, est };
   const death = iv.deathDate;
   const tasks = RULES.filter((r) => r.applies(x)).map((r): Task => {
@@ -589,6 +646,9 @@ export function buildTasks(iv: Interview): { tasks: Task[]; est: Estimate } {
       limit: r.limit ? { date: skipWeekend(r.limit.due(death)), text: r.limit.text } : undefined,
       source: r.source,
       link: r.link,
+      office: r.office === undefined ? undefined : val(r.office, x),
+      dept: r.dept,
+      docs: r.docs ? val(r.docs, x) : [],
     };
   });
   tasks.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));

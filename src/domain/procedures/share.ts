@@ -15,11 +15,11 @@ const fromB64Url = (s: string) => {
   return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
 };
 
-/** 既定値と同じ項目は省いて短くする。名前は入れない */
+/** 既定値と同じ項目は省いて短くする。名前と住所は入れない */
 export function encodeInterview(iv: Interview): string {
   const base = blankInterview() as unknown as Record<string, unknown>;
   const diff: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(iv)) if (k !== "decedentName" && base[k] !== v) diff[k] = v;
+  for (const [k, v] of Object.entries(iv)) if (k !== "decedentName" && k !== "address" && base[k] !== v) diff[k] = v;
   return toB64Url(JSON.stringify(diff));
 }
 

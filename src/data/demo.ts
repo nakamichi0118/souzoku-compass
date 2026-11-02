@@ -6,6 +6,7 @@ import type { Case } from "@/domain/types";
 export const demoCase: Case = {
   id: "demo-1",
   title: "相続 太郎さんの相続（デモ）",
+  progress: { completed: ["decedent", "heirs", "assets", "debts"] },
   decedent: {
     name: "相続 太郎",
     kana: "ソウゾク タロウ",

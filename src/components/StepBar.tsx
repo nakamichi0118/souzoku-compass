@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { LogoMark } from "./compass/CompassKun";
 import { STEPS, stepIndex } from "@/lib/steps";
 
 export function StepBar({ current }: { current: string }) {
@@ -8,10 +9,11 @@ export function StepBar({ current }: { current: string }) {
   return (
     <header className="fixed inset-x-0 top-0 z-30 border-b border-stone-200 bg-white/95 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-2">
-        <Link href="/" className="shrink-0 text-base font-bold text-teal-800">
+        <Link href="/" className="flex shrink-0 items-center gap-1.5 text-base font-bold text-sky-950">
+          <LogoMark size={26} />
           相続コンパス
         </Link>
-        <Link href="/plan" className="hidden shrink-0 rounded-full border border-stone-300 px-2.5 py-1 text-xs text-stone-600 hover:bg-stone-50 sm:inline">
+        <Link href="/#progress" className="hidden shrink-0 rounded-full border border-stone-300 px-2.5 py-1 text-xs text-stone-600 hover:bg-stone-50 sm:inline">
           ← 手続きリスト
         </Link>
         <nav aria-label="進捗" className="flex-1 overflow-x-auto">

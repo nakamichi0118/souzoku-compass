@@ -4,6 +4,8 @@ import { blankInterview, demoInterview, estimate, needsFinalReturn, type Intervi
 import { blueReturnDue, buildTasks, vacantHomeDue } from "../procedures/rules";
 import { googleEventUrl, toICS } from "../procedures/calendar";
 import { decodeInterview, encodeInterview } from "../procedures/share";
+import { DOCS } from "../procedures/documents";
+import { cityOf, isTokyoWard } from "../procedures/offices";
 
 const iv = (p: Partial<Interview>): Interview => ({ ...blankInterview(), deathDate: "2026-01-06", ...p });
 
@@ -52,7 +54,7 @@ describe("相続税がかかるかの目安", () => {
     expect(e.taxableTotal).toBe(2_000_000);
   });
   it("特例を使えば基礎控除以下になる場合は「特例のための申告」", () => {
-    const e = estimate(demoInterview());
+    const e = estimate(iv({ spouse: true, children: 2, homeValue: 32_000_000, homeToFamily: true, deposits: 18_000_000, securities: 4_000_000, insurance: 10_000_000, otherAssets: 500_000, debtAmount: 600_000, funeralCost: 1_800_000 }));
     expect(e.heirCount).toBe(3);
     expect(e.taxableTotal).toBe(52_100_000);
     expect(e.verdict).toBe("relief");
@@ -131,7 +133,7 @@ describe("カレンダー", () => {
   it("iCalendar 形式で、終日の予定として出力する", () => {
     const ics = toICS(tasks, { name: "相続の手続き", stamp: "20261102T000000Z" });
     expect(ics.startsWith("BEGIN:VCALENDAR\r\n")).toBe(true);
-    expect(ics).toContain("DTSTART;VALUE=DATE:20261026");
+    expect(ics).toContain("DTSTART;VALUE=DATE:20260323");
     expect(ics.match(/BEGIN:VEVENT/g)?.length).toBe(tasks.length);
     for (const line of ics.split("\r\n")) expect(new TextEncoder().encode(line).length).toBeLessThanOrEqual(75);
   });
@@ -143,7 +145,29 @@ describe("カレンダー", () => {
   it("聞き取りの答えを URL 用に圧縮して戻せる（名前は含めない）", () => {
     const d = demoInterview();
     const back = decodeInterview(encodeInterview(d))!;
-    expect(back).toEqual({ ...d, decedentName: "" });
+    expect(back).toEqual({ ...d, decedentName: "", address: "" });
     expect(decodeInterview("@@@")).toBeNull();
+  });
+});
+
+describe("書類と提出先", () => {
+  it("手続きが参照する書類はすべて定義されている", () => {
+    const all = buildTasks(iv({ spouse: true, children: 2, homeValue: 1, otherRealEstate: 1, securities: 1, insurance: 1, deposits: 1, work: "selfEmployed", pension: "employees", will: "handwrittenStored" })).tasks;
+    for (const t of all) for (const d of t.docs) expect(DOCS[d], `${t.id}:${d}`).toBeDefined();
+    expect(all.find((t) => t.id === "death-report")!.office).toBe("city");
+    expect(all.find((t) => t.id === "inheritance-tax")!.office).toBe("taxOffice");
+    expect(all.find((t) => t.id === "will-search")!.office).toBe("legalAffairs");
+  });
+  it("住所から市区町村を取り出す", () => {
+    expect(cityOf("東京都千代田区架空町一丁目2番3号")).toEqual({ pref: "東京都", city: "千代田区" });
+    expect(cityOf("神奈川県横浜市中区真砂町1-1")).toEqual({ pref: "神奈川県", city: "横浜市中区" });
+    expect(cityOf("北海道虻田郡倶知安町北1条")).toEqual({ pref: "北海道", city: "虻田郡倶知安町" });
+    expect(isTokyoWard("東京都千代田区架空町")).toBe(true);
+    expect(isTokyoWard("東京都八王子市元本郷町")).toBe(false);
+  });
+  it("評価済みの計算結果があれば判定を差し替える", () => {
+    const t = buildTasks(iv({ children: 1 }), { verdict: "likely" }).tasks.find((t) => t.id === "inheritance-tax")!;
+    expect(t.optional).toBe(false);
+    expect(t.title).toBe("相続税の申告と納付");
   });
 });

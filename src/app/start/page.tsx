@@ -5,11 +5,11 @@ import { useRouter } from "next/navigation";
 import { Card, Note, TextInput } from "@/components/ui";
 import { Choice, Counter, ManYen, Q, YesNo } from "@/components/plan/inputs";
 import { isValidDate } from "@/domain/procedures/dates";
-import { blankInterview, demoInterview, estimate, type Interview } from "@/domain/procedures/interview";
+import { blankInterview, estimate, type Interview } from "@/domain/procedures/interview";
 import { usePlan } from "@/lib/planStore";
 
 export default function StartPage() {
-  const { iv, saveIv, loaded } = usePlan();
+  const { iv, saveIv, loadDemo, loaded } = usePlan();
   const router = useRouter();
   const set = <K extends keyof Interview>(k: K, v: Interview[K]) => saveIv({ ...iv, [k]: v });
   const est = estimate(iv);
@@ -27,7 +27,7 @@ export default function StartPage() {
         答えにあわせて、あなたの家族に必要な手続きだけを期限つきで並べます。金額はだいたいで大丈夫です。分からない質問は「分からない」のままで進めます。
       </p>
       <div className="mt-3 flex flex-wrap gap-2 text-sm">
-        <button type="button" className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 hover:bg-stone-50" onClick={() => saveIv(demoInterview())}>
+        <button type="button" className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 hover:bg-stone-50" onClick={loadDemo}>
           デモの回答を入れる
         </button>
         <button type="button" className="rounded-lg px-3 py-1.5 text-stone-600 hover:bg-stone-100" onClick={() => saveIv({ ...blankInterview() })}>
@@ -39,6 +39,9 @@ export default function StartPage() {
         <Card title="1. 亡くなった方">
           <Q label="お名前（任意）">
             <TextInput value={iv.decedentName} onChange={(e) => set("decedentName", e.target.value)} placeholder="例：相続 太郎" />
+          </Q>
+          <Q label="亡くなった方の最後の住所" hint="死亡届や相続税申告の提出先（市区町村役場・税務署など）を調べるのに使います。この端末にだけ保存されます。">
+            <TextInput value={iv.address} onChange={(e) => set("address", e.target.value)} placeholder="例：東京都千代田区架空町一丁目2番3号" />
           </Q>
           <Q label="亡くなった日" hint="期限はこの日から数えます。">
             <TextInput type="date" value={iv.deathDate} onChange={(e) => set("deathDate", e.target.value)} className="max-w-56" />
@@ -207,7 +210,7 @@ export default function StartPage() {
           <button
             type="button"
             disabled={!dateOk}
-            onClick={() => router.push("/plan")}
+            onClick={() => router.push("/#progress")}
             className="rounded-lg bg-teal-700 px-6 py-3 font-semibold text-white hover:bg-teal-800 disabled:bg-stone-300"
           >
             手続きリストを見る →
