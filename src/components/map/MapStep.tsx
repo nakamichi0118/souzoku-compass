@@ -19,6 +19,7 @@ import { parseRouteNotation } from "@/domain/valuation/rosenka";
 import { DEFAULT_PAPER, type Frame, frameCorners, framePairs } from "@/domain/geo/frame";
 import { useCase } from "@/lib/store";
 import type { GeoPair, MapApi, Sheet } from "./MapView";
+import type { FindResult } from "@/server/rosenkaIndex";
 import { cropAround, loadImage, renderPdfPage } from "./sheet";
 
 const MapView = dynamic(() => import("./MapView"), { ssr: false, loading: () => <div className="h-[520px] animate-pulse rounded-xl bg-stone-100" /> });
@@ -87,6 +88,8 @@ function MapWorkspace() {
   const [hits, setHits] = useState<{ title: string; lat: number; lng: number }[]>([]);
   const [town, setTown] = useState<string | null>(null);
   const [reading, setReading] = useState<ReadResult | null>(null);
+  const [found, setFound] = useState<FindResult | null>(null);
+  const [finding, setFinding] = useState(false);
   const [notation, setNotation] = useState(land?.rosenkaSheet?.notation ?? "");
 
   // 土地を切り替えたら保存済みの位置合わせを読み直す
@@ -131,11 +134,31 @@ function MapWorkspace() {
     });
   }
 
+  /** クリックした場所の路線価図を国税庁サイトから探し、見つかれば読み込む */
+  async function findAt(ll: [number, number]) {
+    setFinding(true);
+    try {
+      const res = await fetch(`/api/rosenka/find?lat=${ll[0]}&lng=${ll[1]}`);
+      const json = (await res.json()) as FindResult & { error?: string };
+      if (!res.ok) throw new Error(json.error);
+      setFound(json);
+      if (json.town) setTown(json.town);
+      const first = json.sheets[0];
+      if (first && !json.sheets.some((x) => x.pdfUrl === sheetUrl)) await loadFromUrl(first.pdfUrl);
+    } catch (e) {
+      setFound(null);
+      setError(`路線価図を自動で探せませんでした。下の手順で国税庁サイトから開いてください。${e instanceof Error && e.message ? `（${e.message}）` : ""}`);
+    } finally {
+      setFinding(false);
+    }
+  }
+
   async function setPropertyAt(ll: [number, number]) {
     patchLand({ geo: { lat: ll[0], lng: ll[1] } });
     if (!frame) setFrame({ center: ll, scale: DEFAULT_SCALE, rotation: 0 });
     setMode("idle");
     setTown(null);
+    void findAt(ll);
     try {
       const res = await fetch(`/api/geo/reverse?lat=${ll[0]}&lon=${ll[1]}`);
       const json = await res.json();
@@ -154,14 +177,19 @@ function MapWorkspace() {
     });
   }
 
-  async function loadFromUrl() {
+  async function loadFromUrl(url = sheetUrl) {
     await run("路線価図を読み込んでいます", async () => {
-      const res = await fetch(`/api/rosenka/sheet?url=${encodeURIComponent(sheetUrl)}`);
+      if (url !== sheetUrl) {
+        setSheetUrl(url);
+        setPairs([]); // 基準点は図ごとのものなので、別の図に替えたら消す
+        setPageNo(1);
+      }
+      const res = await fetch(`/api/rosenka/sheet?url=${encodeURIComponent(url)}`);
       if (!res.ok) throw new Error((await res.json()).error ?? "読み込めませんでした。");
       const buf = await res.arrayBuffer();
       if (res.headers.get("content-type")?.includes("pdf")) {
         setPdfData(buf);
-        await showPdf(buf, pageNo);
+        await showPdf(buf, url !== sheetUrl ? 1 : pageNo);
       } else {
         setPdfData(null);
         setSheet(await loadImage(new Blob([buf])));
@@ -197,7 +225,10 @@ function MapWorkspace() {
 
   function onMapClick(ll: [number, number]) {
     if (mode === "property" || (mode === "idle" && !property)) void setPropertyAt(ll);
-    else if (mode === "idle") setFrame((f) => ({ scale: DEFAULT_SCALE, rotation: 0, ...f, center: ll }));
+    else if (mode === "idle") {
+      setFrame((f) => ({ scale: DEFAULT_SCALE, rotation: 0, ...f, center: ll }));
+      void findAt(ll);
+    }
     else if (mode === "mapPoint" && pendingImg) {
       setPairs((p) => [...p, { img: pendingImg, latlng: ll }]);
       setPendingImg(null);
@@ -327,6 +358,38 @@ function MapWorkspace() {
         </Card>
 
         <Card title="② 国税庁の路線価図を読み込む">
+          {finding && <p className="mb-3 text-sm text-teal-800">この場所の路線価図を国税庁サイトで探しています…</p>}
+          {found && (
+            <div className="mb-4 rounded-lg border border-teal-200 bg-teal-50/60 p-3 text-sm">
+              <p className="font-semibold text-stone-800">
+                {[found.city, found.town].filter(Boolean).join(" ")}の路線価図（令和8年分）
+              </p>
+              {found.sheets.length > 0 ? (
+                <>
+                  <p className="mt-1 text-stone-600">この町丁目が載っている図です。土地が写っている図を選んでください。</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {found.sheets.map((x) => (
+                      <button
+                        key={x.no}
+                        type="button"
+                        onClick={() => loadFromUrl(x.pdfUrl)}
+                        className={`rounded-md border px-3 py-1 font-mono text-sm ${x.pdfUrl === sheetUrl ? "border-teal-700 bg-teal-700 text-white" : "border-stone-300 bg-white hover:border-teal-500"}`}
+                      >
+                        {x.no}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="mt-1 text-stone-600">{found.message}</p>
+              )}
+              {found.indexUrl && (
+                <a href={found.indexUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block text-teal-800 underline">
+                  国税庁サイトの町丁名索引を開く
+                </a>
+              )}
+            </div>
+          )}
           <ol className="mb-3 list-decimal space-y-1 pl-5 text-sm text-stone-700">
             <li>
               <a href="https://www.rosenka.nta.go.jp/" target="_blank" rel="noreferrer" className="font-semibold text-teal-800 underline">
@@ -338,7 +401,7 @@ function MapWorkspace() {
           </ol>
           <div className="flex gap-2">
             <TextInput value={sheetUrl} onChange={(e) => setSheetUrl(e.target.value)} placeholder="https://www.rosenka.nta.go.jp/main_r08/…/prices/pdf/….pdf" />
-            <Button variant="secondary" className="shrink-0 whitespace-nowrap" onClick={loadFromUrl} disabled={!sheetUrl.trim() || !!busy}>
+            <Button variant="secondary" className="shrink-0 whitespace-nowrap" onClick={() => loadFromUrl()} disabled={!sheetUrl.trim() || !!busy}>
               読込
             </Button>
           </div>
