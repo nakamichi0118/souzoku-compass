@@ -43,7 +43,7 @@ export function OfficeLookup({ kind, dept, address, forProperty }: { kind: Offic
       <p className="text-sm text-stone-600">
         提出先：{OFFICE_LABEL[actual]}
         {dept ? `（${dept}）` : ""}。{" "}
-        <Link href="/start" className="text-sky-800 underline">
+        <Link href="/my/hearing" className="text-sky-800 underline">
           亡くなった方の住所
         </Link>
         を入れると、具体的な窓口と連絡先を表示します。

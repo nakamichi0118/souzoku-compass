@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LogoMark } from "./compass/CompassKun";
+import { HeaderCta } from "./HeaderCta";
 
 export function SiteHeader() {
   return (
@@ -10,22 +11,19 @@ export function SiteHeader() {
           相続コンパス
         </Link>
         <nav className="hidden flex-1 gap-6 text-sm font-medium text-stone-700 md:flex">
-          <Link href="/#progress" className="hover:text-sky-800">
-            進み具合
+          <Link href="/#how" className="hover:text-sky-800">
+            使い方
           </Link>
           <Link href="/#features" className="hover:text-sky-800">
-            特長
+            できること
           </Link>
-          <Link href="/case/decedent" className="hover:text-sky-800">
-            相続税申告
-          </Link>
-          <Link href="/case/map" className="hover:text-sky-800">
-            土地の評価
+          <Link href="/demo" className="hover:text-sky-800">
+            デモを見る
           </Link>
         </nav>
-        <Link href="/start" className="ml-auto rounded-full bg-sky-700 px-5 py-2 text-sm font-bold text-white shadow hover:bg-sky-800 md:ml-0">
-          はじめる
-        </Link>
+        <div className="ml-auto md:ml-0">
+          <HeaderCta />
+        </div>
       </div>
     </header>
   );

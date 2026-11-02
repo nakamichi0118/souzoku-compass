@@ -18,7 +18,7 @@ export async function GET(req: Request) {
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
   const ics = toICS(
     tasks.filter((t) => !t.optional),
-    { name: "相続の手続き（相続コンパス）", stamp, appUrl: `${origin}/plan` },
+    { name: "相続の手続き（相続コンパス）", stamp, appUrl: `${origin}/my` },
   );
   return new Response(ics, {
     headers: {

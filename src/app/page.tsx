@@ -1,8 +1,15 @@
 /* eslint-disable @next/next/no-img-element */
 import Link from "next/link";
 import { Bubble, CompassKun } from "@/components/compass/CompassKun";
-import { Dashboard } from "@/components/plan/Dashboard";
+import { HeaderCta } from "@/components/HeaderCta";
 import { SiteHeader } from "@/components/SiteHeader";
+
+const HOW = [
+  { title: "はじめる", text: "お名前とメールアドレスだけの簡単な登録で、あなたのマイページを作ります。" },
+  { title: "質問に答える", text: "家族構成や財産のおおよその額など、約3分の質問に答えます。" },
+  { title: "やることが分かる", text: "必要な手続き・期限・提出先・集める書類がマイページに並びます。相続税がかかるかも分かります。" },
+  { title: "書類を作る", text: "財産を評価して、相続税申告書・遺産分割協議書・登記申請書のPDFを作ります。" },
+];
 
 const FLOW = ["聞き取り", "相続税の判定", "手続き", "書類集め", "申告書"];
 
@@ -36,10 +43,8 @@ export default function Home() {
               いくつかの質問に答えるだけで、必要な手続き・集める書類・提出先がわかり、申告書の完成まで進めます。
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
-              <Link href="/start" className="rounded-full bg-sky-700 px-7 py-3.5 font-bold text-white shadow-lg hover:bg-sky-800">
-                はじめる（約3分） ›
-              </Link>
-              <Link href="#progress" className="rounded-full border-2 border-sky-700 bg-white px-7 py-3 font-bold text-sky-800 hover:bg-sky-50">
+              <HeaderCta big />
+              <Link href="/demo" className="rounded-full border-2 border-sky-700 bg-white px-7 py-3 font-bold text-sky-800 hover:bg-sky-50">
                 ▶ デモを見る
               </Link>
             </div>
@@ -73,13 +78,26 @@ export default function Home() {
         </div>
       </section>
 
-      <main className="mx-auto max-w-4xl px-4">
-        <section id="progress" className="scroll-mt-20 py-10">
-          <h2 className="mb-1 text-2xl font-bold text-sky-950">あなたの相続の進み具合</h2>
-          <p className="mb-5 text-sm text-stone-600">手続き・書類集め・相続税の申告書づくりを、ひとつの画面で追えます。はじめはデモの家族（すべて架空）が表示されています。</p>
-          <Dashboard />
-        </section>
-      </main>
+      <section id="how" className="scroll-mt-20 py-12">
+        <div className="mx-auto max-w-6xl px-4">
+          <h2 className="text-center text-2xl font-bold text-sky-950">使い方はかんたん</h2>
+          <ol className="mt-6 grid gap-4 md:grid-cols-4">
+            {HOW.map((h, i) => (
+              <li key={h.title} className="relative rounded-2xl border border-sky-100 bg-white p-5 shadow-sm">
+                <span className="grid h-9 w-9 place-items-center rounded-full bg-sky-700 font-bold text-white">{i + 1}</span>
+                <h3 className="mt-3 font-bold text-sky-950">{h.title}</h3>
+                <p className="mt-1 text-sm leading-relaxed text-stone-600">{h.text}</p>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-5 text-center text-sm text-stone-600">
+            まずは雰囲気を見たい方は{" "}
+            <Link href="/demo" className="font-semibold text-sky-800 underline">
+              デモの家族（すべて架空）でマイページを見る
+            </Link>
+          </p>
+        </div>
+      </section>
 
       <section id="features" className="scroll-mt-20 bg-white py-12">
         <div className="mx-auto grid max-w-6xl gap-5 px-4 md:grid-cols-3">
@@ -99,7 +117,7 @@ export default function Home() {
       </section>
 
       <footer className="mx-auto max-w-6xl px-4 py-8 text-xs leading-relaxed text-stone-500">
-        相続コンパスの案内役「コンパスくん」は Claude（Anthropic）を使っています。手続きの期限・相続税の計算は決まったルールと計算エンジンで行い、AIは関与しません。デモはすべて架空のダミーデータです。申告書様式の出典：国税庁「相続税の申告書等の様式一覧（令和8年分用）」を加工して作成。手続きの内容は一般的な案内で、自治体や窓口によって異なる場合があります。
+        デモはすべて架空のダミーデータです。申告書様式の出典：国税庁「相続税の申告書等の様式一覧（令和8年分用）」を加工して作成。手続きの内容は一般的な案内で、自治体や窓口によって異なる場合があります。
       </footer>
     </>
   );

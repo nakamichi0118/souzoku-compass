@@ -20,6 +20,8 @@ export interface Interview {
   decedentName: string;
   /** 亡くなった方の最後の住所（提出先の案内に使う） */
   address: string;
+  /** あなたから見た亡くなった方（例：父・母・夫・妻）。窓口への連絡の文例に使う */
+  myRelation: string;
   // 家族
   spouse: boolean;
   children: number;
@@ -60,6 +62,7 @@ export const blankInterview = (): Interview => ({
   deathDate: "",
   decedentName: "",
   address: "",
+  myRelation: "",
   spouse: false,
   children: 0,
   grandchildrenOfPredeceased: 0,
@@ -166,6 +169,7 @@ export const demoInterview = (): Interview => ({
   deathDate: "2026-03-15",
   decedentName: "相続 太郎",
   address: "東京都千代田区架空町一丁目2番3号",
+  myRelation: "父",
   spouse: true,
   children: 1,
   grandchildrenOfPredeceased: 1,

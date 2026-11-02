@@ -1,21 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { LogoMark } from "./compass/CompassKun";
 import { STEPS, stepIndex } from "@/lib/steps";
 
 export function StepBar({ current }: { current: string }) {
   const idx = stepIndex(current);
   return (
-    <header className="fixed inset-x-0 top-0 z-30 border-b border-stone-200 bg-white/95 backdrop-blur">
-      <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-2">
-        <Link href="/" className="flex shrink-0 items-center gap-1.5 text-base font-bold text-sky-950">
-          <LogoMark size={26} />
-          相続コンパス
-        </Link>
-        <Link href="/#progress" className="hidden shrink-0 rounded-full border border-stone-300 px-2.5 py-1 text-xs text-stone-600 hover:bg-stone-50 sm:inline">
-          ← 手続きリスト
-        </Link>
+    <div className="border-b border-stone-200 bg-white">
+      <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-2">
+        <span className="hidden shrink-0 text-xs font-bold text-stone-500 sm:inline">相続税申告</span>
         <nav aria-label="進捗" className="flex-1 overflow-x-auto">
           <ol className="flex min-w-max items-center gap-1">
             {STEPS.map((s, i) => {
@@ -50,6 +43,6 @@ export function StepBar({ current }: { current: string }) {
           </ol>
         </nav>
       </div>
-    </header>
+    </div>
   );
 }

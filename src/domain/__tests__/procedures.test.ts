@@ -145,7 +145,7 @@ describe("カレンダー", () => {
   it("聞き取りの答えを URL 用に圧縮して戻せる（名前は含めない）", () => {
     const d = demoInterview();
     const back = decodeInterview(encodeInterview(d))!;
-    expect(back).toEqual({ ...d, decedentName: "", address: "" });
+    expect(back).toEqual({ ...d, decedentName: "", address: "", myRelation: "" });
     expect(decodeInterview("@@@")).toBeNull();
   });
 });

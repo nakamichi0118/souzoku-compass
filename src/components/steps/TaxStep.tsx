@@ -174,8 +174,8 @@ export function TaxStep() {
         </Card>
       )}
 
-      <Card title="Claudeによる説明" actions={<Button onClick={askExplain} disabled={busy}>{busy ? "作成中…" : "この結果を説明してもらう"}</Button>}>
-        {explain ? <p className="whitespace-pre-wrap text-sm leading-relaxed">{explain}</p> : <p className="text-sm text-stone-500">計算はエンジンが行い、Claudeはその結果をことばで説明します。</p>}
+      <Card title="コンパスくんの説明" actions={<Button onClick={askExplain} disabled={busy}>{busy ? "作成中…" : "この結果を説明してもらう"}</Button>}>
+        {explain ? <p className="whitespace-pre-wrap text-sm leading-relaxed">{explain}</p> : <p className="text-sm text-stone-500">「この結果を説明してもらう」を押すと、コンパスくんが計算結果をやさしく説明します。</p>}
       </Card>
 
       {r.warnings.map((w) => (

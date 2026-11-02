@@ -13,6 +13,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { StepBar } from "@/components/StepBar";
+import { AppHeader } from "@/components/shell/AppShell";
 import { Button, Card, Check, Field, Note, Select, TextInput, YenInput, fmt } from "@/components/ui";
 import type { LandAsset } from "@/domain/types";
 import { parseRouteNotation } from "@/domain/valuation/rosenka";
@@ -41,9 +42,10 @@ interface ReadResult {
 
 export function MapStep() {
   return (
-    <>
+    <div className="min-h-screen bg-gradient-to-b from-sky-50/70 to-stone-50">
+      <AppHeader />
       <StepBar current="assets" />
-      <main className="mx-auto max-w-6xl space-y-5 px-4 pb-24 pt-20">
+      <main className="mx-auto max-w-6xl space-y-5 px-4 pb-24 pt-6">
         <div>
           <p className="text-sm font-semibold text-teal-700">ステップ 3 / 7 ・ 財産</p>
           <h1 className="text-2xl font-bold text-stone-900">地図で土地を選び、路線価図を重ねる</h1>
@@ -52,7 +54,7 @@ export function MapStep() {
           <MapWorkspace />
         </Suspense>
       </main>
-    </>
+    </div>
   );
 }
 
@@ -249,7 +251,7 @@ function MapWorkspace() {
       return;
     }
     setSheetProperty(at);
-    await run("Claude が路線価図を読んでいます", async () => {
+    await run("コンパスくんが路線価図を読んでいます", async () => {
       const fd = new FormData();
       fd.append("image", await cropAround(sheet, at), "crop.png");
       const res = await fetch("/api/rosenka/read", { method: "POST", body: fd });
@@ -528,7 +530,7 @@ function MapWorkspace() {
       <Card title="④ 路線価を確認して入力する">
         <div className="flex flex-wrap items-center gap-3">
           <Button onClick={readWithClaude} disabled={!sheet || !!busy}>
-            土地の周りの路線価を Claude に読み取ってもらう
+            土地の周りの路線価をコンパスくんに読み取ってもらう
           </Button>
           {(!property || effectivePairs.length < 2) && (
             <Button variant="secondary" onClick={() => setMode("sheetProperty")} disabled={!sheet}>
@@ -580,7 +582,7 @@ function MapWorkspace() {
           </Note>
         )}
         <p className="mt-3 text-xs text-stone-500">
-          路線価の読み取りは Claude による候補です。必ず路線価図と見比べてから反映してください。角地・二方路線・不整形地などは補正が必要になる場合があります。
+          路線価の読み取りはコンパスくんによる候補です。必ず路線価図と見比べてから反映してください。角地・二方路線・不整形地などは補正が必要になる場合があります。
         </p>
       </Card>
     </div>

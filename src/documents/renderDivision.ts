@@ -4,12 +4,12 @@ import { PDFDocument, type PDFFont, type PDFPage, rgb } from "pdf-lib";
 import { loadFont, wrap } from "@/forms/render";
 import type { DivisionDoc } from "./division";
 
-const W = 595.28;
+export const W = 595.28;
 const H = 841.89;
-const M = { left: 62, right: 62, top: 70, bottom: 64 };
-const INK = rgb(0.08, 0.08, 0.08);
+export const M = { left: 62, right: 62, top: 70, bottom: 64 };
+export const INK = rgb(0.08, 0.08, 0.08);
 
-class Writer {
+export class Writer {
   page!: PDFPage;
   y = 0;
   pageNo = 0;

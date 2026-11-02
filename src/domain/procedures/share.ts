@@ -19,7 +19,7 @@ const fromB64Url = (s: string) => {
 export function encodeInterview(iv: Interview): string {
   const base = blankInterview() as unknown as Record<string, unknown>;
   const diff: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(iv)) if (k !== "decedentName" && k !== "address" && base[k] !== v) diff[k] = v;
+  for (const [k, v] of Object.entries(iv)) if (k !== "decedentName" && k !== "address" && k !== "myRelation" && base[k] !== v) diff[k] = v;
   return toB64Url(JSON.stringify(diff));
 }
 

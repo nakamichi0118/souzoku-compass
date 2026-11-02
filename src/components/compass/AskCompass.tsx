@@ -55,7 +55,6 @@ export function AskCompass({ state, placeholder, lead, id }: { state: AskState; 
       <button type="button" onClick={() => ask(q)} disabled={busy || !q.trim()} className="w-full rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:bg-stone-300">
         {busy ? "考えています…" : "コンパスくんに聞く"}
       </button>
-      <p className="text-xs text-stone-500">コンパスくんの回答は Claude（Anthropic のAI）が作っています。期限・税額は決まったルールと計算エンジンで出しており、コンパスくんは説明だけを担当します。</p>
     </section>
   );
 }

@@ -1,74 +1,23 @@
 "use client";
 
-import { useState } from "react";
 import { Button, Card, Note, fmt } from "@/components/ui";
-import type { Asset } from "@/domain/types";
-import { newId, useCase } from "@/lib/store";
-
-interface Extracted {
-  documentType: string;
-  assets: {
-    kind: "deposit" | "land" | "building" | "insurance" | "listedStock" | "other";
-    label: string;
-    amount: number | null;
-    accruedInterest: number | null;
-    location: string | null;
-    areaSqm: number | null;
-    fixedAssetValue: number | null;
-    date: string | null;
-    evidence: string;
-  }[];
-  notes: string[];
-}
+import { toAsset, useExtract, type ExtractedAsset } from "@/lib/extract";
+import { useCase } from "@/lib/store";
 
 /** 書類の写真・PDFから Claude が財産の入力候補を読み取る。登録は本人が確認してから */
 export function ExtractPanel() {
   const { update, data } = useCase();
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [res, setRes] = useState<Extracted | null>(null);
-
-  async function onFile(f: File) {
-    setBusy(true);
-    setErr(null);
-    setRes(null);
-    try {
-      const fd = new FormData();
-      fd.append("file", f);
-      const r = await fetch("/api/extract", { method: "POST", body: fd });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.error ?? "読み取りに失敗しました");
-      setRes(j);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function adopt(x: Extracted["assets"][number]) {
-    const id = newId();
-    let a: Asset;
-    if (x.kind === "land") {
-      a = { id, kind: "land", label: x.label, location: x.location ?? "", areaSqm: x.areaSqm ?? 0, landUse: "宅地", method: { type: "multiplier", fixedAssetValue: x.fixedAssetValue ?? 0, multiplier: 1.1 } };
-    } else if (x.kind === "building") {
-      a = { id, kind: "building", label: x.label, location: x.location ?? "", fixedAssetValue: x.fixedAssetValue ?? 0 };
-    } else if (x.kind === "insurance") {
-      a = { id, kind: "insurance", label: x.label, amount: x.amount ?? 0, recipientId: data.persons.find((p) => !p.predeceased)?.id ?? "" };
-    } else {
-      a = { id, kind: x.kind === "deposit" ? "deposit" : "other", label: x.label, amount: x.amount ?? 0, accruedInterest: x.accruedInterest ?? undefined };
-    }
-    update((c) => ({ ...c, assets: [...c.assets, a] }));
-  }
+  const { busy, err, res, read } = useExtract();
+  const adopt = (x: ExtractedAsset) => update((c) => ({ ...c, assets: [...c.assets, toAsset(x, data)] }));
 
   return (
-    <Card title="書類から読み取る（Claude）">
+    <Card title="書類から読み取る（コンパスくん）">
       <p className="mb-3 text-sm text-stone-600">
-        残高証明書、固定資産税の課税明細書、保険金の支払通知書などの写真やPDFを選ぶと、Claudeが内容を読み取って入力候補を作ります。登録する前に、必ず書類と見比べてください。
+        残高証明書、固定資産税の課税明細書、保険金の支払通知書などの写真やPDFを選ぶと、コンパスくんが内容を読み取って入力候補を作ります。登録する前に、必ず書類と見比べてください。
       </p>
       <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-teal-600 px-4 py-3 text-sm font-semibold text-teal-800 hover:bg-teal-50">
         {busy ? "読み取り中…" : "📄 書類を選ぶ（画像・PDF）"}
-        <input type="file" accept="image/*,application/pdf" className="hidden" disabled={busy} onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])} />
+        <input type="file" accept="image/*,application/pdf" className="hidden" disabled={busy} onChange={(e) => e.target.files?.[0] && read(e.target.files[0])} />
       </label>
       <p className="mt-2 text-xs text-stone-500">デモではダミーの書類だけを使ってください。</p>
       {err && (

@@ -11,6 +11,9 @@ import { MODEL, getClient } from "@/server/claude";
 const ExtractedAsset = z.object({
   kind: z.enum(["deposit", "land", "building", "insurance", "listedStock", "other"]),
   label: z.string().describe("銀行名・支店名・所在地など、財産を特定する名前"),
+  institution: z.string().nullable().describe("預貯金の金融機関名（例：○○銀行）。預貯金以外は null"),
+  branch: z.string().nullable().describe("預貯金の支店名。預貯金以外は null"),
+  accountType: z.string().nullable().describe("預貯金の種類（普通預金・定期預金など）。預貯金以外は null"),
   amount: z.number().nullable().describe("預金残高・保険金額など（円）。該当しなければ null"),
   accruedInterest: z.number().nullable().describe("既経過利息（円）。記載がなければ null"),
   location: z.string().nullable().describe("土地・家屋の所在地番"),

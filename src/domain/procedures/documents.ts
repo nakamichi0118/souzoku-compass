@@ -4,9 +4,14 @@
  */
 import type { OfficeKind } from "./offices";
 
+export type DocCategory = "戸籍・住民票" | "預貯金" | "保険" | "不動産" | "株式" | "年金・税金" | "その他";
+
 export interface DocSpec {
   id: string;
   name: string;
+  category: DocCategory;
+  /** アップロードすると、コンパスくんが内容を読み取って財産に登録できる */
+  readable?: boolean;
   /** 何のために必要か */
   purpose: string;
   /** 請求先の説明 */
@@ -21,6 +26,7 @@ export interface DocSpec {
 export const DOCS: Record<string, DocSpec> = {
   deathCert: {
     id: "deathCert",
+    category: "その他",
     name: "死亡診断書（死体検案書）のコピー",
     purpose: "保険金・年金・銀行など、死亡の事実を示す書類として使う",
     where: "死亡届に付いている原本を提出する前に、自分でコピーする（病院で発行）",
@@ -31,6 +37,7 @@ export const DOCS: Record<string, DocSpec> = {
   },
   kosekiDecedent: {
     id: "kosekiDecedent",
+    category: "戸籍・住民票",
     name: "亡くなった方の戸籍謄本（出生から死亡まで）",
     purpose: "相続人が誰かを証明する。銀行・登記・相続税申告のすべてで必要",
     where: "本籍地の市区町村役場。2024年3月からは最寄りの役所でまとめて請求できる（広域交付）",
@@ -42,6 +49,7 @@ export const DOCS: Record<string, DocSpec> = {
   },
   kosekiHeirs: {
     id: "kosekiHeirs",
+    category: "戸籍・住民票",
     name: "相続人全員の戸籍謄本",
     purpose: "相続人が今も生きていることと、亡くなった方との関係を証明する",
     where: "各相続人の本籍地の市区町村役場（広域交付も可）",
@@ -52,6 +60,7 @@ export const DOCS: Record<string, DocSpec> = {
   },
   juminhyoJokyo: {
     id: "juminhyoJokyo",
+    category: "戸籍・住民票",
     name: "亡くなった方の住民票の除票（または戸籍の附票）",
     purpose: "最後の住所を証明する。相続放棄・相続登記で使う",
     where: "亡くなった方の最後の住所地の市区町村役場",
@@ -62,6 +71,7 @@ export const DOCS: Record<string, DocSpec> = {
   },
   juminhyoHeir: {
     id: "juminhyoHeir",
+    category: "戸籍・住民票",
     name: "不動産を取得する人の住民票",
     purpose: "相続登記で新しい所有者の住所を証明する",
     where: "取得する人の住所地の市区町村役場",
@@ -72,6 +82,7 @@ export const DOCS: Record<string, DocSpec> = {
   },
   inkan: {
     id: "inkan",
+    category: "戸籍・住民票",
     name: "相続人全員の印鑑証明書",
     purpose: "遺産分割協議書に押した実印の証明。銀行・登記・相続税申告で使う",
     where: "各相続人の住所地の市区町村役場",
@@ -83,6 +94,7 @@ export const DOCS: Record<string, DocSpec> = {
   },
   houteiJoho: {
     id: "houteiJoho",
+    category: "戸籍・住民票",
     name: "法定相続情報一覧図の写し",
     purpose: "戸籍の束の代わりに、銀行・登記・相続税申告で使える",
     where: "法務局（亡くなった方の本籍地・最後の住所地・申出人の住所地・不動産の所在地のいずれか）",
@@ -93,6 +105,8 @@ export const DOCS: Record<string, DocSpec> = {
   },
   balanceCert: {
     id: "balanceCert",
+    category: "預貯金",
+    readable: true,
     name: "預貯金の残高証明書（亡くなった日現在）",
     purpose: "財産の額を確定する。相続税の判定・申告と遺産分割で使う",
     where: "取引のある銀行・信用金庫・ゆうちょ銀行の窓口",
@@ -103,6 +117,8 @@ export const DOCS: Record<string, DocSpec> = {
   },
   securitiesCert: {
     id: "securitiesCert",
+    category: "株式",
+    readable: true,
     name: "株式・投資信託の残高証明書",
     purpose: "株式の数と評価額を確認する",
     where: "取引のある証券会社。証券会社が分からなければ証券保管振替機構（ほふり）に照会",
@@ -112,6 +128,8 @@ export const DOCS: Record<string, DocSpec> = {
   },
   hyokaCert: {
     id: "hyokaCert",
+    category: "不動産",
+    readable: true,
     name: "固定資産評価証明書",
     purpose: "建物の評価額と、相続登記の登録免許税の計算に使う",
     where: "不動産のある市区町村役場（東京23区は都税事務所）",
@@ -122,6 +140,8 @@ export const DOCS: Record<string, DocSpec> = {
   },
   nayose: {
     id: "nayose",
+    category: "不動産",
+    readable: true,
     name: "名寄帳（固定資産課税台帳）",
     purpose: "亡くなった方がその市区町村に持っていた不動産を、漏れなく一覧で確認する",
     where: "不動産のある市区町村役場（東京23区は都税事務所）",
@@ -133,6 +153,7 @@ export const DOCS: Record<string, DocSpec> = {
   },
   touki: {
     id: "touki",
+    category: "不動産",
     name: "登記事項証明書（登記簿謄本）",
     purpose: "不動産の所在・地番・面積・持ち主を確認する",
     where: "全国どこの法務局でも取れる",
@@ -143,6 +164,7 @@ export const DOCS: Record<string, DocSpec> = {
   },
   credit: {
     id: "credit",
+    category: "その他",
     name: "信用情報の開示（借金の有無の確認）",
     purpose: "カードローン・クレジットの借入れがないか調べる",
     where: "CIC・JICC・全国銀行個人信用情報センターの3機関",
@@ -152,6 +174,7 @@ export const DOCS: Record<string, DocSpec> = {
   },
   pensionCert: {
     id: "pensionCert",
+    category: "年金・税金",
     name: "年金証書・年金の振込通知書",
     purpose: "年金の停止・未支給年金・遺族年金の手続きで使う",
     where: "亡くなった方の手元（見つからなければ年金事務所で確認）",
@@ -162,6 +185,7 @@ export const DOCS: Record<string, DocSpec> = {
   },
   withholding: {
     id: "withholding",
+    category: "年金・税金",
     name: "源泉徴収票（給与・年金）",
     purpose: "準確定申告で、亡くなった年の収入と源泉徴収税額を確認する",
     where: "給与は勤務先、年金は日本年金機構から相続人あてに送られてくる",
@@ -171,6 +195,8 @@ export const DOCS: Record<string, DocSpec> = {
   },
   insurancePay: {
     id: "insurancePay",
+    category: "保険",
+    readable: true,
     name: "生命保険金の支払通知書",
     purpose: "受け取った保険金の額を相続税の判定・申告で使う",
     where: "保険会社（保険金の請求後に送られてくる）",
@@ -180,6 +206,7 @@ export const DOCS: Record<string, DocSpec> = {
   },
   funeralReceipt: {
     id: "funeralReceipt",
+    category: "その他",
     name: "葬儀の領収書・お布施などのメモ",
     purpose: "葬祭費の申請と、相続税の葬式費用の控除に使う",
     where: "葬儀社・寺院（お布施など領収書がないものは、日付・相手・金額をメモ）",
@@ -189,6 +216,7 @@ export const DOCS: Record<string, DocSpec> = {
   },
   willCert: {
     id: "willCert",
+    category: "戸籍・住民票",
     name: "遺言書情報証明書",
     purpose: "法務局に預けられた自筆の遺言書の内容を証明する（検認の代わり）",
     where: "全国どこの法務局（遺言書保管所）でも",

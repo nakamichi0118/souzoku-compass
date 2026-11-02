@@ -97,6 +97,30 @@ export interface RosenkaSheet {
   notation?: string;
 }
 
+/** 相続登記の申請書に書く事項（登記事項証明書・固定資産税の課税明細書から写す） */
+export interface RegistryInfo {
+  /** 固定資産評価額（登録免許税の課税標準）。マンションは区分建物の評価額 */
+  assessedValue?: number;
+  /** 地番（土地）。未入力なら所在から推定 */
+  lotNumber?: string;
+  /** 家屋番号（建物・区分建物） */
+  houseNumber?: string;
+  /** 種類（例：居宅） */
+  buildingType?: string;
+  /** 構造（例：木造かわらぶき2階建） */
+  structure?: string;
+  /** 床面積（例：1階 62.10㎡ 2階 48.30㎡） */
+  floorArea?: string;
+  /** 一棟の建物の名称（マンション） */
+  buildingName?: string;
+  /** 敷地権の目的である土地の所在・地番・地目・地積（マンション） */
+  siteLand?: string;
+  /** 敷地権の種類と割合（例：所有権 10000分の215） */
+  siteRight?: string;
+  /** 敷地権の土地の固定資産評価額 × 敷地権の割合（マンション） */
+  siteAssessedValue?: number;
+}
+
 export interface LandAsset extends AssetBase {
   kind: "land";
   location: string;
@@ -109,12 +133,14 @@ export interface LandAsset extends AssetBase {
   rosenkaSheet?: RosenkaSheet;
   /** 小規模宅地等の特例（特定居住用宅地等）を適用する */
   smallResidential?: { applies: boolean; acquirerId?: string };
+  registry?: RegistryInfo;
 }
 
 export interface BuildingAsset extends AssetBase {
   kind: "building";
   location: string;
   fixedAssetValue: number;
+  registry?: RegistryInfo;
 }
 
 export interface CondoAsset extends AssetBase {
@@ -131,6 +157,7 @@ export interface CondoAsset extends AssetBase {
   landShareSqm: number; // 敷地利用権の面積
   exclusiveAreaSqm: number; // 専有部分の床面積
   smallResidential?: { applies: boolean; acquirerId?: string; landShareSqm?: number };
+  registry?: RegistryInfo;
 }
 
 export interface MoneyAsset extends AssetBase {

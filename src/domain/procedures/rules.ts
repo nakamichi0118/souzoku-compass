@@ -569,6 +569,7 @@ export const RULES: Rule[] = [
     where: "不動産の所在地を管轄する法務局",
     bring: ["登記申請書", "戸籍謄本または法定相続情報一覧図の写し", "遺産分割協議書", "固定資産評価証明書", "取得する人の住民票"],
     law: "不動産登記法76条の2",
+    link: { href: "/case/registration", label: "登記申請書と登録免許税を作る" },
   },
   {
     id: "sale-cost",

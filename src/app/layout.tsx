@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { CaseProvider } from "@/lib/store";
+import { PlanProvider } from "@/lib/planStore";
 
 export const metadata: Metadata = {
   title: "相続コンパス",
@@ -12,7 +13,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="ja">
       <body className="min-h-screen bg-stone-50 text-stone-900 antialiased">
-        <CaseProvider>{children}</CaseProvider>
+        <CaseProvider>
+          <PlanProvider>{children}</PlanProvider>
+        </CaseProvider>
       </body>
     </html>
   );

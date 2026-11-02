@@ -72,6 +72,7 @@ export const demoCase: Case = {
       landUse: "宅地",
       method: { type: "rosenka", routePrice: 420_000, depthCorrection: 1.0 },
       smallResidential: { applies: true, acquirerId: "hanako" },
+      registry: { assessedValue: 48_650_000, lotNumber: "2番3" },
     },
     {
       id: "home-bldg",
@@ -79,6 +80,7 @@ export const demoCase: Case = {
       label: "自宅家屋",
       location: "東京都千代田区架空町一丁目2番地3 家屋番号2番3",
       fixedAssetValue: 6_800_000,
+      registry: { assessedValue: 6_800_000, houseNumber: "2番3", buildingType: "居宅", structure: "木造スレートぶき2階建", floorArea: "1階 72.45㎡　2階 58.32㎡" },
     },
     {
       id: "condo",
@@ -92,6 +94,17 @@ export const demoCase: Case = {
       floor: 3,
       landShareSqm: 21,
       exclusiveAreaSqm: 60,
+      registry: {
+        assessedValue: 4_000_000,
+        houseNumber: "見本町1番の305",
+        buildingName: "架空レジデンス",
+        buildingType: "居宅",
+        structure: "鉄筋コンクリート造1階建",
+        floorArea: "3階部分 60.00㎡",
+        siteLand: "神奈川県横浜市架空区見本町1番　宅地　1,240.50㎡",
+        siteRight: "所有権　10000分の169",
+        siteAssessedValue: 6_120_000,
+      },
     },
     { id: "dep1", kind: "deposit", label: "みほん銀行 普通預金", amount: 38_250_000, accruedInterest: 1_234, institution: "みほん銀行", branch: "架空支店", accountType: "普通預金" },
     { id: "dep2", kind: "deposit", label: "ためし信用金庫 定期預金", amount: 20_000_000, accruedInterest: 8_765, institution: "ためし信用金庫", branch: "本店", accountType: "定期預金" },
