@@ -1,0 +1,634 @@
+{
+ "page": "t01c",
+ "title": "第1表（続）",
+ "fields": [
+  {
+   "id": "a.kana",
+   "seed": [
+    940,
+    584
+   ],
+   "size": 10
+  },
+  {
+   "id": "a.name",
+   "seed": [
+    940,
+    644
+   ],
+   "size": 13
+  },
+  {
+   "id": "a.bEra",
+   "seed": [
+    750,
+    836
+   ],
+   "align": "center"
+  },
+  {
+   "id": "a.bY",
+   "seed": [
+    920,
+    836
+   ],
+   "align": "center"
+  },
+  {
+   "id": "a.bM",
+   "seed": [
+    1066,
+    836
+   ],
+   "align": "center"
+  },
+  {
+   "id": "a.bD",
+   "seed": [
+    1214,
+    836
+   ],
+   "align": "center"
+  },
+  {
+   "id": "a.age",
+   "seed": [
+    1380,
+    836
+   ],
+   "align": "center"
+  },
+  {
+   "id": "a.zip",
+   "seed": [
+    800,
+    906
+   ],
+   "size": 11,
+   "splits": [
+    1070
+   ]
+  },
+  {
+   "id": "a.address",
+   "seed": [
+    940,
+    1000
+   ],
+   "size": 10,
+   "lines": 2
+  },
+  {
+   "id": "a.phone",
+   "seed": [
+    800,
+    1096
+   ],
+   "size": 11,
+   "splits": [
+    916,
+    1220
+   ]
+  },
+  {
+   "id": "a.relation",
+   "seed": [
+    870,
+    1168
+   ],
+   "align": "center",
+   "size": 9
+  },
+  {
+   "id": "a.occupation",
+   "seed": [
+    1240,
+    1168
+   ],
+   "size": 10
+  },
+  {
+   "id": "a.causeInherit",
+   "seed": [
+    795,
+    1240
+   ],
+   "align": "center"
+  },
+  {
+   "id": "a.causeBequest",
+   "seed": [
+    1060,
+    1240
+   ],
+   "align": "center"
+  },
+  {
+   "id": "a.r01",
+   "seed": [
+    1100,
+    1350
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "a.r02",
+   "seed": [
+    1100,
+    1412
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "a.r03",
+   "seed": [
+    1100,
+    1474
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "a.r04",
+   "seed": [
+    1100,
+    1536
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "a.r05",
+   "seed": [
+    1100,
+    1598
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "a.r06",
+   "seed": [
+    1100,
+    1658
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  },
+  {
+   "id": "a.r08",
+   "seed": [
+    1100,
+    1846
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "a.r09",
+   "seed": [
+    1100,
+    1908
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "a.r10",
+   "seed": [
+    1100,
+    1970
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "a.r11",
+   "seed": [
+    1100,
+    2032
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "a.r12",
+   "seed": [
+    1100,
+    2094
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "a.r13",
+   "seed": [
+    1100,
+    2156
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "a.r14",
+   "seed": [
+    1100,
+    2218
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "a.r15",
+   "seed": [
+    1100,
+    2280
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "a.r16",
+   "seed": [
+    1100,
+    2354
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "a.r17",
+   "seed": [
+    1100,
+    2430
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  },
+  {
+   "id": "a.r18",
+   "seed": [
+    1100,
+    2494
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "a.r19",
+   "seed": [
+    1100,
+    2554
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "a.r20",
+   "seed": [
+    1100,
+    2616
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  },
+  {
+   "id": "a.r21",
+   "seed": [
+    1100,
+    2678
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  },
+  {
+   "id": "a.r22",
+   "seed": [
+    1100,
+    2740
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "b.kana",
+   "seed": [
+    1820,
+    584
+   ],
+   "size": 10
+  },
+  {
+   "id": "b.name",
+   "seed": [
+    1820,
+    644
+   ],
+   "size": 13
+  },
+  {
+   "id": "b.bEra",
+   "seed": [
+    1630,
+    836
+   ],
+   "align": "center"
+  },
+  {
+   "id": "b.bY",
+   "seed": [
+    1800,
+    836
+   ],
+   "align": "center"
+  },
+  {
+   "id": "b.bM",
+   "seed": [
+    1950,
+    836
+   ],
+   "align": "center"
+  },
+  {
+   "id": "b.bD",
+   "seed": [
+    2096,
+    836
+   ],
+   "align": "center"
+  },
+  {
+   "id": "b.age",
+   "seed": [
+    2270,
+    836
+   ],
+   "align": "center"
+  },
+  {
+   "id": "b.zip",
+   "seed": [
+    1680,
+    906
+   ],
+   "size": 11,
+   "splits": [
+    1950
+   ]
+  },
+  {
+   "id": "b.address",
+   "seed": [
+    1820,
+    1000
+   ],
+   "size": 10,
+   "lines": 2
+  },
+  {
+   "id": "b.phone",
+   "seed": [
+    1680,
+    1096
+   ],
+   "size": 11,
+   "splits": [
+    1796,
+    2100
+   ]
+  },
+  {
+   "id": "b.relation",
+   "seed": [
+    1750,
+    1168
+   ],
+   "align": "center",
+   "size": 9
+  },
+  {
+   "id": "b.occupation",
+   "seed": [
+    2120,
+    1168
+   ],
+   "size": 10
+  },
+  {
+   "id": "b.causeInherit",
+   "seed": [
+    1675,
+    1240
+   ],
+   "align": "center"
+  },
+  {
+   "id": "b.causeBequest",
+   "seed": [
+    1945,
+    1240
+   ],
+   "align": "center"
+  },
+  {
+   "id": "b.r01",
+   "seed": [
+    1950,
+    1350
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "b.r02",
+   "seed": [
+    1950,
+    1412
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "b.r03",
+   "seed": [
+    1950,
+    1474
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "b.r04",
+   "seed": [
+    1950,
+    1536
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "b.r05",
+   "seed": [
+    1950,
+    1598
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "b.r06",
+   "seed": [
+    1950,
+    1658
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  },
+  {
+   "id": "b.r08",
+   "seed": [
+    1950,
+    1846
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "b.r09",
+   "seed": [
+    1950,
+    1908
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "b.r10",
+   "seed": [
+    1950,
+    1970
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "b.r11",
+   "seed": [
+    1950,
+    2032
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "b.r12",
+   "seed": [
+    1950,
+    2094
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "b.r13",
+   "seed": [
+    1950,
+    2156
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "b.r14",
+   "seed": [
+    1950,
+    2218
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "b.r15",
+   "seed": [
+    1950,
+    2280
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "b.r16",
+   "seed": [
+    1950,
+    2354
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "b.r17",
+   "seed": [
+    1950,
+    2430
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  },
+  {
+   "id": "b.r18",
+   "seed": [
+    1950,
+    2494
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "b.r19",
+   "seed": [
+    1950,
+    2554
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "b.r20",
+   "seed": [
+    1950,
+    2616
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  },
+  {
+   "id": "b.r21",
+   "seed": [
+    1950,
+    2678
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  },
+  {
+   "id": "b.r22",
+   "seed": [
+    1950,
+    2740
+   ],
+   "align": "right",
+   "size": 12
+  }
+ ]
+}

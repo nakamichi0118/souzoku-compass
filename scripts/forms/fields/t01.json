@@ -1,0 +1,647 @@
+{
+ "page": "t01",
+ "title": "第1表",
+ "fields": [
+  {
+   "id": "taxOffice",
+   "seed": [
+    460,
+    433
+   ],
+   "align": "center",
+   "size": 11
+  },
+  {
+   "id": "deathEra",
+   "seed": [
+    1020,
+    435
+   ],
+   "align": "center"
+  },
+  {
+   "id": "deathY",
+   "seed": [
+    1165,
+    435
+   ],
+   "align": "center"
+  },
+  {
+   "id": "deathM",
+   "seed": [
+    1310,
+    435
+   ],
+   "align": "center"
+  },
+  {
+   "id": "deathD",
+   "seed": [
+    1455,
+    435
+   ],
+   "align": "center"
+  },
+  {
+   "id": "d.kana",
+   "seed": [
+    965,
+    555
+   ],
+   "size": 10
+  },
+  {
+   "id": "d.name",
+   "seed": [
+    965,
+    615
+   ],
+   "size": 13
+  },
+  {
+   "id": "d.bEra",
+   "seed": [
+    750,
+    800
+   ],
+   "align": "center"
+  },
+  {
+   "id": "d.bY",
+   "seed": [
+    920,
+    800
+   ],
+   "align": "center"
+  },
+  {
+   "id": "d.bM",
+   "seed": [
+    1065,
+    800
+   ],
+   "align": "center"
+  },
+  {
+   "id": "d.bD",
+   "seed": [
+    1210,
+    800
+   ],
+   "align": "center"
+  },
+  {
+   "id": "d.age",
+   "seed": [
+    1410,
+    800
+   ],
+   "align": "center"
+  },
+  {
+   "id": "d.address",
+   "seed": [
+    1040,
+    969
+   ],
+   "size": 10,
+   "lines": 2
+  },
+  {
+   "id": "d.occupation",
+   "seed": [
+    1240,
+    1138
+   ],
+   "size": 10
+  },
+  {
+   "id": "p.kana",
+   "seed": [
+    1820,
+    555
+   ],
+   "size": 10
+  },
+  {
+   "id": "p.name",
+   "seed": [
+    1820,
+    615
+   ],
+   "size": 13
+  },
+  {
+   "id": "p.bEra",
+   "seed": [
+    1630,
+    800
+   ],
+   "align": "center"
+  },
+  {
+   "id": "p.bY",
+   "seed": [
+    1810,
+    800
+   ],
+   "align": "center"
+  },
+  {
+   "id": "p.bM",
+   "seed": [
+    1955,
+    800
+   ],
+   "align": "center"
+  },
+  {
+   "id": "p.bD",
+   "seed": [
+    2100,
+    800
+   ],
+   "align": "center"
+  },
+  {
+   "id": "p.age",
+   "seed": [
+    2290,
+    800
+   ],
+   "align": "center"
+  },
+  {
+   "id": "p.address",
+   "seed": [
+    1820,
+    969
+   ],
+   "size": 10,
+   "lines": 2
+  },
+  {
+   "id": "p.relation",
+   "seed": [
+    1740,
+    1138
+   ],
+   "align": "center",
+   "size": 9
+  },
+  {
+   "id": "p.occupation",
+   "seed": [
+    2090,
+    1138
+   ],
+   "size": 10
+  },
+  {
+   "id": "p.causeInherit",
+   "seed": [
+    1690,
+    1205
+   ],
+   "align": "center"
+  },
+  {
+   "id": "p.causeBequest",
+   "seed": [
+    1925,
+    1205
+   ],
+   "align": "center"
+  },
+  {
+   "id": "p.zip",
+   "seed": [
+    1700,
+    875
+   ],
+   "size": 11,
+   "splits": [
+    1950
+   ]
+  },
+  {
+   "id": "p.phone",
+   "seed": [
+    1700,
+    1062
+   ],
+   "size": 11,
+   "splits": [
+    1796,
+    2100
+   ]
+  },
+  {
+   "id": "t.r01",
+   "seed": [
+    1100,
+    1318
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "p.r01",
+   "seed": [
+    1950,
+    1318
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "t.r02",
+   "seed": [
+    1100,
+    1380
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "p.r02",
+   "seed": [
+    1950,
+    1380
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "t.r03",
+   "seed": [
+    1100,
+    1442
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "p.r03",
+   "seed": [
+    1950,
+    1442
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "t.r04",
+   "seed": [
+    1100,
+    1504
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "p.r04",
+   "seed": [
+    1950,
+    1504
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "t.r05",
+   "seed": [
+    1100,
+    1565
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "p.r05",
+   "seed": [
+    1950,
+    1565
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "t.r06",
+   "seed": [
+    1100,
+    1627
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  },
+  {
+   "id": "p.r06",
+   "seed": [
+    1950,
+    1627
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  },
+  {
+   "id": "t.r07",
+   "seed": [
+    1100,
+    1751
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  },
+  {
+   "id": "p.r08",
+   "seed": [
+    1950,
+    1813
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "t.r09",
+   "seed": [
+    1100,
+    1875
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "p.r09",
+   "seed": [
+    1950,
+    1875
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "t.r10",
+   "seed": [
+    1100,
+    1936
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "p.r10",
+   "seed": [
+    1950,
+    1936
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "t.r11",
+   "seed": [
+    1100,
+    1998
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "p.r11",
+   "seed": [
+    1950,
+    1998
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "t.r12",
+   "seed": [
+    1100,
+    2062
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "p.r12",
+   "seed": [
+    1950,
+    2062
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "t.r13",
+   "seed": [
+    1100,
+    2124
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "p.r13",
+   "seed": [
+    1950,
+    2124
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "t.r14",
+   "seed": [
+    1100,
+    2185
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "p.r14",
+   "seed": [
+    1950,
+    2185
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "t.r15",
+   "seed": [
+    1100,
+    2247
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "p.r15",
+   "seed": [
+    1950,
+    2247
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "t.r16",
+   "seed": [
+    1100,
+    2322
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "p.r16",
+   "seed": [
+    1950,
+    2322
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "t.r17",
+   "seed": [
+    1100,
+    2398
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  },
+  {
+   "id": "p.r17",
+   "seed": [
+    1950,
+    2398
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  },
+  {
+   "id": "t.r18",
+   "seed": [
+    1100,
+    2465
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "p.r18",
+   "seed": [
+    1950,
+    2465
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "t.r19",
+   "seed": [
+    1100,
+    2527
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "p.r19",
+   "seed": [
+    1950,
+    2527
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "t.r20",
+   "seed": [
+    1100,
+    2584
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  },
+  {
+   "id": "p.r20",
+   "seed": [
+    1950,
+    2584
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  },
+  {
+   "id": "t.r21",
+   "seed": [
+    1100,
+    2645
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  },
+  {
+   "id": "p.r21",
+   "seed": [
+    1950,
+    2645
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  },
+  {
+   "id": "t.r22",
+   "seed": [
+    1100,
+    2707
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "p.r22",
+   "seed": [
+    1950,
+    2707
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "t.heirCount",
+   "seed": [
+    720,
+    1689
+   ],
+   "align": "center",
+   "size": 12
+  },
+  {
+   "id": "t.basicDeduction",
+   "seed": [
+    1100,
+    1689
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  }
+ ]
+}

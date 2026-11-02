@@ -1,0 +1,449 @@
+{
+ "page": "t02",
+ "title": "第2表",
+ "fields": [
+  {
+   "id": "d.name",
+   "seed": [
+    2000,
+    506
+   ],
+   "size": 12
+  },
+  {
+   "id": "i",
+   "seed": [
+    480,
+    874
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  },
+  {
+   "id": "ro",
+   "seed": [
+    1130,
+    870
+   ],
+   "align": "center",
+   "size": 14
+  },
+  {
+   "id": "ha",
+   "seed": [
+    1450,
+    870
+   ],
+   "align": "center",
+   "size": 13
+  },
+  {
+   "id": "ni",
+   "seed": [
+    2100,
+    874
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  },
+  {
+   "id": "h0.name",
+   "seed": [
+    330,
+    1380
+   ],
+   "size": 11,
+   "lines": 2
+  },
+  {
+   "id": "h0.relation",
+   "seed": [
+    570,
+    1380
+   ],
+   "align": "center",
+   "size": 10
+  },
+  {
+   "id": "h0.shareN",
+   "seed": [
+    760,
+    1310
+   ],
+   "align": "center",
+   "size": 11,
+   "clipX": [
+    690,
+    860
+   ]
+  },
+  {
+   "id": "h0.shareD",
+   "seed": [
+    760,
+    1450
+   ],
+   "align": "center",
+   "size": 11,
+   "clipX": [
+    690,
+    860
+   ]
+  },
+  {
+   "id": "h0.amount",
+   "seed": [
+    1000,
+    1380
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  },
+  {
+   "id": "h0.tax",
+   "seed": [
+    1400,
+    1380
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "h1.name",
+   "seed": [
+    330,
+    1580
+   ],
+   "size": 11,
+   "lines": 2
+  },
+  {
+   "id": "h1.relation",
+   "seed": [
+    570,
+    1580
+   ],
+   "align": "center",
+   "size": 10
+  },
+  {
+   "id": "h1.shareN",
+   "seed": [
+    760,
+    1510
+   ],
+   "align": "center",
+   "size": 11,
+   "clipX": [
+    690,
+    860
+   ]
+  },
+  {
+   "id": "h1.shareD",
+   "seed": [
+    760,
+    1650
+   ],
+   "align": "center",
+   "size": 11,
+   "clipX": [
+    690,
+    860
+   ]
+  },
+  {
+   "id": "h1.amount",
+   "seed": [
+    1000,
+    1580
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  },
+  {
+   "id": "h1.tax",
+   "seed": [
+    1400,
+    1580
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "h2.name",
+   "seed": [
+    330,
+    1780
+   ],
+   "size": 11,
+   "lines": 2
+  },
+  {
+   "id": "h2.relation",
+   "seed": [
+    570,
+    1780
+   ],
+   "align": "center",
+   "size": 10
+  },
+  {
+   "id": "h2.shareN",
+   "seed": [
+    760,
+    1710
+   ],
+   "align": "center",
+   "size": 11,
+   "clipX": [
+    690,
+    860
+   ]
+  },
+  {
+   "id": "h2.shareD",
+   "seed": [
+    760,
+    1850
+   ],
+   "align": "center",
+   "size": 11,
+   "clipX": [
+    690,
+    860
+   ]
+  },
+  {
+   "id": "h2.amount",
+   "seed": [
+    1000,
+    1780
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  },
+  {
+   "id": "h2.tax",
+   "seed": [
+    1400,
+    1780
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "h3.name",
+   "seed": [
+    330,
+    1994
+   ],
+   "size": 11,
+   "lines": 2
+  },
+  {
+   "id": "h3.relation",
+   "seed": [
+    570,
+    1994
+   ],
+   "align": "center",
+   "size": 10
+  },
+  {
+   "id": "h3.shareN",
+   "seed": [
+    760,
+    1924
+   ],
+   "align": "center",
+   "size": 11,
+   "clipX": [
+    690,
+    860
+   ]
+  },
+  {
+   "id": "h3.shareD",
+   "seed": [
+    760,
+    2064
+   ],
+   "align": "center",
+   "size": 11,
+   "clipX": [
+    690,
+    860
+   ]
+  },
+  {
+   "id": "h3.amount",
+   "seed": [
+    1000,
+    1994
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  },
+  {
+   "id": "h3.tax",
+   "seed": [
+    1400,
+    1994
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "h4.name",
+   "seed": [
+    330,
+    2204
+   ],
+   "size": 11,
+   "lines": 2
+  },
+  {
+   "id": "h4.relation",
+   "seed": [
+    570,
+    2204
+   ],
+   "align": "center",
+   "size": 10
+  },
+  {
+   "id": "h4.shareN",
+   "seed": [
+    760,
+    2134
+   ],
+   "align": "center",
+   "size": 11,
+   "clipX": [
+    690,
+    860
+   ]
+  },
+  {
+   "id": "h4.shareD",
+   "seed": [
+    760,
+    2274
+   ],
+   "align": "center",
+   "size": 11,
+   "clipX": [
+    690,
+    860
+   ]
+  },
+  {
+   "id": "h4.amount",
+   "seed": [
+    1000,
+    2204
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  },
+  {
+   "id": "h4.tax",
+   "seed": [
+    1400,
+    2204
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "h5.name",
+   "seed": [
+    330,
+    2414
+   ],
+   "size": 11,
+   "lines": 2
+  },
+  {
+   "id": "h5.relation",
+   "seed": [
+    570,
+    2414
+   ],
+   "align": "center",
+   "size": 10
+  },
+  {
+   "id": "h5.shareN",
+   "seed": [
+    760,
+    2344
+   ],
+   "align": "center",
+   "size": 11,
+   "clipX": [
+    690,
+    860
+   ]
+  },
+  {
+   "id": "h5.shareD",
+   "seed": [
+    760,
+    2484
+   ],
+   "align": "center",
+   "size": 11,
+   "clipX": [
+    690,
+    860
+   ]
+  },
+  {
+   "id": "h5.amount",
+   "seed": [
+    1000,
+    2414
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  },
+  {
+   "id": "h5.tax",
+   "seed": [
+    1400,
+    2414
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "count",
+   "seed": [
+    570,
+    2580
+   ],
+   "align": "center",
+   "size": 13
+  },
+  {
+   "id": "total",
+   "seed": [
+    1400,
+    2580
+   ],
+   "align": "right",
+   "size": 12,
+   "suffix": true
+  }
+ ]
+}
