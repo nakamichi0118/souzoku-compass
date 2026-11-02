@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# 動作確認用の出力
+/demo.pdf
+/division.pdf

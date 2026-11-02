@@ -1,36 +1,68 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 相続コンパス（souzoku-compass）
 
-## Getting Started
+相続税の専門知識がない方が、**相続税の申告書**と**遺産分割協議書**を自分で作れるようにする Web アプリです。
+Built with Claude: Japan 2026 ハッカソン（テーマ #1）向けに開発しています。
 
-First, run the development server:
+- 画面上部に固定した **7ステップ**（亡くなった方 → 相続人 → 財産 → 債務・葬式費用 → 遺産の分け方 → 税額の確認 → 書類の作成）で進みます
+- **税額は決定論的な計算エンジン**が計算します。Claude は案内・書類からの情報抽出・入力支援だけを担当し、税額の計算には関与しません
+- 申告書は**国税庁の令和8年分の正式様式**に記入した PDF として出力します
+- データはすべて**ダミーデータ**です（デモ案件の人物・住所・金融機関・路線価図は架空のものです）
+
+## できること
+
+| 分野 | 内容 |
+| --- | --- |
+| 相続人 | 配偶者・子（養子の人数制限を含む）・直系尊属・兄弟姉妹（半血）・代襲相続・相続放棄 |
+| 財産 | 預貯金（既経過利息）・現金・土地（路線価方式／倍率方式）・建物・分譲マンション（区分所有補正率）・上場株式・生命保険金・退職手当金・家庭用財産 |
+| 土地 | 地図で場所を選び、国税庁の路線価図を地図に半透明で重ねて路線価を確認（Claude が周辺の路線価表記を読み取り、候補として表示） |
+| 特例・控除 | 小規模宅地等の特例（特定居住用）・生命保険金等の非課税・配偶者の税額軽減・未成年者控除・障害者控除・相続税額の2割加算・暦年課税分の贈与加算 |
+| 申告書 | 第1表・第1表（続）・第2表・第5表・第11表と付表1〜4・第13表・第15表・第15表（続） |
+| 協議書 | 遺産分割協議書（相続人全員の署名押印欄、未成年者の法定代理人欄） |
+
+### 自動では完結しないもの
+
+非上場株式（評価額の入力または税理士への相談）、国外財産、非居住者、納税猶予、令和8年以外の相続開始は、自動では完結させず、画面で税理士への相談を案内します。
+
+## 使い方
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm ci
+npm run dev        # http://localhost:3000
+npm test           # 計算エンジン・様式の割り当て・座標変換などのテスト
+npm run demo:pdf   # デモ案件の申告書（demo.pdf）と遺産分割協議書（division.pdf）を作成
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Claude を使う機能（質問への回答、書類からの読み取り、路線価図の読み取り）には環境変数 `ANTHROPIC_API_KEY` が必要です。未設定でも、それ以外の機能はすべて動きます。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Cloud Run へのデプロイ
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+gcloud run deploy souzoku-compass --source . --region asia-northeast1 \
+  --set-secrets ANTHROPIC_API_KEY=anthropic-api-key:latest
+```
 
-## Learn More
+## 構成
 
-To learn more about Next.js, take a look at the following resources:
+```
+src/domain/          計算エンジン（相続人の判定、財産評価、相続税額。BigInt の分数で厳密に計算）
+src/forms/           申告書の各欄への割り当てと PDF 化（r08/layout.json は欄の座標）
+src/documents/       遺産分割協議書
+src/components/      7ステップの画面、地図と路線価図の重ね表示
+src/app/api/         Claude（案内・抽出・路線価図の読み取り）、PDF 作成、住所検索の中継
+scripts/forms/       国税庁様式の画像化と欄の座標の校正ツール
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+計算の根拠（民法・相続税法・租税特別措置法・財産評価基本通達）は各ソースのコメントに記載しています。
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 出典・ライセンス
 
-## Deploy on Vercel
+- 申告書の様式：出典：国税庁ウェブサイト（相続税の申告書等の様式一覧（令和8年分用））を加工して作成
+- 地図：国土地理院 地理院タイル、住所検索・逆ジオコーダ
+- 路線価図：利用者が国税庁「財産評価基準書 路線価図・評価倍率表」から取得したものを表示します（アプリには含みません）
+- フォント：IPAフォント（IPAゴシック）。[IPAフォントライセンスv1.0](assets/fonts/IPA_Font_License.txt)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## ご注意
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+相続コンパスは申告書作成の手助けをするもので、税理士による確認の代わりにはなりません。提出前に必ず内容を確認してください。
+
+開発方針（既存プロジェクトのコードを使わないクリーンルーム開発）は [docs/clean-room.md](docs/clean-room.md) を参照してください。
