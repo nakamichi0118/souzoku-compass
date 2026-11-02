@@ -28,7 +28,9 @@ export async function renderPdfPage(data: ArrayBuffer, pageNo = 1): Promise<Shee
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   await page.render({ canvasContext: ctx, viewport }).promise;
   const blob = await new Promise<Blob>((ok) => canvas.toBlob((b) => ok(b!), "image/png"));
-  return { src: URL.createObjectURL(blob), width: canvas.width, height: canvas.height, pages: pdf.numPages };
+  // PDF の 1pt = 1/72 インチ から用紙の大きさ（mm）を求める
+  const paper = { widthMm: (base.width * 25.4) / 72, heightMm: (base.height * 25.4) / 72 };
+  return { src: URL.createObjectURL(blob), width: canvas.width, height: canvas.height, paper, pages: pdf.numPages };
 }
 
 export async function loadImage(file: Blob): Promise<Sheet> {

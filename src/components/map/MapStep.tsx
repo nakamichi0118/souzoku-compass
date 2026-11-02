@@ -16,6 +16,7 @@ import { StepBar } from "@/components/StepBar";
 import { Button, Card, Check, Field, Note, Select, TextInput, YenInput, fmt } from "@/components/ui";
 import type { LandAsset } from "@/domain/types";
 import { parseRouteNotation } from "@/domain/valuation/rosenka";
+import { DEFAULT_PAPER, type Frame, frameCorners, framePairs } from "@/domain/geo/frame";
 import { useCase } from "@/lib/store";
 import type { GeoPair, MapApi, Sheet } from "./MapView";
 import { cropAround, loadImage, renderPdfPage } from "./sheet";
@@ -23,6 +24,11 @@ import { cropAround, loadImage, renderPdfPage } from "./sheet";
 const MapView = dynamic(() => import("./MapView"), { ssr: false, loading: () => <div className="h-[520px] animate-pulse rounded-xl bg-stone-100" /> });
 
 const TOKYO_STATION: [number, number] = [35.681236, 139.767125];
+/** 枠の縮尺の初期値。読み込んだ路線価図の道路と地図の道路が重なるように利用者が調整する */
+const DEFAULT_SCALE = 2500;
+const SCALES = [1000, 1500, 2000, 2500, 3000, 4000, 5000, 7500, 10000];
+/** 微調整中の縮尺から、選択肢のうち最も近いものを返す */
+const nearestScale = (sc: number) => SCALES.reduce((a, b) => (Math.abs(b - sc) < Math.abs(a - sc) ? b : a));
 
 type Mode = "idle" | "property" | "sheetPoint" | "mapPoint" | "sheetProperty";
 
@@ -70,6 +76,7 @@ function MapWorkspace() {
   const [pdfData, setPdfData] = useState<ArrayBuffer | null>(null);
   const [sheetUrl, setSheetUrl] = useState(land?.rosenkaSheet?.url ?? "");
   const [pairs, setPairs] = useState<GeoPair[]>(land?.rosenkaSheet?.points ?? []);
+  const [frame, setFrame] = useState<Frame | null>(land?.rosenkaSheet?.frame ?? null);
   const [pendingImg, setPendingImg] = useState<[number, number] | null>(null);
   const [sheetProperty, setSheetProperty] = useState<[number, number] | null>(null);
   const [opacity, setOpacity] = useState(0.6);
@@ -85,6 +92,7 @@ function MapWorkspace() {
   // 土地を切り替えたら保存済みの位置合わせを読み直す
   useEffect(() => {
     setPairs(land?.rosenkaSheet?.points ?? []);
+    setFrame(land?.rosenkaSheet?.frame ?? (land?.geo ? { center: [land.geo.lat, land.geo.lng], scale: DEFAULT_SCALE, rotation: 0 } : null));
     setSheetUrl(land?.rosenkaSheet?.url ?? "");
     setNotation(land?.rosenkaSheet?.notation ?? "");
     setSheet(null);
@@ -94,6 +102,10 @@ function MapWorkspace() {
   }, [assetId]);
 
   const property: [number, number] | undefined = land?.geo ? [land.geo.lat, land.geo.lng] : undefined;
+  const paper = sheet?.paper ?? DEFAULT_PAPER;
+  const corners = useMemo(() => (frame ? frameCorners(frame, paper) : null), [frame, paper]);
+  // 重ね表示：基準点が2点以上あればそれを、なければ枠の四隅を使う
+  const effectivePairs = useMemo(() => (pairs.length >= 2 ? pairs : frame ? framePairs(frame, paper) : []), [pairs, frame, paper]);
   const center = useMemo(() => property ?? TOKYO_STATION, [assetId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function run<T>(label: string, f: () => Promise<T>): Promise<T | undefined> {
@@ -121,6 +133,7 @@ function MapWorkspace() {
 
   async function setPropertyAt(ll: [number, number]) {
     patchLand({ geo: { lat: ll[0], lng: ll[1] } });
+    if (!frame) setFrame({ center: ll, scale: DEFAULT_SCALE, rotation: 0 });
     setMode("idle");
     setTown(null);
     try {
@@ -183,7 +196,8 @@ function MapWorkspace() {
   }
 
   function onMapClick(ll: [number, number]) {
-    if (mode === "property") void setPropertyAt(ll);
+    if (mode === "property" || (mode === "idle" && !property)) void setPropertyAt(ll);
+    else if (mode === "idle") setFrame((f) => ({ scale: DEFAULT_SCALE, rotation: 0, ...f, center: ll }));
     else if (mode === "mapPoint" && pendingImg) {
       setPairs((p) => [...p, { img: pendingImg, latlng: ll }]);
       setPendingImg(null);
@@ -193,7 +207,7 @@ function MapWorkspace() {
 
   /** 路線価図上の土地の位置：位置合わせ済みなら地図の位置から計算、未済なら路線価図上でクリックした点 */
   const sheetPointOfProperty = (): [number, number] | null => {
-    if (property && pairs.length >= 2) return api.current?.toSheet(property) ?? null;
+    if (property && effectivePairs.length >= 2) return api.current?.toSheet(property) ?? null;
     return sheetProperty;
   };
 
@@ -221,7 +235,7 @@ function MapWorkspace() {
     const m = land.method.type === "rosenka" ? land.method : { type: "rosenka" as const, depthCorrection: 1 };
     patchLand({
       method: { ...m, type: "rosenka", routePrice: parsed.routePrice },
-      rosenkaSheet: { url: sheetUrl || undefined, page: pdfData ? pageNo : undefined, points: pairs, notation },
+      rosenkaSheet: { url: sheetUrl || undefined, page: pdfData ? pageNo : undefined, points: pairs, frame: frame ?? undefined, notation },
     });
   }
 
@@ -280,7 +294,10 @@ function MapWorkspace() {
           <MapView
             center={center}
             property={property}
-            pairs={pairs}
+            pairs={effectivePairs}
+            pins={pairs}
+            frame={corners}
+            onFrameMove={(c) => setFrame((f) => (f ? { ...f, center: c } : f))}
             pendingImg={mode === "mapPoint" ? pendingImg : null}
             sheet={sheet}
             opacity={opacity}
@@ -298,7 +315,7 @@ function MapWorkspace() {
               </span>
             )}
           </div>
-          {pairs.length >= 2 && sheet && (
+          {effectivePairs.length >= 2 && sheet && (
             <div className="mt-4 flex flex-wrap items-center gap-4">
               <Check checked={showOverlay} onChange={setShowOverlay} label="路線価図を重ねる" />
               <label className="flex items-center gap-2 text-sm text-stone-700">
@@ -374,8 +391,61 @@ function MapWorkspace() {
       </div>
 
       <Card title="③ 路線価図と地図の位置を合わせる">
+        <h3 className="mb-1 text-sm font-bold text-stone-700">路線価図1枚分の枠</h3>
         <p className="mb-3 text-sm text-stone-700">
-          路線価図と地図で同じ場所（交差点の角など）を順に選びます。2か所で重ねて表示でき、離れた3か所以上にするとより正確に合います。
+          地図をクリックすると、その場所を中心に路線価図1枚分の枠が出ます。路線価図を読み込むと枠にはめ込んで重ねるので、道路が重なるように枠を動かし（✥をドラッグ）、縮尺と向きを合わせてください。
+        </p>
+        <div className="mb-5 flex flex-wrap items-center gap-4">
+          <label className="flex items-center gap-2 text-sm text-stone-700">
+            縮尺
+            <select
+              className="rounded border border-stone-300 px-2 py-1"
+              value={frame?.scale ?? DEFAULT_SCALE}
+              onChange={(e) => setFrame((f) => (f ? { ...f, scale: Number(e.target.value) } : f))}
+              disabled={!frame}
+            >
+              {SCALES.map((sc) => (
+                <option key={sc} value={sc}>
+                  1/{sc.toLocaleString("ja-JP")}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-sm text-stone-700">
+            微調整
+            <input
+              type="range"
+              min={0.8}
+              max={1.25}
+              step={0.01}
+              value={frame ? frame.scale / nearestScale(frame.scale) : 1}
+              onChange={(e) => setFrame((f) => (f ? { ...f, scale: Math.round(nearestScale(f.scale) * Number(e.target.value)) } : f))}
+              disabled={!frame}
+              className="accent-teal-700"
+            />
+          </label>
+          <label className="flex items-center gap-2 text-sm text-stone-700">
+            向き
+            <input
+              type="range"
+              min={-45}
+              max={45}
+              step={0.5}
+              value={frame?.rotation ?? 0}
+              onChange={(e) => setFrame((f) => (f ? { ...f, rotation: Number(e.target.value) } : f))}
+              disabled={!frame}
+              className="accent-teal-700"
+            />
+            <span className="w-12 tabular-nums">{(frame?.rotation ?? 0).toFixed(1)}°</span>
+          </label>
+          <Button variant="ghost" onClick={() => property && setFrame((f) => ({ scale: DEFAULT_SCALE, rotation: 0, ...f, center: property }))} disabled={!property}>
+            枠を土地の位置に戻す
+          </Button>
+        </div>
+        {pairs.length >= 2 && <Note tone="info">基準点で位置を合わせているため、重ね表示には基準点を使っています（枠は目安です）。</Note>}
+        <h3 className="mb-1 mt-4 text-sm font-bold text-stone-700">さらに正確に合わせる（基準点）</h3>
+        <p className="mb-3 text-sm text-stone-700">
+          路線価図と地図で同じ場所（交差点の角など）を順に選びます。2か所以上選ぶと、枠の代わりに基準点で重ねます。離れた3か所以上にするとより正確に合います。
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <Button onClick={() => setMode("sheetPoint")} disabled={!sheet}>
@@ -397,7 +467,7 @@ function MapWorkspace() {
           <Button onClick={readWithClaude} disabled={!sheet || !!busy}>
             土地の周りの路線価を Claude に読み取ってもらう
           </Button>
-          {(!property || pairs.length < 2) && (
+          {(!property || effectivePairs.length < 2) && (
             <Button variant="secondary" onClick={() => setMode("sheetProperty")} disabled={!sheet}>
               路線価図で土地の位置を指定
             </Button>

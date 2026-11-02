@@ -13,6 +13,8 @@ export interface Sheet {
   src: string;
   width: number;
   height: number;
+  /** 用紙の大きさ（PDFのページサイズから。画像の場合はなし） */
+  paper?: { widthMm: number; heightMm: number };
 }
 export interface GeoPair {
   img: [number, number]; // 画像の幅・高さを1とした座標
@@ -22,7 +24,13 @@ export interface GeoPair {
 interface Props {
   center: [number, number];
   property?: [number, number];
+  /** 重ね表示に使う基準点（手動の基準点、なければ枠の四隅） */
   pairs: GeoPair[];
+  /** 地図に番号付きで表示する手動の基準点 */
+  pins: GeoPair[];
+  /** 路線価図1枚分の枠（四隅） */
+  frame?: [number, number][] | null;
+  onFrameMove?: (center: [number, number]) => void;
   pendingImg?: [number, number] | null;
   sheet?: Sheet | null;
   opacity: number;
@@ -52,11 +60,13 @@ export function transformFor(map: Leaflet.Map, sheet: Sheet, pairs: GeoPair[]): 
   }
 }
 
-export default function MapView({ center, property, pairs, pendingImg, sheet, opacity, showOverlay, onMapClick, onReady }: Props) {
+export default function MapView({ center, property, pairs, pins, frame, onFrameMove, pendingImg, sheet, opacity, showOverlay, onMapClick, onReady }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Leaflet.Map | null>(null);
   const LRef = useRef<typeof Leaflet | null>(null);
-  const layers = useRef<{ property?: Leaflet.CircleMarker; pairs?: Leaflet.LayerGroup; img?: HTMLImageElement }>({});
+  const layers = useRef<{ property?: Leaflet.CircleMarker; pairs?: Leaflet.LayerGroup; frame?: Leaflet.LayerGroup; img?: HTMLImageElement }>({});
+  const frameMoveRef = useRef(onFrameMove);
+  frameMoveRef.current = onFrameMove;
   const clickRef = useRef(onMapClick);
   clickRef.current = onMapClick;
   const state = useRef({ sheet, pairs });
@@ -76,6 +86,7 @@ export default function MapView({ center, property, pairs, pendingImg, sheet, op
       L.control.layers({ 地図: std, 航空写真: photo }, {}, { position: "topright" }).addTo(map);
       map.on("click", (e: Leaflet.LeafletMouseEvent) => clickRef.current?.([e.latlng.lat, e.latlng.lng]));
       layers.current.pairs = L.layerGroup().addTo(map);
+      layers.current.frame = L.layerGroup().addTo(map);
       mapRef.current = map;
       onReady?.({
         flyTo: (ll, z) => map.setView(ll, z ?? Math.max(map.getZoom(), 17)),
@@ -118,12 +129,31 @@ export default function MapView({ center, property, pairs, pendingImg, sheet, op
     const g = layers.current.pairs;
     if (!L || !g) return;
     g.clearLayers();
-    pairs.forEach((p, i) =>
+    pins.forEach((p, i) =>
       L.marker(p.latlng, {
         icon: L.divIcon({ className: "", html: `<div class="gcp-pin">${i + 1}</div>`, iconSize: [22, 22], iconAnchor: [11, 11] }),
       }).addTo(g),
     );
-  }, [pairs]);
+  }, [pins]);
+
+  // 路線価図1枚分の枠（中心の印をドラッグして移動できる）
+  useEffect(() => {
+    const L = LRef.current;
+    const g = layers.current.frame;
+    if (!L || !g) return;
+    g.clearLayers();
+    if (!frame) return;
+    L.polygon(frame, { color: "#0f766e", weight: 2, dashArray: "6 4", fillOpacity: 0.04, interactive: false }).addTo(g);
+    const c: [number, number] = [frame.reduce((a, p) => a + p[0], 0) / 4, frame.reduce((a, p) => a + p[1], 0) / 4];
+    const handle = L.marker(c, {
+      draggable: true,
+      icon: L.divIcon({ className: "", html: '<div class="frame-handle" title="ドラッグして枠を移動">✥</div>', iconSize: [26, 26], iconAnchor: [13, 13] }),
+    }).addTo(g);
+    handle.on("dragend", () => {
+      const ll = handle.getLatLng();
+      frameMoveRef.current?.([ll.lat, ll.lng]);
+    });
+  }, [frame]);
 
   // 路線価図の重ね表示
   useEffect(() => {

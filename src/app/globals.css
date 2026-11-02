@@ -20,3 +20,18 @@ body {
   font: 700 12px/1 system-ui, sans-serif;
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.4);
 }
+
+/* 路線価図の枠を動かす取っ手 */
+.frame-handle {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 9999px;
+  background: #0f766e;
+  border: 2px solid #fff;
+  color: #fff;
+  font: 700 15px/1 system-ui, sans-serif;
+  cursor: move;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.4);
+}

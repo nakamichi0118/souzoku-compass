@@ -91,6 +91,8 @@ export interface RosenkaSheet {
   url?: string;
   page?: number;
   points: { img: [number, number]; latlng: [number, number] }[];
+  /** 路線価図1枚分の枠（中心・縮尺の分母・回転角） */
+  frame?: { center: [number, number]; scale: number; rotation: number };
   /** 読み取った路線価の表記（例：420D） */
   notation?: string;
 }
