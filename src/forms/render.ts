@@ -49,7 +49,8 @@ function wrap(font: PDFFont, text: string, size: number, width: number): string[
 }
 
 function drawField(page: ReturnType<PDFDocument["addPage"]>, font: PDFFont, box: FieldBox, raw: string) {
-  const pad = box.align === "right" ? 1.5 : 3;
+  // 1桁用の狭い欄では余白を詰める
+  const pad = Math.min(box.align === "right" ? 1.5 : 3, box.w * 0.08);
   const innerW = box.w - pad * 2;
   let size = box.size;
   const maxLines = box.lines ?? 1;

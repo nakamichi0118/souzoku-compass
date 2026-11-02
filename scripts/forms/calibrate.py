@@ -18,7 +18,13 @@ def flood_bbox(img, seed):
     px = img.load()
     sx, sy = seed
     if px[sx, sy] == 0:
-        raise ValueError(f"seed {seed} is on a black pixel")
+        # 印字の上に seed が乗った場合は近くの白い点にずらす
+        near = [(sx + dx, sy + dy) for r in range(1, 16) for dx in range(-r, r + 1) for dy in (-r, r)]
+        near += [(sx + dx, sy + dy) for r in range(1, 16) for dy in range(-r, r + 1) for dx in (-r, r)]
+        white = [(x, y) for x, y in near if 0 <= x < w and 0 <= y < h and px[x, y] != 0]
+        if not white:
+            raise ValueError(f"seed {seed} is on a black pixel")
+        sx, sy = min(white, key=lambda q: (q[0] - sx) ** 2 + (q[1] - sy) ** 2)
     seen = bytearray(w * h)
     stack = [(sx, sy)]
     x0 = x1 = sx

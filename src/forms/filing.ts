@@ -1,11 +1,12 @@
 /**
- * 計算結果を申告書（第1表・第1表（続）・第2表）の欄へ割り当てる。
+ * 計算結果を申告書（第1表・第1表（続）・第2表・第11表と付表）の欄へ割り当てる。
  */
 import { toString as fracText } from "@/domain/fraction";
 import type { PersonTax, TaxResult } from "@/domain/tax/engine";
 import type { Case, Person } from "@/domain/types";
 import { ageAt, wareki, yen, yenOrBlank } from "./format";
 import type { PageFill } from "./render";
+import { buildSchedule11 } from "./schedule11";
 
 const RELATION_LABEL: Record<Person["relation"], string> = {
   spouse: "配偶者",
@@ -172,5 +173,8 @@ export function buildFilingPages(c: Case, r: TaxResult): PageFill[] {
     });
     pages.push({ page: "t02", values });
   }
+
+  // 第11表・付表1〜4
+  pages.push(...buildSchedule11(c, r));
   return pages;
 }

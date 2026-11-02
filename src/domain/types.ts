@@ -125,6 +125,10 @@ export interface MoneyAsset extends AssetBase {
   amount: number;
   /** 預貯金の既経過利息（源泉税控除後） */
   accruedInterest?: number;
+  /** 申告書（第11表の付表3）用：金融機関名・支店名・口座種別 */
+  institution?: string;
+  branch?: string;
+  accountType?: string;
 }
 
 export interface ListedStockAsset extends AssetBase {

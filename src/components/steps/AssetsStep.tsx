@@ -172,6 +172,19 @@ function AssetEditor({
               <YenInput value={a.accruedInterest ?? 0} onChange={(v) => patch({ accruedInterest: v })} />
             </Field>
           )}
+          {a.kind === "deposit" && (
+            <>
+              <Field label="金融機関名" hint="申告書（第11表の付表3）に記載します">
+                <TextInput value={a.institution ?? ""} onChange={(e) => patch({ institution: e.target.value })} placeholder="みほん銀行" />
+              </Field>
+              <Field label="支店名">
+                <TextInput value={a.branch ?? ""} onChange={(e) => patch({ branch: e.target.value })} placeholder="架空支店" />
+              </Field>
+              <Field label="口座の種類">
+                <TextInput value={a.accountType ?? ""} onChange={(e) => patch({ accountType: e.target.value })} placeholder="普通預金" />
+              </Field>
+            </>
+          )}
         </>
       );
     case "insurance":

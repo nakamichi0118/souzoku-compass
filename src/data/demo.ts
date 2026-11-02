@@ -82,7 +82,7 @@ export const demoCase: Case = {
     {
       id: "condo",
       kind: "condo",
-      label: "賃貸用マンション（架空レジデンス305号室）",
+      label: "マンション（架空レジデンス305号室）",
       location: "神奈川県横浜市架空区見本町1番地",
       landValueBeforeCorrection: 10_500_000,
       buildingFixedAssetValue: 4_000_000,
@@ -92,8 +92,8 @@ export const demoCase: Case = {
       landShareSqm: 21,
       exclusiveAreaSqm: 60,
     },
-    { id: "dep1", kind: "deposit", label: "みほん銀行 普通預金", amount: 38_250_000, accruedInterest: 1_234 },
-    { id: "dep2", kind: "deposit", label: "ためし信用金庫 定期預金", amount: 20_000_000, accruedInterest: 8_765 },
+    { id: "dep1", kind: "deposit", label: "みほん銀行 普通預金", amount: 38_250_000, accruedInterest: 1_234, institution: "みほん銀行", branch: "架空支店", accountType: "普通預金" },
+    { id: "dep2", kind: "deposit", label: "ためし信用金庫 定期預金", amount: 20_000_000, accruedInterest: 8_765, institution: "ためし信用金庫", branch: "本店", accountType: "定期預金" },
     {
       id: "stock",
       kind: "listedStock",
