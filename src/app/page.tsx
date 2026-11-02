@@ -1,103 +1,47 @@
-import Image from "next/image";
+import Link from "next/link";
+
+const STEPS = ["亡くなった方", "相続人", "財産", "債務・葬式費用", "遺産の分け方", "税額の確認", "書類の作成"];
 
 export default function Home() {
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
+    <main className="mx-auto max-w-4xl px-4 py-14">
+      <p className="text-sm font-semibold text-teal-700">相続税の申告を、自分の手で。</p>
+      <h1 className="mt-2 text-4xl font-bold leading-tight text-stone-900">相続コンパス</h1>
+      <p className="mt-4 text-lg leading-relaxed text-stone-700">
+        家族の関係と財産を順番に入力するだけで、相続人と法定相続分を判定し、相続税を計算して、国税庁の
+        <strong>令和8年分の正式な申告書様式</strong>に記入したPDFを作ります。わからない言葉や書類の読み方は、Claudeがその場で説明します。
+      </p>
+      <div className="mt-8 flex flex-wrap gap-3">
+        <Link href="/case/decedent" className="rounded-lg bg-teal-700 px-6 py-3 font-semibold text-white hover:bg-teal-800">
+          はじめる（デモ案件入り）
+        </Link>
+        <Link href="/case/tax" className="rounded-lg border border-stone-300 bg-white px-6 py-3 font-semibold text-stone-800 hover:bg-stone-50">
+          デモの計算結果を見る
+        </Link>
+      </div>
+      <ol className="mt-12 grid gap-3 sm:grid-cols-7">
+        {STEPS.map((s, i) => (
+          <li key={s} className="rounded-lg border border-stone-200 bg-white p-3 text-center text-sm">
+            <span className="block text-xs font-bold text-teal-700">STEP {i + 1}</span>
+            {s}
           </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+        ))}
+      </ol>
+      <section className="mt-12 grid gap-4 sm:grid-cols-3">
+        {[
+          ["税額は決まった計算式で", "相続税法・財産評価基本通達に沿った計算エンジンが計算します。AIは計算に関与しないので、同じ入力なら必ず同じ結果です。"],
+          ["Claudeが案内と入力を手伝う", "専門用語の説明、残高証明書などの書類の読み取り、計算結果の説明をClaudeが担当します。"],
+          ["自動で完結できないものは正直に", "国外財産・非居住者・納税猶予・非上場株式の評価などは、税理士への相談をおすすめします。"],
+        ].map(([t, d]) => (
+          <div key={t} className="rounded-xl border border-stone-200 bg-white p-5">
+            <h2 className="font-bold text-stone-900">{t}</h2>
+            <p className="mt-2 text-sm leading-relaxed text-stone-600">{d}</p>
+          </div>
+        ))}
+      </section>
+      <p className="mt-12 text-xs text-stone-500">
+        デモ案件はすべて架空のダミーデータです。申告書様式の出典：国税庁「相続税の申告書等の様式一覧（令和8年分用）」を加工して作成。
+      </p>
+    </main>
   );
 }
