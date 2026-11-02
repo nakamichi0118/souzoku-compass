@@ -38,6 +38,8 @@ interface Props {
   onMapClick?: (latlng: [number, number]) => void;
   /** 親から地図を操作するための関数を受け取る */
   onReady?: (api: MapApi) => void;
+  /** 地図の大きさ（既定は高さ520px） */
+  className?: string;
 }
 
 export interface MapApi {
@@ -60,7 +62,7 @@ export function transformFor(map: Leaflet.Map, sheet: Sheet, pairs: GeoPair[]): 
   }
 }
 
-export default function MapView({ center, property, pairs, pins, frame, onFrameMove, pendingImg, sheet, opacity, showOverlay, onMapClick, onReady }: Props) {
+export default function MapView({ center, property, pairs, pins, frame, onFrameMove, pendingImg, sheet, opacity, showOverlay, onMapClick, onReady, className }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Leaflet.Map | null>(null);
   const LRef = useRef<typeof Leaflet | null>(null);
@@ -194,7 +196,7 @@ export default function MapView({ center, property, pairs, pins, frame, onFrameM
 
   return (
     <div className="relative">
-      <div ref={el} className="h-[520px] w-full rounded-xl border border-stone-300" aria-label="地図" />
+      <div ref={el} className={className ?? "h-[520px] w-full rounded-xl border border-stone-300"} aria-label="地図" />
       {pendingImg && (
         <p className="pointer-events-none absolute left-1/2 top-3 z-[1000] -translate-x-1/2 rounded-full bg-amber-500 px-4 py-1 text-sm font-semibold text-white shadow">
           路線価図で選んだ点と同じ場所を、地図上でクリックしてください

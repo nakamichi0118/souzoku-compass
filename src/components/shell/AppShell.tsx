@@ -24,7 +24,7 @@ export function AppHeader() {
   const [menu, setMenu] = useState(false);
 
   useEffect(() => {
-    if (o.loaded && !o.account) router.replace("/signup");
+    if (o.loaded && !o.account) router.replace("/login");
   }, [o.loaded, o.account, router]);
 
   return (

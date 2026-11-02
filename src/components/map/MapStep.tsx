@@ -2,11 +2,11 @@
 
 /**
  * 地図で土地の場所を選び、国税庁の路線価図を地図に重ねて路線価を確認する画面。
+ * 画面は地図が中心で、操作はすべて地図の上に重ねたパネルで行う。
  *
- * 1. 住所検索または地図のクリックで、評価する土地の位置を決める
- * 2. 国税庁サイトの路線価図（PDF）を読み込む（URL指定またはファイル）
- * 3. 路線価図と地図で同じ交差点などを2〜3か所選び、位置を合わせて半透明で重ねる
- * 4. 土地の周辺の路線価を Claude が読み取り（候補）、本人が確認して入力する
+ * - 住所検索または地図のクリックで土地の位置を決めると、その場所の路線価図を国税庁サイトから探して重ねる
+ * - 位置合わせ（枠・基準点）と路線価図の手動選択は、上のメニューの「位置合わせ」に隠す
+ * - 地図の右のパネルで、土地の周辺の路線価を Claude が読み取り（候補）、本人が確認して入力する
  */
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -14,7 +14,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { StepBar } from "@/components/StepBar";
 import { AppHeader } from "@/components/shell/AppShell";
-import { Button, Card, Check, Field, Note, Select, TextInput, YenInput, fmt } from "@/components/ui";
+import { Button, Check, Field, Note, Select, TextInput, YenInput, fmt } from "@/components/ui";
 import type { LandAsset } from "@/domain/types";
 import { parseRouteNotation } from "@/domain/valuation/rosenka";
 import { DEFAULT_PAPER, type Frame, frameCorners, framePairs } from "@/domain/geo/frame";
@@ -45,11 +45,8 @@ export function MapStep() {
     <div className="min-h-screen bg-gradient-to-b from-sky-50/70 to-stone-50">
       <AppHeader />
       <StepBar current="assets" />
-      <main className="mx-auto max-w-6xl space-y-5 px-4 pb-24 pt-6">
-        <div>
-          <p className="text-sm font-semibold text-teal-700">ステップ 3 / 7 ・ 財産</p>
-          <h1 className="text-2xl font-bold text-stone-900">地図で土地を選び、路線価図を重ねる</h1>
-        </div>
+      <main className="mx-auto max-w-[1600px] space-y-3 px-4 pb-8 pt-4">
+        <h1 className="text-xl font-bold text-stone-900">地図で土地を選び、路線価を確認する</h1>
         <Suspense fallback={<p className="text-stone-500">読み込み中…</p>}>
           <MapWorkspace />
         </Suspense>
@@ -93,6 +90,8 @@ function MapWorkspace() {
   const [found, setFound] = useState<FindResult | null>(null);
   const [finding, setFinding] = useState(false);
   const [notation, setNotation] = useState(land?.rosenkaSheet?.notation ?? "");
+  const [menu, setMenu] = useState(false);
+  const [panel, setPanel] = useState(true);
 
   // 土地を切り替えたら保存済みの位置合わせを読み直す
   useEffect(() => {
@@ -288,303 +287,329 @@ function MapWorkspace() {
     sheetProperty: "路線価図で、評価する土地の位置をクリックしてください。",
   };
 
+  const sheetPicker = (
+    <div className="space-y-3">
+      {finding && <p className="text-sm text-teal-800">この場所の路線価図を国税庁サイトで探しています…</p>}
+      {found && found.sheets.length === 0 && (
+        <p className="text-sm text-stone-600">
+          {found.message}
+          {found.indexUrl && (
+            <a href={found.indexUrl} target="_blank" rel="noreferrer" className="ml-1 text-teal-800 underline">
+              町丁名索引を開く
+            </a>
+          )}
+        </p>
+      )}
+      <div className="flex gap-2">
+        <TextInput value={sheetUrl} onChange={(e) => setSheetUrl(e.target.value)} placeholder="路線価図PDFのURL" />
+        <Button variant="secondary" className="shrink-0 whitespace-nowrap" onClick={() => loadFromUrl()} disabled={!sheetUrl.trim() || !!busy}>
+          読込
+        </Button>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="cursor-pointer rounded-lg border border-dashed border-stone-400 px-3 py-1.5 text-sm text-stone-700 hover:bg-stone-50">
+          PDF・画像ファイル
+          <input type="file" accept="application/pdf,image/png,image/jpeg" className="hidden" onChange={(e) => e.target.files?.[0] && loadFromFile(e.target.files[0])} />
+        </label>
+        <Button
+          variant="ghost"
+          onClick={() =>
+            run("サンプルを読み込んでいます", async () => {
+              setSheetUrl("");
+              const buf = await (await fetch("/demo/rosenka-sample.pdf")).arrayBuffer();
+              setPdfData(buf);
+              setPageNo(1);
+              await showPdf(buf, 1);
+            })
+          }
+        >
+          デモ用の架空の路線価図
+        </Button>
+        {pdfData && pages > 1 && (
+          <label className="flex items-center gap-2 text-sm">
+            ページ
+            <select
+              className="rounded border border-stone-300 px-2 py-1"
+              value={pageNo}
+              onChange={(e) => {
+                const p = Number(e.target.value);
+                setPageNo(p);
+                void run("ページを表示しています", () => showPdf(pdfData, p));
+              }}
+            >
+              {Array.from({ length: pages }, (_, i) => (
+                <option key={i} value={i + 1}>
+                  {i + 1}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+      </div>
+      <p className="text-xs text-stone-500">
+        自動で見つからないときは、
+        <a href="https://www.rosenka.nta.go.jp/" target="_blank" rel="noreferrer" className="text-teal-800 underline">
+          国税庁「路線価図・評価倍率表」
+        </a>
+        で令和8年分 → 都道府県 → 路線価図 → 市区町村 → {town ? `「${town}」` : "町丁名"} の図を開き、PDFのURLを貼り付けてください。
+      </p>
+    </div>
+  );
+
   return (
-    <div className="space-y-5">
-      <Card title="評価する土地">
-        <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
-          <Field label="土地">
-            <Select value={assetId} onChange={setAssetId} options={lands.map((l) => ({ value: l.id, label: `${l.label || "（名称未入力）"}　${l.location}` }))} />
-          </Field>
-          <Link href="/case/assets" className="rounded-lg px-4 py-2 text-sm font-semibold text-teal-800 hover:bg-teal-50">
-            ← 財産の入力に戻る
-          </Link>
+    <div className="space-y-3">
+      {/* 上のメニュー：土地・住所検索・路線価図・位置合わせ */}
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-stone-200 bg-white p-2 shadow-sm">
+        <div className="w-56">
+          <Select value={assetId} onChange={setAssetId} options={lands.map((l) => ({ value: l.id, label: `${l.label || "（名称未入力）"}　${l.location}` }))} />
         </div>
-      </Card>
-
-      {hint[mode] && <Note tone="warn">{hint[mode]}</Note>}
-      {error && <Note tone="stop">{error}</Note>}
-      {busy && <Note tone="info">{busy}…</Note>}
-
-      <div className="grid gap-5 lg:grid-cols-2">
-        <Card title="① 地図で土地の場所を選ぶ">
-          <div className="mb-3 flex gap-2">
-            <TextInput value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && search()} placeholder={land?.location || "住所を入力（例：千代田区霞が関3丁目）"} />
-            <Button variant="secondary" className="shrink-0 whitespace-nowrap" onClick={search} disabled={!query.trim()}>
-              検索
-            </Button>
-          </div>
+        <div className="relative flex min-w-[16rem] flex-1 gap-2">
+          <TextInput value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && search()} placeholder={land?.location || "住所で探す（例：福岡市博多区博多駅前4丁目）"} />
+          <Button variant="secondary" className="shrink-0 whitespace-nowrap" onClick={search} disabled={!query.trim()}>
+            検索
+          </Button>
           {hits.length > 1 && (
-            <ul className="mb-3 max-h-28 overflow-auto rounded border border-stone-200 text-sm">
+            <ul className="absolute left-0 top-full z-[1100] mt-1 max-h-48 w-full overflow-auto rounded-lg border border-stone-200 bg-white text-sm shadow-lg">
               {hits.map((h) => (
                 <li key={`${h.lat},${h.lng},${h.title}`}>
-                  <button type="button" className="w-full px-3 py-1 text-left hover:bg-teal-50" onClick={() => api.current?.flyTo([h.lat, h.lng], 17)}>
+                  <button
+                    type="button"
+                    className="w-full px-3 py-1.5 text-left hover:bg-teal-50"
+                    onClick={() => {
+                      api.current?.flyTo([h.lat, h.lng], 17);
+                      setHits([]);
+                    }}
+                  >
                     {h.title}
                   </button>
                 </li>
               ))}
             </ul>
           )}
-          <MapView
-            center={center}
-            property={property}
-            pairs={effectivePairs}
-            pins={pairs}
-            frame={corners}
-            onFrameMove={(c) => setFrame((f) => (f ? { ...f, center: c } : f))}
-            pendingImg={mode === "mapPoint" ? pendingImg : null}
-            sheet={sheet}
-            opacity={opacity}
-            showOverlay={showOverlay}
-            onMapClick={onMapClick}
-            onReady={(a) => (api.current = a)}
-          />
-          <div className="mt-3 flex flex-wrap items-center gap-3">
-            <Button variant={mode === "property" ? "primary" : "secondary"} onClick={() => setMode(mode === "property" ? "idle" : "property")}>
-              {property ? "土地の位置を選び直す" : "地図で土地の位置を選ぶ"}
-            </Button>
-            {property && (
-              <span className="text-sm text-stone-600">
-                選択済み（{property[0].toFixed(5)}, {property[1].toFixed(5)}）{town && `・${town}付近`}
-              </span>
-            )}
-          </div>
-          {effectivePairs.length >= 2 && sheet && (
-            <div className="mt-4 flex flex-wrap items-center gap-4">
-              <Check checked={showOverlay} onChange={setShowOverlay} label="路線価図を重ねる" />
-              <label className="flex items-center gap-2 text-sm text-stone-700">
-                透明度
-                <input type="range" min={0.1} max={1} step={0.05} value={opacity} onChange={(e) => setOpacity(Number(e.target.value))} className="accent-teal-700" />
-              </label>
-            </div>
-          )}
-        </Card>
-
-        <Card title="② 国税庁の路線価図を読み込む">
-          {finding && <p className="mb-3 text-sm text-teal-800">この場所の路線価図を国税庁サイトで探しています…</p>}
-          {found && (
-            <div className="mb-4 rounded-lg border border-teal-200 bg-teal-50/60 p-3 text-sm">
-              <p className="font-semibold text-stone-800">
-                {[found.city, found.town].filter(Boolean).join(" ")}の路線価図（令和8年分）
-              </p>
-              {found.sheets.length > 0 ? (
-                <>
-                  <p className="mt-1 text-stone-600">この町丁目が載っている図です。土地が写っている図を選んでください。</p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {found.sheets.map((x) => (
-                      <button
-                        key={x.no}
-                        type="button"
-                        onClick={() => loadFromUrl(x.pdfUrl)}
-                        className={`rounded-md border px-3 py-1 font-mono text-sm ${x.pdfUrl === sheetUrl ? "border-teal-700 bg-teal-700 text-white" : "border-stone-300 bg-white hover:border-teal-500"}`}
-                      >
-                        {x.no}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <p className="mt-1 text-stone-600">{found.message}</p>
-              )}
-              {found.indexUrl && (
-                <a href={found.indexUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block text-teal-800 underline">
-                  国税庁サイトの町丁名索引を開く
-                </a>
-              )}
-            </div>
-          )}
-          <ol className="mb-3 list-decimal space-y-1 pl-5 text-sm text-stone-700">
-            <li>
-              <a href="https://www.rosenka.nta.go.jp/" target="_blank" rel="noreferrer" className="font-semibold text-teal-800 underline">
-                国税庁「路線価図・評価倍率表」
-              </a>
-              で「令和8年分」→ 都道府県 → 路線価図 → 市区町村 → {town ? `「${town}」` : "町丁名"} の図番号を開きます。
-            </li>
-            <li>表示されたPDFのURLを貼り付けるか、PDFを保存してファイルを選んでください。</li>
-          </ol>
-          <div className="flex gap-2">
-            <TextInput value={sheetUrl} onChange={(e) => setSheetUrl(e.target.value)} placeholder="https://www.rosenka.nta.go.jp/main_r08/…/prices/pdf/….pdf" />
-            <Button variant="secondary" className="shrink-0 whitespace-nowrap" onClick={() => loadFromUrl()} disabled={!sheetUrl.trim() || !!busy}>
-              読込
-            </Button>
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-3">
-            <label className="cursor-pointer rounded-lg border border-dashed border-stone-400 px-3 py-2 text-sm text-stone-700 hover:bg-stone-50">
-              PDF・画像ファイルを選ぶ
-              <input type="file" accept="application/pdf,image/png,image/jpeg" className="hidden" onChange={(e) => e.target.files?.[0] && loadFromFile(e.target.files[0])} />
-            </label>
-            <Button
-              variant="ghost"
-              onClick={() =>
-                run("サンプルを読み込んでいます", async () => {
-                  setSheetUrl("");
-                  const buf = await (await fetch("/demo/rosenka-sample.pdf")).arrayBuffer();
-                  setPdfData(buf);
-                  setPageNo(1);
-                  await showPdf(buf, 1);
-                })
-              }
-            >
-              デモ用の架空の路線価図を使う
-            </Button>
-            {pdfData && pages > 1 && (
-              <label className="flex items-center gap-2 text-sm">
-                ページ
-                <select
-                  className="rounded border border-stone-300 px-2 py-1"
-                  value={pageNo}
-                  onChange={(e) => {
-                    const p = Number(e.target.value);
-                    setPageNo(p);
-                    void run("ページを表示しています", () => showPdf(pdfData, p));
-                  }}
-                >
-                  {Array.from({ length: pages }, (_, i) => (
-                    <option key={i} value={i + 1}>
-                      {i + 1}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-          </div>
-          {sheet ? (
-            <SheetViewer sheet={sheet} pairs={pairs} pending={pendingImg} property={sheetProperty} clickable={mode === "sheetPoint" || mode === "sheetProperty"} onClick={onSheetClick} />
-          ) : (
-            <p className="mt-4 rounded-lg bg-stone-50 p-6 text-center text-sm text-stone-500">路線価図を読み込むと、ここに表示されます。</p>
-          )}
-        </Card>
-      </div>
-
-      <Card title="③ 路線価図と地図の位置を合わせる">
-        <h3 className="mb-1 text-sm font-bold text-stone-700">路線価図1枚分の枠</h3>
-        <p className="mb-3 text-sm text-stone-700">
-          地図をクリックすると、その場所を中心に路線価図1枚分の枠が出ます。路線価図を読み込むと枠にはめ込んで重ねるので、道路が重なるように枠を動かし（✥をドラッグ）、縮尺と向きを合わせてください。
-        </p>
-        <div className="mb-5 flex flex-wrap items-center gap-4">
-          <label className="flex items-center gap-2 text-sm text-stone-700">
-            縮尺
-            <select
-              className="rounded border border-stone-300 px-2 py-1"
-              value={frame?.scale ?? DEFAULT_SCALE}
-              onChange={(e) => setFrame((f) => (f ? { ...f, scale: Number(e.target.value) } : f))}
-              disabled={!frame}
-            >
-              {SCALES.map((sc) => (
-                <option key={sc} value={sc}>
-                  1/{sc.toLocaleString("ja-JP")}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex items-center gap-2 text-sm text-stone-700">
-            微調整
-            <input
-              type="range"
-              min={0.8}
-              max={1.25}
-              step={0.01}
-              value={frame ? frame.scale / nearestScale(frame.scale) : 1}
-              onChange={(e) => setFrame((f) => (f ? { ...f, scale: Math.round(nearestScale(f.scale) * Number(e.target.value)) } : f))}
-              disabled={!frame}
-              className="accent-teal-700"
-            />
-          </label>
-          <label className="flex items-center gap-2 text-sm text-stone-700">
-            向き
-            <input
-              type="range"
-              min={-45}
-              max={45}
-              step={0.5}
-              value={frame?.rotation ?? 0}
-              onChange={(e) => setFrame((f) => (f ? { ...f, rotation: Number(e.target.value) } : f))}
-              disabled={!frame}
-              className="accent-teal-700"
-            />
-            <span className="w-12 tabular-nums">{(frame?.rotation ?? 0).toFixed(1)}°</span>
-          </label>
-          <Button variant="ghost" onClick={() => property && setFrame((f) => ({ scale: DEFAULT_SCALE, rotation: 0, ...f, center: property }))} disabled={!property}>
-            枠を土地の位置に戻す
-          </Button>
         </div>
-        {pairs.length >= 2 && <Note tone="info">基準点で位置を合わせているため、重ね表示には基準点を使っています（枠は目安です）。</Note>}
-        <h3 className="mb-1 mt-4 text-sm font-bold text-stone-700">さらに正確に合わせる（基準点）</h3>
-        <p className="mb-3 text-sm text-stone-700">
-          路線価図と地図で同じ場所（交差点の角など）を順に選びます。2か所以上選ぶと、枠の代わりに基準点で重ねます。離れた3か所以上にするとより正確に合います。
-        </p>
-        <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={() => setMode("sheetPoint")} disabled={!sheet}>
-            基準点を追加（{pairs.length + 1}点目）
-          </Button>
-          <Button variant="ghost" onClick={() => setPairs((p) => p.slice(0, -1))} disabled={pairs.length === 0}>
-            最後の基準点を取り消す
-          </Button>
-          <Button variant="ghost" onClick={() => setPairs([])} disabled={pairs.length === 0}>
-            すべて消す
-          </Button>
-          <span className="text-sm text-stone-600">基準点 {pairs.length} 点</span>
-        </div>
-        {!sheet && pairs.length > 0 && <p className="mt-2 text-sm text-stone-500">保存済みの基準点があります。同じ路線価図を読み込むと重ねて表示します。</p>}
-      </Card>
-
-      <Card title="④ 路線価を確認して入力する">
-        <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={readWithClaude} disabled={!sheet || !!busy}>
-            土地の周りの路線価をコンパスくんに読み取ってもらう
-          </Button>
-          {(!property || effectivePairs.length < 2) && (
-            <Button variant="secondary" onClick={() => setMode("sheetProperty")} disabled={!sheet}>
-              路線価図で土地の位置を指定
-            </Button>
-          )}
-        </div>
-        {reading && (
-          <div className="mt-4 space-y-2">
-            <p className="text-sm font-semibold text-stone-700">読み取り候補（路線価図と見比べて確認してください）</p>
-            <ul className="space-y-1">
-              {reading.candidates.map((c) => (
-                <li key={c.notation + c.where}>
-                  <button type="button" onClick={() => setNotation(c.notation)} className="w-full rounded-lg border border-stone-200 px-3 py-2 text-left text-sm hover:border-teal-500 hover:bg-teal-50">
-                    <span className="mr-3 font-mono text-base font-bold text-teal-900">{c.notation}</span>
-                    {c.where}（土地と{c.distanceToMarker}）
-                  </button>
-                </li>
-              ))}
-            </ul>
-            {reading.districtSymbol && <p className="text-sm text-stone-600">地区区分の記号：{reading.districtSymbol}</p>}
-            {reading.notes.map((n) => (
-              <p key={n} className="text-xs text-stone-500">
-                ※ {n}
-              </p>
+        <Button variant={mode === "property" ? "primary" : "secondary"} onClick={() => setMode(mode === "property" ? "idle" : "property")}>
+          {property ? "土地の位置を選び直す" : "土地の位置を選ぶ"}
+        </Button>
+        {found && found.sheets.length > 0 && (
+          <div className="flex items-center gap-1 text-sm">
+            <span className="text-stone-500">路線価図</span>
+            {found.sheets.map((x) => (
+              <button
+                key={x.no}
+                type="button"
+                onClick={() => loadFromUrl(x.pdfUrl)}
+                className={`rounded-md border px-2 py-0.5 font-mono ${x.pdfUrl === sheetUrl ? "border-teal-700 bg-teal-700 text-white" : "border-stone-300 bg-white hover:border-teal-500"}`}
+              >
+                {x.no}
+              </button>
             ))}
           </div>
         )}
-        <div className="mt-4 grid gap-4 sm:grid-cols-3 sm:items-end">
-          <Field label="路線価の表記" hint="路線価図の道路に書かれた表記（例：420D）">
-            <TextInput value={notation} onChange={(e) => setNotation(e.target.value)} placeholder="420D" />
-          </Field>
-          <Field label="1㎡当たりの路線価">
-            <YenInput value={parsed?.routePrice} onChange={(v) => setNotation(v ? String(Math.round(v / 1000)) + (parsed?.letter ?? "") : "")} />
-          </Field>
-          <Button onClick={applyToLand} disabled={!parsed || !land}>
-            この路線価を土地に反映
-          </Button>
+        <Button variant={menu ? "primary" : "ghost"} onClick={() => setMenu((v) => !v)}>
+          位置合わせ {menu ? "▲" : "▼"}
+        </Button>
+        <Link href="/case/assets" className="rounded-lg px-3 py-2 text-sm font-semibold text-teal-800 hover:bg-teal-50">
+          ← 財産の入力へ
+        </Link>
+      </div>
+
+      <div className="relative">
+        <MapView
+          className="h-[calc(100vh-12rem)] min-h-[520px] w-full rounded-xl border border-stone-300"
+          center={center}
+          property={property}
+          pairs={effectivePairs}
+          pins={pairs}
+          frame={menu ? corners : null}
+          onFrameMove={(c) => setFrame((f) => (f ? { ...f, center: c } : f))}
+          pendingImg={mode === "mapPoint" ? pendingImg : null}
+          sheet={sheet}
+          opacity={opacity}
+          showOverlay={showOverlay}
+          onMapClick={onMapClick}
+          onReady={(a) => (api.current = a)}
+        />
+
+        {/* 地図の上：案内・状態 */}
+        <div className="pointer-events-none absolute left-1/2 top-3 z-[1000] w-[min(36rem,90%)] -translate-x-1/2 space-y-2">
+          {(hint[mode] || (!property && mode === "idle" ? "地図で、評価する土地をクリックしてください。" : null)) && (
+            <p className="rounded-lg bg-amber-50/95 px-3 py-2 text-center text-sm font-semibold text-amber-950 shadow">{hint[mode] ?? "地図で、評価する土地をクリックしてください。"}</p>
+          )}
+          {(busy || finding) && <p className="rounded-lg bg-white/95 px-3 py-2 text-center text-sm text-teal-900 shadow">{busy ?? "この場所の路線価図を探しています"}…</p>}
+          {error && <p className="pointer-events-auto rounded-lg bg-rose-50/95 px-3 py-2 text-sm text-rose-900 shadow">{error}</p>}
         </div>
-        {parsed?.leaseholdRatio !== undefined && (
-          <p className="mt-2 text-sm text-stone-600">
-            記号「{parsed.letter}」は借地権割合 {Math.round(parsed.leaseholdRatio * 100)}% を表します（土地を貸している場合などに使います）。
-          </p>
+
+        {/* 左：位置合わせメニュー */}
+        {menu && (
+          <aside className="absolute bottom-3 left-14 top-3 z-[1000] w-[min(26rem,calc(100%-5rem))] space-y-4 overflow-y-auto rounded-xl bg-white/97 p-4 shadow-xl ring-1 ring-stone-200">
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-stone-800">位置合わせ</h2>
+              <button type="button" onClick={() => setMenu(false)} className="text-sm text-stone-500 hover:text-stone-800">
+                閉じる ✕
+              </button>
+            </div>
+            <section>
+              <h3 className="mb-1 text-sm font-bold text-stone-700">路線価図1枚分の枠</h3>
+              <p className="mb-2 text-xs text-stone-600">道路が重なるように枠を動かし（✥をドラッグ）、縮尺と向きを合わせます。</p>
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 text-sm text-stone-700">
+                  縮尺
+                  <select
+                    className="rounded border border-stone-300 px-2 py-1"
+                    value={frame ? nearestScale(frame.scale) : DEFAULT_SCALE}
+                    onChange={(e) => setFrame((f) => (f ? { ...f, scale: Number(e.target.value) } : f))}
+                    disabled={!frame}
+                  >
+                    {SCALES.map((sc) => (
+                      <option key={sc} value={sc}>
+                        1/{sc.toLocaleString("ja-JP")}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex items-center gap-2 text-sm text-stone-700">
+                  微調整
+                  <input
+                    type="range"
+                    min={0.8}
+                    max={1.25}
+                    step={0.01}
+                    value={frame ? frame.scale / nearestScale(frame.scale) : 1}
+                    onChange={(e) => setFrame((f) => (f ? { ...f, scale: Math.round(nearestScale(f.scale) * Number(e.target.value)) } : f))}
+                    disabled={!frame}
+                    className="flex-1 accent-teal-700"
+                  />
+                </label>
+                <label className="flex items-center gap-2 text-sm text-stone-700">
+                  向き
+                  <input
+                    type="range"
+                    min={-45}
+                    max={45}
+                    step={0.5}
+                    value={frame?.rotation ?? 0}
+                    onChange={(e) => setFrame((f) => (f ? { ...f, rotation: Number(e.target.value) } : f))}
+                    disabled={!frame}
+                    className="flex-1 accent-teal-700"
+                  />
+                  <span className="w-12 tabular-nums">{(frame?.rotation ?? 0).toFixed(1)}°</span>
+                </label>
+                <Button variant="ghost" onClick={() => property && setFrame((f) => ({ scale: DEFAULT_SCALE, rotation: 0, ...f, center: property }))} disabled={!property}>
+                  枠を土地の位置に戻す
+                </Button>
+              </div>
+            </section>
+            <section>
+              <h3 className="mb-1 text-sm font-bold text-stone-700">基準点でさらに正確に</h3>
+              <p className="mb-2 text-xs text-stone-600">下の路線価図と地図で同じ場所（交差点の角など）を順に選びます。2か所以上で枠の代わりに基準点で重ねます。</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button onClick={() => setMode("sheetPoint")} disabled={!sheet}>
+                  基準点を追加（{pairs.length + 1}点目）
+                </Button>
+                <Button variant="ghost" onClick={() => setPairs((p) => p.slice(0, -1))} disabled={pairs.length === 0}>
+                  1つ戻す
+                </Button>
+                <Button variant="ghost" onClick={() => setPairs([])} disabled={pairs.length === 0}>
+                  すべて消す
+                </Button>
+              </div>
+              {sheet && <SheetViewer sheet={sheet} pairs={pairs} pending={pendingImg} property={sheetProperty} clickable={mode === "sheetPoint" || mode === "sheetProperty"} onClick={onSheetClick} />}
+            </section>
+            <section>
+              <h3 className="mb-2 text-sm font-bold text-stone-700">路線価図を手動で選ぶ</h3>
+              {sheetPicker}
+            </section>
+          </aside>
         )}
-        {land?.method.type === "rosenka" && land.method.routePrice > 0 && (
-          <Note tone="ok">
-            「{land.label}」の路線価は {fmt(land.method.routePrice)}円/㎡ です。奥行価格補正などは
-            <Link href="/case/assets" className="underline">財産の入力</Link>で確認してください。
-          </Note>
-        )}
-        <p className="mt-3 text-xs text-stone-500">
-          路線価の読み取りはコンパスくんによる候補です。必ず路線価図と見比べてから反映してください。角地・二方路線・不整形地などは補正が必要になる場合があります。
-        </p>
-      </Card>
+
+        {/* 右：路線価の確認と入力 */}
+        <aside className={`absolute right-3 top-3 z-[1000] w-[min(22rem,calc(100%-1.5rem))] rounded-xl bg-white/97 shadow-xl ring-1 ring-stone-200 ${panel ? "bottom-3 overflow-y-auto" : ""}`}>
+          <button type="button" onClick={() => setPanel((v) => !v)} className="flex w-full items-center justify-between px-4 py-3 text-left font-bold text-stone-800">
+            路線価を入力する
+            <span className="text-sm font-normal text-stone-500">{panel ? "たたむ ▲" : "ひらく ▼"}</span>
+          </button>
+          {panel && (
+            <div className="space-y-4 px-4 pb-4">
+              {land && <p className="-mt-2 text-xs text-stone-500">{land.label || "（名称未入力）"}　{land.location}</p>}
+              {sheet ? (
+                <div className="flex flex-wrap items-center gap-3 rounded-lg bg-stone-50 p-2">
+                  <Check checked={showOverlay} onChange={setShowOverlay} label="路線価図を重ねる" />
+                  <label className="flex flex-1 items-center gap-2 text-sm text-stone-700">
+                    透明度
+                    <input type="range" min={0.1} max={1} step={0.05} value={opacity} onChange={(e) => setOpacity(Number(e.target.value))} className="flex-1 accent-teal-700" />
+                  </label>
+                </div>
+              ) : (
+                <p className="rounded-lg bg-stone-50 p-2 text-sm text-stone-600">
+                  {property ? "路線価図がまだ重なっていません。上のメニューの「位置合わせ」から路線価図を選べます。" : "地図で土地をクリックすると、その場所の路線価図を探して重ねます。"}
+                </p>
+              )}
+              <div className="space-y-2">
+                <Button onClick={readWithClaude} disabled={!sheet || !!busy}>
+                  土地の周りの路線価を読み取る
+                </Button>
+                {sheet && (!property || effectivePairs.length < 2) && (
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setMenu(true);
+                      setMode("sheetProperty");
+                    }}
+                  >
+                    路線価図で土地の位置を指定
+                  </Button>
+                )}
+              </div>
+              {reading && (
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-stone-700">読み取り候補（地図の上の路線価図と見比べてください）</p>
+                  <ul className="space-y-1">
+                    {reading.candidates.map((c) => (
+                      <li key={c.notation + c.where}>
+                        <button
+                          type="button"
+                          onClick={() => setNotation(c.notation)}
+                          className={`w-full rounded-lg border px-3 py-2 text-left text-sm hover:border-teal-500 hover:bg-teal-50 ${notation === c.notation ? "border-teal-600 bg-teal-50" : "border-stone-200"}`}
+                        >
+                          <span className="mr-2 font-mono text-base font-bold text-teal-900">{c.notation}</span>
+                          {c.where}（土地と{c.distanceToMarker}）
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  {reading.districtSymbol && <p className="text-sm text-stone-600">地区区分の記号：{reading.districtSymbol}</p>}
+                  {reading.notes.map((n) => (
+                    <p key={n} className="text-xs text-stone-500">
+                      ※ {n}
+                    </p>
+                  ))}
+                </div>
+              )}
+              <Field label="路線価の表記" hint="道路に書かれた表記（例：420D）">
+                <TextInput value={notation} onChange={(e) => setNotation(e.target.value)} placeholder="420D" />
+              </Field>
+              <Field label="1㎡当たりの路線価">
+                <YenInput value={parsed?.routePrice} onChange={(v) => setNotation(v ? String(Math.round(v / 1000)) + (parsed?.letter ?? "") : "")} />
+              </Field>
+              {parsed?.leaseholdRatio !== undefined && (
+                <p className="text-xs text-stone-600">
+                  記号「{parsed.letter}」は借地権割合 {Math.round(parsed.leaseholdRatio * 100)}% を表します。
+                </p>
+              )}
+              <Button onClick={applyToLand} disabled={!parsed || !land}>
+                この路線価を土地に反映
+              </Button>
+              {land?.method.type === "rosenka" && land.method.routePrice > 0 && (
+                <Note tone="ok">
+                  「{land.label}」の路線価は {fmt(land.method.routePrice)}円/㎡ です。奥行価格補正などは
+                  <Link href="/case/assets" className="underline">財産の入力</Link>で確認してください。
+                </Note>
+              )}
+              <p className="text-xs text-stone-500">読み取りはコンパスくんによる候補です。必ず路線価図と見比べてから反映してください。角地・二方路線・不整形地などは補正が必要な場合があります。</p>
+            </div>
+          )}
+        </aside>
+      </div>
     </div>
   );
 }
@@ -618,7 +643,7 @@ function SheetViewer({
         拡大
         <input type="range" min={0.15} max={1.2} step={0.05} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} className="accent-teal-700" />
       </label>
-      <div className="h-[460px] overflow-auto rounded-lg border border-stone-300 bg-stone-100">
+      <div className="h-[320px] overflow-auto rounded-lg border border-stone-300 bg-stone-100">
         <div className={`relative ${clickable ? "cursor-crosshair" : ""}`} style={{ width: w, height: h }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img

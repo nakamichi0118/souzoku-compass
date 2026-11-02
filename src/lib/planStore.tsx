@@ -1,6 +1,6 @@
 "use client";
 
-import { reportSaveFailure } from "./saveStatus";
+import { kvGet, kvSet, useSession } from "./cloud";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { blankInterview, demoInterview, type Interview } from "@/domain/procedures/interview";
 import { buildTasks } from "@/domain/procedures/rules";
@@ -10,6 +10,7 @@ const IV_KEY = "souzoku-compass:interview:v1";
 const DONE_KEY = "souzoku-compass:done:v1";
 const ACC_KEY = "souzoku-compass:account:v1";
 const HEARD_KEY = "souzoku-compass:heard:v1";
+const MEMO_KEY = "souzoku-compass:memo:v1";
 
 const todayISO = () => {
   const d = new Date();
@@ -27,20 +28,14 @@ const demoDone = () => [
 
 function read<T>(key: string, fallback: T): T {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = kvGet(key);
     return raw ? (JSON.parse(raw) as T) : fallback;
   } catch {
     return fallback;
   }
 }
 function write(key: string, v: unknown) {
-  try {
-    if (v === null) localStorage.removeItem(key);
-    else localStorage.setItem(key, JSON.stringify(v));
-  } catch {
-    // 保存できない環境では画面を開いている間だけ保持し、利用者に知らせる
-    reportSaveFailure();
-  }
+  kvSet(key, v === null ? null : JSON.stringify(v));
 }
 
 export type ItemStatus = "open" | "done" | "na";
@@ -59,8 +54,10 @@ interface PlanCtx {
   /** 手続き・書類の状態：未・完了・不要 */
   statusOf: (id: string) => ItemStatus;
   setStatus: (id: string, s: ItemStatus) => void;
+  /** 手続きごとのメモ（窓口の連絡先・担当者など） */
+  memos: Record<string, string>;
+  setMemo: (id: string, text: string) => void;
   account: Account | null;
-  register: (a: Account) => void;
   startDemo: () => void;
   signOut: () => void;
   loaded: boolean;
@@ -68,21 +65,27 @@ interface PlanCtx {
 
 const Ctx = createContext<PlanCtx | null>(null);
 
-/** 利用者・聞き取りの答え・済んだ手続きの記録（この端末のブラウザにだけ保存） */
+/** 利用者・聞き取りの答え・済んだ手続きの記録（ログイン中はサーバーに保存。デモはこのブラウザの中だけ） */
 export function PlanProvider({ children }: { children: React.ReactNode }) {
+  const session = useSession();
   const [iv, setIv] = useState<Interview>(demoInterview);
   const [done, setDone] = useState<string[]>([]);
   const [account, setAccount] = useState<Account | null>(null);
   const [heard, setHeardState] = useState(false);
+  const [memos, setMemos] = useState<Record<string, string>>({});
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    setIv({ ...blankInterview(), ...read<Partial<Interview>>(IV_KEY, demoInterview()) });
-    setDone(read<string[] | null>(DONE_KEY, null) ?? demoDone());
+    if (!session.ready) return;
+    // 記録がないときの初期値：デモは架空の家族、ログインした人は白紙から
+    const demo = session.mode === "demo";
+    setIv({ ...blankInterview(), ...read<Partial<Interview>>(IV_KEY, demo ? demoInterview() : blankInterview()) });
+    setDone(read<string[] | null>(DONE_KEY, null) ?? (demo ? demoDone() : []));
     setAccount(read<Account | null>(ACC_KEY, null));
     setHeardState(read<boolean>(HEARD_KEY, false));
+    setMemos(read<Record<string, string>>(MEMO_KEY, {}));
     setLoaded(true);
-  }, []);
+  }, [session.ready, session.mode]);
 
   const saveIv = useCallback((next: Interview) => {
     setIv(next);
@@ -121,16 +124,14 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
       return next;
     });
   }, []);
-  const register = useCallback((a: Account) => {
-    setAccount(a);
-    write(ACC_KEY, a);
-    const blank = blankInterview();
-    setIv(blank);
-    write(IV_KEY, blank);
-    setDone([]);
-    write(DONE_KEY, []);
-    setHeardState(false);
-    write(HEARD_KEY, false);
+  const setMemo = useCallback((id: string, text: string) => {
+    setMemos((cur) => {
+      const next = { ...cur };
+      if (text.trim()) next[id] = text;
+      else delete next[id];
+      write(MEMO_KEY, next);
+      return next;
+    });
   }, []);
   const startDemo = useCallback(() => {
     const a: Account = { name: "相続 一郎", email: "demo@example.com", createdAt: new Date().toISOString(), demo: true };
@@ -144,14 +145,17 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
     write(DONE_KEY, dd);
     setHeardState(true);
     write(HEARD_KEY, true);
+    const dm = { "bank-notice": "みほん銀行 さくら支店　相続センター 0120-000-000（平日9〜17時）\n担当：見本さん" };
+    setMemos(dm);
+    write(MEMO_KEY, dm);
   }, []);
+  const { signOut: endSession } = session;
   const signOut = useCallback(() => {
-    setAccount(null);
-    write(ACC_KEY, null);
-  }, []);
+    void endSession();
+  }, [endSession]);
 
   return (
-    <Ctx.Provider value={{ iv, saveIv, heard, setHeard, done, toggle, setDoneIds, statusOf, setStatus, account, register, startDemo, signOut, loaded }}>{children}</Ctx.Provider>
+    <Ctx.Provider value={{ iv, saveIv, heard, setHeard, done, toggle, setDoneIds, statusOf, setStatus, memos, setMemo, account, startDemo, signOut, loaded }}>{children}</Ctx.Provider>
   );
 }
 

@@ -30,8 +30,8 @@ export function SaveWarning() {
     <div role="alert" className="fixed inset-x-0 bottom-0 z-50 border-t-2 border-rose-400 bg-rose-50 px-4 py-3 text-sm text-rose-950 shadow-lg">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3">
         <p className="min-w-0 flex-1">
-          <strong>入力内容をこのブラウザに保存できませんでした。</strong>
-          このまま画面を閉じたり再読み込みしたりすると、最後に保存できた状態に戻ります。ファイルに書き出して退避してください。
+          <strong>入力内容を保存できませんでした。</strong>
+          通信が切れている可能性があります。次に入力したときにもう一度送りますが、念のためファイルに書き出して退避できます。
         </p>
         <button type="button" onClick={exportJson} className="rounded-lg bg-rose-700 px-4 py-2 font-semibold text-white hover:bg-rose-800">
           入力内容をファイルに書き出す

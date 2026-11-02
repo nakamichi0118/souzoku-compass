@@ -1,5 +1,6 @@
 "use client";
 
+import { kvGet, kvSet } from "@/lib/cloud";
 import { Clock, MapPin, Phone } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -20,7 +21,7 @@ interface Office {
 const KEY = "souzoku-compass:offices:v1";
 const readCache = (): Record<string, Office> => {
   try {
-    return JSON.parse(localStorage.getItem(KEY) ?? "{}");
+    return JSON.parse(kvGet(KEY) ?? "{}");
   } catch {
     return {};
   }
@@ -63,11 +64,7 @@ export function OfficeLookup({ kind, dept, address, forProperty }: { kind: Offic
       const j = await res.json();
       if (!res.ok) throw new Error(j.error ?? "調べられませんでした。");
       setOffice(j);
-      try {
-        localStorage.setItem(KEY, JSON.stringify({ ...readCache(), [key]: j }));
-      } catch {
-        /* noop */
-      }
+      kvSet(KEY, JSON.stringify({ ...readCache(), [key]: j }));
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {

@@ -1,5 +1,6 @@
 "use client";
 
+import { kvGet, kvSet } from "@/lib/cloud";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Card, Note, TextInput } from "@/components/ui";
@@ -41,7 +42,7 @@ export function Hearing() {
   useEffect(() => {
     if (!loaded) return;
     try {
-      const saved = JSON.parse(localStorage.getItem(ANS_KEY) ?? "null");
+      const saved = JSON.parse(kvGet(ANS_KEY) ?? "null");
       // 一度最後まで答えた人は、すべて答えた状態で表示する
       setAnswered(Array.isArray(saved) ? saved : heard ? Object.keys(iv) : []);
     } catch {
@@ -56,11 +57,7 @@ export function Hearing() {
     set(k, v);
     const next = [...new Set([...(answered ?? []), k])];
     setAnswered(next);
-    try {
-      localStorage.setItem(ANS_KEY, JSON.stringify(next));
-    } catch {
-      /* noop */
-    }
+    kvSet(ANS_KEY, JSON.stringify(next));
     scrollNext();
   };
   const est = estimate(iv);

@@ -24,6 +24,8 @@ export interface Rule {
   due: (death: ISODate, x: Ctx) => ISODate;
   /** true なら法律上の期限、false なら目安 */
   hard: boolean;
+  /** 並べる順の基準日（期限より前に済ませる手続き。例：火葬許可は火葬の前） */
+  sortDue?: (death: ISODate) => ISODate;
   /** 目安の手続きに、別に法律上の期限がある場合 */
   limit?: { due: (death: ISODate) => ISODate; text: string };
   applies: (x: Ctx) => boolean;
@@ -74,6 +76,8 @@ export const RULES: Rule[] = [
     title: "死亡届の提出と火葬許可の申請",
     category: "届出",
     due: d(7),
+    // 火葬許可証がないと火葬できないため、期限は7日でも葬儀より前に並べる
+    sortDue: (death) => death,
     hard: true,
     applies: always,
     what: "死亡診断書（死体検案書）と一体の死亡届を出し、同時に火葬許可証を受け取ります。葬儀社が代わりに提出してくれることが多い手続きです。死亡診断書は保険金の請求などでも使うので、提出前にコピーを数枚取っておきましょう。",
@@ -606,6 +610,8 @@ export interface Task {
   title: string;
   category: Category;
   date: ISODate;
+  /** 並べる順の基準日 */
+  sortDate: ISODate;
   hard: boolean;
   optional: boolean;
   important: boolean;
@@ -632,11 +638,13 @@ export function buildTasks(iv: Interview, opts: { verdict?: Verdict } = {}): { t
   const death = iv.deathDate;
   const tasks = RULES.filter((r) => r.applies(x)).map((r): Task => {
     const raw = r.due(death, x);
+    const date = r.hard ? nextOpenDay(raw) : raw;
     return {
       id: r.id,
       title: val(r.title, x),
       category: r.category,
-      date: r.hard ? nextOpenDay(raw) : raw,
+      date,
+      sortDate: r.sortDue ? r.sortDue(death) : date,
       hard: r.hard,
       optional: r.optional === undefined ? false : val(r.optional, x),
       important: r.important ? r.important(x) : false,
@@ -652,7 +660,7 @@ export function buildTasks(iv: Interview, opts: { verdict?: Verdict } = {}): { t
       docs: r.docs ? val(r.docs, x) : [],
     };
   });
-  tasks.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  tasks.sort((a, b) => (a.sortDate < b.sortDate ? -1 : a.sortDate > b.sortDate ? 1 : 0));
   return { tasks, est };
 }
 

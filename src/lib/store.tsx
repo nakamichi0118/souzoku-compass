@@ -1,7 +1,7 @@
 "use client";
 
-import { reportSaveFailure } from "./saveStatus";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { kvGet, kvSet, useSession } from "./cloud";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { demoCase } from "@/data/demo";
 import { calculate, type TaxResult } from "@/domain/tax/engine";
 import type { Case } from "@/domain/types";
@@ -33,24 +33,29 @@ const CaseContext = createContext<Ctx | null>(null);
 export function CaseProvider({ children }: { children: React.ReactNode }) {
   const [data, setData] = useState<Case>(demoCase);
   const [loaded, setLoaded] = useState(false);
+  const { ready, mode } = useSession();
 
   useEffect(() => {
+    if (!ready) return;
     try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) setData(JSON.parse(raw));
+      const raw = kvGet(KEY);
+      // 記録がないとき：デモは架空の家族、ログインした人は白紙から
+      setData(raw ? JSON.parse(raw) : mode === "demo" ? demoCase : blankCase());
     } catch {
-      /* 保存領域が使えない環境ではデモ案件のまま */
+      setData(blankCase());
     }
     setLoaded(true);
-  }, []);
+  }, [ready, mode]);
 
+  // 読み込んだ直後の1回は書き戻さない（変わっていないものを送らない）
+  const first = useRef(true);
   useEffect(() => {
     if (!loaded) return;
-    try {
-      localStorage.setItem(KEY, JSON.stringify(data));
-    } catch {
-      reportSaveFailure();
+    if (first.current) {
+      first.current = false;
+      return;
     }
+    kvSet(KEY, JSON.stringify(data));
   }, [data, loaded]);
 
   const update = useCallback((fn: (c: Case) => Case) => setData((c) => fn(structuredClone(c))), []);

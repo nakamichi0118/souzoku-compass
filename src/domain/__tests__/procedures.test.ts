@@ -80,8 +80,10 @@ describe("手続きリスト", () => {
     const { tasks } = buildTasks(iv({ spouse: true, children: 1 }));
     const ids = tasks.map((t) => t.id);
     for (const id of ["death-report", "renounce", "inheritance-tax", "shijuku", "isshuki", "utilities"]) expect(ids).toContain(id);
-    const dates = tasks.map((t) => t.date);
+    const dates = tasks.map((t) => t.sortDate);
     expect([...dates].sort()).toEqual(dates);
+    // 火葬許可（死亡届）は火葬より前
+    expect(ids.indexOf("death-report")).toBeLessThan(ids.indexOf("funeral"));
   });
   it("期限：死亡届7日・相続放棄3か月・相続税10か月", () => {
     const { tasks } = buildTasks(iv({ spouse: true, children: 1 }));
