@@ -1,0 +1,395 @@
+{
+ "page": "t07",
+ "title": "第7表",
+ "fields": [
+  {
+   "id": "d.name",
+   "seed": [
+    2060,
+    456
+   ],
+   "size": 12
+  },
+  {
+   "id": "prev.name",
+   "seed": [
+    500,
+    750
+   ],
+   "size": 11
+  },
+  {
+   "id": "prev.relation",
+   "seed": [
+    1280,
+    750
+   ],
+   "size": 11
+  },
+  {
+   "id": "prev.office",
+   "seed": [
+    1920,
+    750
+   ],
+   "align": "center",
+   "size": 11
+  },
+  {
+   "id": "prevEra",
+   "seed": [
+    230,
+    980
+   ],
+   "align": "center"
+  },
+  {
+   "id": "prevY",
+   "seed": [
+    356,
+    980
+   ],
+   "align": "center"
+  },
+  {
+   "id": "prevM",
+   "seed": [
+    486,
+    980
+   ],
+   "align": "center"
+  },
+  {
+   "id": "prevD",
+   "seed": [
+    612,
+    980
+   ],
+   "align": "center"
+  },
+  {
+   "id": "deathEra",
+   "seed": [
+    790,
+    980
+   ],
+   "align": "center"
+  },
+  {
+   "id": "deathY",
+   "seed": [
+    916,
+    980
+   ],
+   "align": "center"
+  },
+  {
+   "id": "deathM",
+   "seed": [
+    1044,
+    980
+   ],
+   "align": "center"
+  },
+  {
+   "id": "deathD",
+   "seed": [
+    1170,
+    980
+   ],
+   "align": "center"
+  },
+  {
+   "id": "r03",
+   "seed": [
+    1520,
+    966
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "r04",
+   "seed": [
+    2080,
+    966
+   ],
+   "align": "right",
+   "size": 12
+  },
+  {
+   "id": "r05",
+   "seed": [
+    420,
+    1230
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "r06",
+   "seed": [
+    960,
+    1230
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "r07",
+   "seed": [
+    1540,
+    1230
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "r08",
+   "seed": [
+    2080,
+    1230
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "x.tax",
+   "seed": [
+    380,
+    1460
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "x.net",
+   "seed": [
+    1040,
+    1396
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "x.base",
+   "seed": [
+    1040,
+    1530
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "x.years",
+   "seed": [
+    1644,
+    1396
+   ],
+   "align": "center",
+   "size": 11
+  },
+  {
+   "id": "total",
+   "seed": [
+    2120,
+    1460
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "h0.name",
+   "seed": [
+    330,
+    1880
+   ],
+   "size": 10
+  },
+  {
+   "id": "h1.name",
+   "seed": [
+    330,
+    1994
+   ],
+   "size": 10
+  },
+  {
+   "id": "h2.name",
+   "seed": [
+    330,
+    2106
+   ],
+   "size": 10
+  },
+  {
+   "id": "h3.name",
+   "seed": [
+    330,
+    2220
+   ],
+   "size": 10
+  },
+  {
+   "id": "h4.name",
+   "seed": [
+    330,
+    2332
+   ],
+   "size": 10
+  },
+  {
+   "id": "r09",
+   "seed": [
+    700,
+    2160
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "h0.net",
+   "seed": [
+    1060,
+    1880
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "h1.net",
+   "seed": [
+    1060,
+    1994
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "h2.net",
+   "seed": [
+    1060,
+    2106
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "h3.net",
+   "seed": [
+    1060,
+    2220
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "h4.net",
+   "seed": [
+    1060,
+    2332
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "r11",
+   "seed": [
+    1470,
+    2100
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "h0.ratio",
+   "seed": [
+    1810,
+    1880
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "h1.ratio",
+   "seed": [
+    1810,
+    1994
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "h2.ratio",
+   "seed": [
+    1810,
+    2106
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "h3.ratio",
+   "seed": [
+    1810,
+    2220
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "h4.ratio",
+   "seed": [
+    1810,
+    2332
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "h0.credit",
+   "seed": [
+    2180,
+    1880
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "h1.credit",
+   "seed": [
+    2180,
+    1994
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "h2.credit",
+   "seed": [
+    2180,
+    2106
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "h3.credit",
+   "seed": [
+    2180,
+    2220
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "h4.credit",
+   "seed": [
+    2180,
+    2332
+   ],
+   "align": "right",
+   "size": 10
+  }
+ ]
+}

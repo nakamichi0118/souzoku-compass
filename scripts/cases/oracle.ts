@@ -1032,8 +1032,18 @@ export function expected(s: Scenario): Expected {
       continue;
     }
     const landValue = it.type === "condo" ? (condoLand.get(it.id) ?? 0) : v.value;
-    const shareValue = yenFloor(landValue, f);
-    cands.push({ itemId: it.id, label: it.label, kind: sl.kind, acquirer: sl.acquirer, shareArea: qmul(v.area, f), shareValue });
+    let shareValue = yenFloor(landValue, f);
+    let shareArea = qmul(v.area, f);
+    // 貸付事業用で空室がある（賃貸割合<1）とき：貸付事業に使っている部分だけが対象（措通69の4-24の2。一時的な空室は賃貸割合に含めて入力する）。
+    // 対象の面積 = 持分の面積 × 賃貸割合（0.01㎡未満切捨て）、価額 = 持分の価額 × 対象の面積 / 持分の面積（円未満切捨て）
+    const rr = it.type === "condo" ? (it as CondoExt).rentRatio : it.use === "rentedHouse" ? it.rentRatio : undefined;
+    if (sl.kind === "rental" && rr !== undefined && qcmp(ratioQ(rr), ONE) < 0) {
+      const rented = Qn(qfloor(qmul(qmul(shareArea, ratioQ(rr)), Qn(100))), 100);
+      shareValue = yenFloor(shareValue, qdiv(rented, shareArea));
+      notes.push(`${it.label}：貸付事業用は貸している部分（賃貸割合 ${qstr(ratioQ(rr))}）の ${qnum(rented)}㎡だけ`);
+      shareArea = rented;
+    }
+    cands.push({ itemId: it.id, label: it.label, kind: sl.kind, acquirer: sl.acquirer, shareArea, shareValue });
   }
 
   /* ---------- 10. 課税価格と税額 ---------- */
@@ -1263,7 +1273,7 @@ export function expected(s: Scenario): Expected {
     basicDeduction: basic,
     totalTaxablePrice: fin.totalTaxable,
     totalTax: fin.taxParts.total,
-    persons: fin.persons.map((p) => ({ id: p.id, taxablePrice: p.taxable, payable: p.payable })),
+    persons: fin.persons.map((p) => ({ id: p.id, taxablePrice: p.taxable, payable: p.payable, ...(p.refund ? { refund: p.refund } : {}) })),
     filingRequired,
     notes,
   };

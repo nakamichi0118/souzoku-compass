@@ -108,15 +108,32 @@ export function condoCorrection(c: Pick<
   return { years, A, B, C, D, narrowness, ratio, correction, note };
 }
 
+/** 税理士に確認した補正率・評価額を入れたときの案内（事情がある土地でも、これを入れれば計算する） */
+const ADVISOR_HINT_RATE = "税理士に補正率を確認したら、土地の画面の「税理士に確認した補正率」に入れると、その補正率で計算します。";
+const ADVISOR_HINT_VALUE = "税理士に評価額を出してもらったら、評価方法を「評価額を直接入力」にして入れると計算します。";
+
 /** 評価に影響する土地の事情ごとの案内（相続コンパスでは評価しない） */
 const CONDITION_MESSAGE: Record<NonNullable<LandAsset["condition"]>, string> = {
   irregular:
-    "形がいびつな土地（旗竿地・三角形・L字など）は、形に合わせて評価を下げられます（不整形地の補正）。相続コンパスではこの計算をしていないため、税理士にご相談ください。",
+    "形がいびつな土地（旗竿地・三角形・L字など）は、形に合わせて評価を下げられます（不整形地の補正）。相続コンパスではこの計算をしていないため、税理士にご相談ください。" + ADVISOR_HINT_RATE,
   setback:
-    "前の道路の幅が4m未満で、建て替えのときに道路にするため下がる部分（セットバック）がある土地は、その部分の評価を下げられます。相続コンパスではこの計算をしていないため、税理士にご相談ください。",
+    "前の道路の幅が4m未満で、建て替えのときに道路にするため下がる部分（セットバック）がある土地は、その部分の評価を下げられます。相続コンパスではこの計算をしていないため、税理士にご相談ください。" + ADVISOR_HINT_RATE,
   spouseResidence:
-    "配偶者居住権（配偶者が亡くなるまでその家に住み続けられる権利）を設定した土地は、配偶者居住権の分とそれ以外の分に分けて評価します。相続コンパスではこの計算をしていないため、税理士にご相談ください。",
+    "配偶者居住権（配偶者が亡くなるまでその家に住み続けられる権利）を設定した土地は、配偶者居住権の分とそれ以外の分に分けて評価します。相続コンパスではこの計算をしていないため、税理士にご相談ください。" +
+    ADVISOR_HINT_VALUE +
+    "配偶者居住権の分は「その他の財産」として配偶者の財産に入れてください。",
 };
+
+/**
+ * 税理士に確認した値で評価する土地か（事情がある土地・広い土地でも、この値で計算する）。
+ * 評価額を直接入力した土地、または税理士に確認した補正率（0より大きく1未満）を入れた路線価方式の土地。配偶者居住権は評価額の直接入力だけ
+ */
+function advisorValued(a: LandAsset, condition: LandAsset["condition"] | "largeLot"): boolean {
+  const m = a.method;
+  if (m.type === "manual") return true;
+  if (condition === "spouseResidence") return false;
+  return m.type === "rosenka" && m.otherCorrection != null && m.otherCorrection > 0 && m.otherCorrection < 1;
+}
 
 /** 都道府県（所在の先頭から読む） */
 const PREFECTURES = [
@@ -160,7 +177,8 @@ function largeLotNotice(a: LandAsset): string | null {
   if (!(Math.round(a.areaSqm * 100) >= t * 100)) return null;
   return (
     `${t.toLocaleString()}㎡以上の広い宅地は、「地積規模の大きな宅地」として評価額が下がることがあります（財産評価基本通達20-2。広い土地は分けて売るときに道路などが必要になり、そのぶん安くなるため）。` +
-    "下がるかどうかは場所・用途地域・容積率などで決まり、相続コンパスではこの計算をしていないため、税理士にご相談ください。"
+    "下がるかどうかは場所・用途地域・容積率などで決まり、相続コンパスではこの計算をしていないため、税理士にご相談ください。" +
+    (m.type === "rosenka" ? ADVISOR_HINT_RATE : ADVISOR_HINT_VALUE)
   );
 }
 
@@ -179,8 +197,8 @@ export function valueLand(a: LandAsset): Valuation {
   const quantity = `${a.areaSqm}㎡`;
   const consult = (needsConsultation: string): Valuation => ({ value: 0, quantity, steps: [], needsConsultation });
   // 評価を下げる事情がある土地は、下げない評価額で確定させない
-  if (a.condition && CONDITION_MESSAGE[a.condition]) return consult(CONDITION_MESSAGE[a.condition]);
-  const big = largeLotNotice(a);
+  if (a.condition && CONDITION_MESSAGE[a.condition] && !advisorValued(a, a.condition)) return consult(CONDITION_MESSAGE[a.condition]);
+  const big = advisorValued(a, "largeLot") ? null : largeLotNotice(a);
   if (big) return consult(big);
   const { valuation: self, notation } = selfUseLand(a);
   const use = a.use ?? "self";

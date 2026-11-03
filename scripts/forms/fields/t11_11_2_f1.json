@@ -315,6 +315,78 @@
    ],
    "size": 10,
    "align": "right"
+  },
+  {
+   "id": "area2",
+   "seed": [
+    1360,
+    2966
+   ],
+   "align": "right"
+  },
+  {
+   "id": "area4",
+   "seed": [
+    2200,
+    2966
+   ],
+   "align": "right"
+  },
+  {
+   "id": "limitA2",
+   "seed": [
+    1400,
+    3080
+   ],
+   "align": "right"
+  },
+  {
+   "id": "limitB1",
+   "seed": [
+    900,
+    3194
+   ],
+   "align": "right"
+  },
+  {
+   "id": "limitB2",
+   "seed": [
+    1500,
+    3194
+   ],
+   "align": "right"
+  },
+  {
+   "id": "limitB4",
+   "seed": [
+    2000,
+    3194
+   ],
+   "align": "right"
+  },
+  {
+   "id": "b0.business",
+   "seed": [
+    1240,
+    1514
+   ],
+   "size": 9
+  },
+  {
+   "id": "b1.business",
+   "seed": [
+    1240,
+    1842
+   ],
+   "size": 9
+  },
+  {
+   "id": "b2.business",
+   "seed": [
+    1240,
+    2168
+   ],
+   "size": 9
   }
  ]
 }

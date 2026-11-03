@@ -10,7 +10,7 @@
  */
 import { beforeAll, describe, expect, it } from "vitest";
 import { generateScenarios } from "../../../scripts/cases/generate";
-import { type CaseReport, WRONG_BUDGET, runAll } from "../../../scripts/cases/run";
+import { type CaseReport, UNREPRESENTABLE_BUDGET, UNSUPPORTED_BUDGET, WRONG_BUDGET, runAll } from "../../../scripts/cases/run";
 import type { Scenario } from "../../../scripts/cases/scenario";
 import { toCase } from "../../../scripts/cases/toCase";
 import { ageAt } from "../tax/engine";
@@ -37,6 +37,13 @@ describe("1000件のシナリオ（相続税の計算と正しい答えの比較
     const wrong = reports.filter((r) => r.class === "WRONG");
     const list = wrong.slice(0, 20).map((r) => `${r.id}(${r.wrongKind})`).join(", ");
     expect(wrong.length, `WRONG ${wrong.length}件：${list}`).toBeLessThanOrEqual(WRONG_BUDGET);
+  });
+
+  it(`正しく計算できるのに止まる件（BLOCKED_UNSUPPORTED）が上限 ${UNSUPPORTED_BUDGET} 件以下、入力のしかたがない件（UNREPRESENTABLE）が上限 ${UNREPRESENTABLE_BUDGET} 件以下`, () => {
+    const unsupported = reports.filter((r) => r.class === "BLOCKED_UNSUPPORTED").map((r) => `${r.id}: ${r.blockers[0] ?? ""}`);
+    const unrep = reports.filter((r) => r.class === "UNREPRESENTABLE").map((r) => `${r.id}: ${r.unrepresentable.join("・")}`);
+    expect(unsupported.length, unsupported.slice(0, 10).join("\n")).toBeLessThanOrEqual(UNSUPPORTED_BUDGET);
+    expect(unrep.length, unrep.slice(0, 10).join("\n")).toBeLessThanOrEqual(UNREPRESENTABLE_BUDGET);
   });
 
   it("WRONG（近似）・UNREPRESENTABLE の件は、近似・入力できない事柄を取り除くと正しい答えと一致する（ほかの誤りが隠れていない）", () => {

@@ -91,7 +91,12 @@ export function judgeSmallResidential(c: SmallResidentialCheck, acquirer: Person
   if (c.ownHome === "unsure") return { result: "consult", reason: "自宅の敷地かどうかがはっきりしないため、税理士への確認をおすすめします。" };
   if (c.ownHome === "no") {
     if (!c.business) return ASK;
-    if (c.business === "no") return { result: "no", reason: "自宅の敷地でも、事業に使っていた土地でもないため、特例は使えません（人に貸している土地は、土地の使い方で「貸している」を選んでください）。" };
+    if (c.business === "no")
+      return {
+        result: "no",
+        reason:
+          "自宅の敷地でも、事業に使っていた土地でもないため、特例は使えません（人に貸している土地は、土地の使い方で「貸している」を選んでください）。アスファルト舗装などをして人に貸している月極駐車場は、貸付事業用として使える場合があるので、税理士にご相談ください。",
+      };
     if (c.business === "unsure") return { result: "consult", reason: "事業に使っていた土地かどうかがはっきりしないため、税理士への確認をおすすめします。" };
     return judgeUse(c, "business");
   }

@@ -389,6 +389,198 @@
    ],
    "size": 11,
    "align": "right"
+  },
+  {
+   "id": "s0.name",
+   "seed": [
+    840,
+    1466
+   ],
+   "size": 10
+  },
+  {
+   "id": "s1.name",
+   "seed": [
+    1280,
+    1466
+   ],
+   "size": 10
+  },
+  {
+   "id": "s2.name",
+   "seed": [
+    1730,
+    1466
+   ],
+   "size": 10
+  },
+  {
+   "id": "s0.tax",
+   "seed": [
+    840,
+    1584
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "s1.tax",
+   "seed": [
+    1280,
+    1584
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "s2.tax",
+   "seed": [
+    1730,
+    1584
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "s.tax",
+   "seed": [
+    2180,
+    1584
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "s0.credit",
+   "seed": [
+    840,
+    1704
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "s1.credit",
+   "seed": [
+    1280,
+    1704
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "s2.credit",
+   "seed": [
+    1730,
+    1704
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "s.credit",
+   "seed": [
+    2180,
+    1704
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "t0.name",
+   "seed": [
+    840,
+    2920
+   ],
+   "size": 10
+  },
+  {
+   "id": "t1.name",
+   "seed": [
+    1280,
+    2920
+   ],
+   "size": 10
+  },
+  {
+   "id": "t2.name",
+   "seed": [
+    1730,
+    2920
+   ],
+   "size": 10
+  },
+  {
+   "id": "t0.tax",
+   "seed": [
+    840,
+    3060
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "t1.tax",
+   "seed": [
+    1280,
+    3060
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "t2.tax",
+   "seed": [
+    1730,
+    3060
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "t.tax",
+   "seed": [
+    2180,
+    3060
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "t0.credit",
+   "seed": [
+    840,
+    3206
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "t1.credit",
+   "seed": [
+    1280,
+    3206
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "t2.credit",
+   "seed": [
+    1730,
+    3206
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "t.credit",
+   "seed": [
+    2180,
+    3206
+   ],
+   "align": "right",
+   "size": 11
   }
  ]
 }

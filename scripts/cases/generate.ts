@@ -521,6 +521,8 @@ function givenName(rng: Rng, male: boolean, birthYear: number): string {
 }
 
 const URBAN = PLACES.filter((p) => p.urban);
+/** 三大都市圏（首都圏・近畿圏・中部圏の対象区域）を含む都府県。地積規模の大きな宅地の面積の下限（500㎡）の判定に使う近似 */
+const METRO_PREFS = new Set(["東京都", "神奈川県", "埼玉県", "千葉県", "茨城県", "京都府", "大阪府", "兵庫県", "奈良県", "愛知県", "三重県"]);
 const RURAL = PLACES.filter((p) => !p.urban);
 
 export class Builder {
@@ -2914,7 +2916,8 @@ function randomScenario(id: string, rng: Rng): Scenario {
     const leasehold = rng.chance(0.04);
     const multiplier = rural ? rng.chance(0.8) : rng.chance(0.1);
     let area = round2(rng.logNormalIn(165, 0.35, 66, 480));
-    if (needsRed === "largeLot") area = round2(rng.range(multiplier ? 1_000 : 500, 1_300));
+    // 地積規模の大きな宅地（評基通20-2）：三大都市圏は500㎡以上、それ以外は1,000㎡以上。三大都市圏かどうかは都府県で近似する（アプリと同じ）
+    if (needsRed === "largeLot") area = round2(rng.range(multiplier || !METRO_PREFS.has(b.place.pref) ? 1_000 : 500, 1_300));
     const spouseRight = !!spouseId && rng.chance(0.03);
     ctx.spouseRight = spouseRight;
     const label = leasehold ? "自宅の借地権" : "自宅の土地";
@@ -3436,6 +3439,8 @@ export function validateScenario(s: Scenario): string[] {
         if (it.rentRatio !== undefined && !(it.rentRatio > 0 && it.rentRatio <= 1)) err(`${it.id} 賃貸割合`);
         if (it.rentRatio !== undefined && it.use !== "rentedHouse") err(`${it.id} 貸家建付地でないのに賃貸割合`);
         if (it.needsReduction === "largeLot" && it.areaSqm < 500) err(`${it.id} 地積規模の大きな宅地なのに500㎡未満`);
+        if (it.needsReduction === "largeLot" && it.areaSqm < 1000 && !METRO_PREFS.has(it.label.match(/（(?:[^（）、]*、)?(.{2,3}?[都道府県])/)?.[1] ?? ""))
+          err(`${it.id} 三大都市圏の外で地積規模の大きな宅地なのに1,000㎡未満`);
         if (it.smallLand?.kind === "rental" && it.use !== "rentedHouse" && it.use !== "leasedLand" && it.use !== "parking") err(`${it.id} 貸付事業用なのに貸していない`);
         if (it.smallLand?.kind === "residence" && it.use !== "self" && it.use !== "leasehold") err(`${it.id} 特定居住用なのに自用でない`);
         break;

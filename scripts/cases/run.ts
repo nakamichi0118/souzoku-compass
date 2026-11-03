@@ -51,12 +51,14 @@ import type { Expected, Scenario } from "./scenario";
 import { toCase, type ToCaseResult } from "./toCase";
 
 /**
- * WRONG の件数の上限（src/domain/__tests__/cases.test.ts で確かめる）。1000件・seed 既定値（20261108）での今の件数から始め、0 に近づけていく。
- * 2026-11-03 時点の143件の内訳：そのまま入力できたもの1件（E027 相続人全員の放棄を止めずに計算）、
- * 近似して入力したもの142件（貸家建付地・貸家・貸宅地・間口狭小/奥行長大・不整形地・地積規模の大きな宅地・セットバック・
- * 配偶者居住権。どれも近似を取り除くと一致する）
+ * WRONG の件数の上限（src/domain/__tests__/cases.test.ts で確かめる）。1000件・seed 既定値（20261108）での件数。
+ * 2026-11-03 の最初の検査では143件（貸家建付地・貸家・貸宅地・間口狭小/奥行長大・不整形地・地積規模の大きな宅地・
+ * セットバック・配偶者居住権を入れられず近似したもの142件と、相続人不存在を止めなかった1件）。対応を広げて0件になった
  */
-export const WRONG_BUDGET = 143;
+export const WRONG_BUDGET = 0;
+/** 正しく計算できるのにアプリが止まる件（BLOCKED_UNSUPPORTED）と、入力のしかたがない件（UNREPRESENTABLE）の上限。どちらも0件 */
+export const UNSUPPORTED_BUDGET = 0;
+export const UNREPRESENTABLE_BUDGET = 0;
 
 export type CaseClass = "OK" | "BLOCKED_OK" | "BLOCKED_UNSUPPORTED" | "WRONG" | "UNREPRESENTABLE" | "CRASH" | "HARNESS_ERROR";
 export const CLASSES: CaseClass[] = ["OK", "BLOCKED_OK", "BLOCKED_UNSUPPORTED", "WRONG", "UNREPRESENTABLE", "CRASH", "HARNESS_ERROR"];
@@ -65,7 +67,7 @@ export interface Diff {
   /** 人の id（合計の欄は "*"） */
   who: string;
   name?: string;
-  field: "taxablePrice" | "payable" | "totalTaxablePrice" | "totalTax" | "legalHeirCount" | "basicDeduction" | "filingRequired" | "computable";
+  field: "taxablePrice" | "payable" | "refund" | "totalTaxablePrice" | "totalTax" | "legalHeirCount" | "basicDeduction" | "filingRequired" | "computable";
   app: number | boolean | null;
   oracle: number | boolean | null;
   /** app − oracle（数のとき） */
@@ -188,6 +190,8 @@ export function compareResult(c: Case, r: TaxResult, exp: Expected, tolerated: s
     const a = appBy.get(id);
     const e = expBy.get(id);
     num("taxablePrice", a?.taxable ?? 0, e?.taxablePrice ?? 0, id);
+    // 還付される税額（相続時精算課税の贈与税が引ききれない分。1円単位）
+    num("refund", a?.refund ?? 0, e?.refund ?? 0, id);
     const ap = a?.payable ?? 0;
     const ep = e?.payable ?? 0;
     if (ap !== ep) pending.push({ id, app: ap, oracle: ep });
@@ -762,6 +766,7 @@ export function renderMarkdown(reports: CaseReport[], meta: Meta, namesOf: Map<s
   const field: Record<Diff["field"], string> = {
     taxablePrice: "課税価格",
     payable: "納付税額",
+    refund: "還付税額",
     totalTaxablePrice: "課税価格の合計",
     totalTax: "相続税の総額",
     legalHeirCount: "法定相続人の数",

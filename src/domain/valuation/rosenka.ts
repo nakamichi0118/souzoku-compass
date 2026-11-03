@@ -3,7 +3,10 @@
  * 数字は1㎡当たりの価額（千円単位）、アルファベットは借地権割合（A=90% … G=30%）。
  * 出典：国税庁「路線価図の説明」
  */
-export const LEASEHOLD_RATIO: Record<string, number> = { A: 0.9, B: 0.8, C: 0.7, D: 0.6, E: 0.5, F: 0.4, G: 0.3 };
+import { LEASE_RATIO_BY_LETTER, type LeaseLetter } from "./lease";
+
+/** 借地権割合の記号と割合（lease.ts と同じ表） */
+export const LEASEHOLD_RATIO: Record<string, number> = LEASE_RATIO_BY_LETTER;
 
 export interface RouteNotation {
   /** 1㎡当たりの路線価（円） */
@@ -21,5 +24,5 @@ export function parseRouteNotation(text: string): RouteNotation | null {
   const m = s.match(/^(\d{1,6})([A-G])?$/);
   if (!m) return null;
   const letter = m[2];
-  return { routePrice: Number(m[1]) * 1000, letter, leaseholdRatio: letter ? LEASEHOLD_RATIO[letter] : undefined };
+  return { routePrice: Number(m[1]) * 1000, letter, leaseholdRatio: letter ? LEASE_RATIO_BY_LETTER[letter as LeaseLetter] : undefined };
 }

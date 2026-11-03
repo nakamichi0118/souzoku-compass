@@ -20,6 +20,7 @@ import { HeirResult, determineHeirs, isSurchargeTarget } from "../heirs";
 import { floor100, floor1000 } from "../rounding";
 import type { Asset, Case, Debt, PriorGift, Person, SmallLandKind } from "../types";
 import { Valuation, smallResidentialSelection, valueAsset } from "../valuation";
+import { ratio4, ratioText } from "../valuation/lease";
 import { SMALL_LAND_RULE, judgeSmallResidential, shouldApply, smallLandKind } from "../valuation/smallResidential";
 
 /** 速算表（相続税法16条） */
@@ -495,12 +496,13 @@ function compute(
       "「相続時精算課税」を選んだ贈与があると選ばれていますが、その贈与がまだ入っていません。債務・葬式費用の画面の贈与の一覧にその贈与を加え、「相続時精算課税」にチェックを入れてください。",
     );
   }
+  const laterDeaths: string[] = [];
   for (const p of c.persons) {
     if (p.nonResident && !p.predeceased) {
       blockers.push(`${p.name}さんは国外に住所があります。非居住者がいる相続は税理士にご相談ください。`);
     }
     if (p.predeceased && p.deathDate && deathDate && p.deathDate > deathDate) {
-      blockers.push(`${p.name || "相続人"}さんは亡くなった方より後に亡くなっています（数次相続）。自動では計算できないため、税理士にご相談ください。`);
+      laterDeaths.push(`${p.name || "相続人"}さんは亡くなった方より後に亡くなっています（数次相続）。自動では計算できないため、税理士にご相談ください。`);
     }
     if (!p.predeceased && p.relation === "adoptedChild" && p.grandchildAdopted && p.alsoSubstituteHeir) {
       blockers.push(`${p.name || "養子"}さんは養子であり、先に亡くなった子の代わりに相続する人（代襲相続人）でもあります（二重の資格）。相続コンパスではこの場合の計算ができないため、税理士にご相談ください。`);
@@ -644,7 +646,17 @@ function compute(
     } else {
       fullArea = a.areaSqm;
     }
-    const area = (fullArea * share.numerator) / share.denominator;
+    let area = (fullArea * share.numerator) / share.denominator;
+    // 貸付事業用：空室（一時的なものを除く）の部分は貸付事業に使っていないので対象外（措置法通達69の4-24の2）。
+    // 貸している部分の面積＝面積×賃貸割合（0.01㎡未満切捨て）、価額＝評価額×貸している部分の面積÷面積
+    const rent4 = kind === "rental" && (a.kind === "condo" || a.use === "rentedHouse") ? ratio4(a.rentRatio ?? 1) : 10000;
+    if (rent4 > 0 && rent4 < 10000 && area > 0) {
+      const area100 = Math.round(area * 100);
+      const rented100 = Number((BigInt(area100) * BigInt(rent4)) / 10000n);
+      landPart = Number((BigInt(Math.max(0, landPart)) * BigInt(rented100)) / BigInt(area100));
+      area = rented100 / 100;
+      warnings.push(`${label}は空き部屋があるため、小規模宅地等の特例（貸付事業用）は貸している部分（面積の${ratioText(rent4)}）だけに使っています。`);
+    }
     if (!(area > 0)) {
       // 面積が分からないと、限度面積までの減額を計算できない
       blockers.push(`「${a.label || "名称未入力の土地"}」に小規模宅地等の特例を使うには、${a.kind === "condo" ? "敷地権の面積" : "地積"}を入れてください。`);
@@ -1100,6 +1112,9 @@ function compute(
   if (needsFilingForRelief) {
     warnings.push("小規模宅地等の特例を適用して基礎控除以下になっています。特例を受けるには申告書の提出が必要です。");
   }
+
+  // 数次相続：あとから亡くなった人を「先に亡くなった人」として扱うと、取得者・受取人・贈与などの案内が食い違うため、数次相続の案内だけを出す
+  if (laterDeaths.length) blockers.splice(0, blockers.length, ...laterDeaths);
 
   const result: TaxResult = {
     heirsTax,

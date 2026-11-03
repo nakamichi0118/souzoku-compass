@@ -51,7 +51,7 @@ export function HeirsStep() {
         if ((a.kind === "insurance" || a.kind === "retirement") && a.recipientId === id) return { ...a, recipientId: "" };
         if ((a.kind === "land" || a.kind === "condo") && a.smallResidential?.acquirerId === id) {
           const check = a.smallResidential.check;
-          return { ...a, smallResidential: { ...a.smallResidential, acquirerId: undefined, check: check ? { ownHome: check.ownHome, special: check.special } : undefined } };
+          return { ...a, smallResidential: { ...a.smallResidential, acquirerId: undefined, check: check ? { ownHome: check.ownHome, special: check.special, business: check.business, recent: check.recent } : undefined } };
         }
         return a;
       }),
@@ -281,7 +281,7 @@ function Deceased({
         <>
           {p.relation !== "parent" && p.relation !== "grandparent" && (
             <p className="text-xs text-stone-500">
-              亡くなった方が、この方の相続で10年以内に財産を受け取って相続税を納めていた場合は「相次相続控除」の対象ですが、相続コンパスでは計算できません（「亡くなった方」の画面で選ぶと、税理士への相談をご案内します）。
+              亡くなった方が、この方の相続で10年以内に財産を受け取って相続税を納めていた場合は「相次相続控除」で相続税が少なくなります。「亡くなった方」の画面で選び、前の相続の内容を入れると計算します。
             </p>
           )}
           <p className="text-sm text-stone-700">

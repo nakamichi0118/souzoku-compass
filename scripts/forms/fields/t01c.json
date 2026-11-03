@@ -629,6 +629,22 @@
    ],
    "align": "right",
    "size": 12
+  },
+  {
+   "id": "a.causeSettlement",
+   "seed": [
+    1428,
+    1242
+   ],
+   "align": "center"
+  },
+  {
+   "id": "b.causeSettlement",
+   "seed": [
+    2310,
+    1242
+   ],
+   "align": "center"
   }
  ]
 }

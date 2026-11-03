@@ -642,6 +642,14 @@
    "align": "right",
    "size": 12,
    "suffix": true
+  },
+  {
+   "id": "p.causeSettlement",
+   "seed": [
+    2310,
+    1210
+   ],
+   "align": "center"
   }
  ]
 }

@@ -180,8 +180,8 @@ export interface Expected {
   totalTaxablePrice: number;
   /** 相続税の総額 */
   totalTax: number;
-  /** 一人ひとりの課税価格と納付税額（100円未満切捨て）。還付・0円は0 */
-  persons: { id: string; taxablePrice: number; payable: number }[];
+  /** 一人ひとりの課税価格と納付税額（100円未満切捨て。還付・0円は0）と還付される税額（相続時精算課税の贈与税が引ききれないとき） */
+  persons: { id: string; taxablePrice: number; payable: number; refund?: number }[];
   /** 申告が必要か（課税価格の合計が基礎控除を超える、または特例の適用で0円になる場合も必要） */
   filingRequired: boolean;
   /** 計算の過程（確認用の短いメモ） */

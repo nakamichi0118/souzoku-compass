@@ -387,6 +387,15 @@ describe("扶養義務者の相続税額から引く未成年者控除・障害�
   });
 });
 
+describe("数次相続", () => {
+  it("亡くなった方より後に亡くなった人がいるときは、数次相続の案内だけを出す（取得者・贈与の食い違いの案内を重ねない）", () => {
+    const later: Person = { id: "c2", name: "長女", relation: "child", predeceased: true, deathDate: "2026-05-01" };
+    const r = calculate(mk([c1, later], [dep("預金", 80_000_000)], [all("預金", ["c1", 1, 2], ["c2", 1, 2])], { priorGifts: [{ personId: "c2", date: "2025-01-01", amount: 1_000_000, giftTaxPaid: 0 }] }));
+    expect(r.blockers).toHaveLength(1);
+    expect(r.blockers[0]).toContain("数次相続");
+  });
+});
+
 describe("相続人がいない", () => {
   it("全員が放棄した、または受遺者しかいないときは止めて税理士を案内する", () => {
     const naien: Person = { id: "n", name: "内縁の妻", relation: "other" };
@@ -422,6 +431,18 @@ describe("小規模宅地等の種類（措置法69条の4）", () => {
     expect(l.small?.selectedValue).toBe(Math.floor((v * 2) / 3));
     expect(l.reduction).toBe(Math.floor(Math.floor((v * 2) / 3) / 2));
     expect(r.warnings.some((w) => w.includes("人に貸していた土地") && w.includes("200㎡まで"))).toBe(true);
+  });
+
+  it("空き部屋がある貸家の敷地は、貸している部分（面積×賃貸割合）だけが貸付事業用宅地等", () => {
+    // 100㎡、自用地 5,000万（直接入力）、借地権割合 0.6、賃貸割合 0.75
+    // 貸家建付地 = 5,000万 × (1 − 0.6×0.3×0.75) = 5,000万 × 0.865 = 4,325万
+    // 対象 = 100㎡ × 0.75 = 75㎡、価額 4,325万 × 75/100 = 3,243.75万、減額 50% = 1,621.875万 → 16,218,750円
+    const r = calculate(mk([c1], [land("アパート", 100, 50_000_000, "c1", { use: "rentedHouse", leaseRatio: 0.6, rentRatio: 0.75 })], [all("アパート", ["c1", 1, 1])]));
+    const l = r.assets[0];
+    expect(l.valuation.value).toBe(43_250_000);
+    expect(l.small).toMatchObject({ kind: "rental", rate: 50, area: 75, value: 32_437_500, selectedArea: 75, selectedValue: 32_437_500 });
+    expect(l.reduction).toBe(16_218_750);
+    expect(r.warnings.some((w) => w.includes("空き部屋") && w.includes("0.75"))).toBe(true);
   });
 
   it("貸付事業用宅地等を含むときは、特定居住用を200/330に換算して合わせて200㎡まで", () => {
