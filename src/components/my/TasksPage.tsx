@@ -393,6 +393,15 @@ export function TasksPage() {
 /** 手続きごとのメモ。入力をやめたら保存する */
 function MemoBox({ value, onSave }: { value: string; onSave: (v: string) => void }) {
   const [v, setV] = useState(value);
+  // このタブで入力して、まだ保存していない
+  const [typing, setTyping] = useState(false);
+  // 別のタブで保存されたメモは、このタブで入力中でなければそのまま映す
+  // （古いままの欄を保存して、別のタブのメモを消さないため）
+  const [shown, setShown] = useState(value);
+  if (value !== shown) {
+    setShown(value);
+    if (!typing) setV(value);
+  }
   const [saved, setSaved] = useState(false);
   // 親の描画のたびに変わる関数を effect の依存に入れないよう、最新の関数を ref に持つ
   const save = useRef(onSave);
@@ -400,21 +409,26 @@ function MemoBox({ value, onSave }: { value: string; onSave: (v: string) => void
     save.current = onSave;
   }, [onSave]);
   useEffect(() => {
-    // 空白だけのメモは保存されない（空として扱われる）ので、前後の空白を除いて比べる。
-    // そのまま比べると、空白だけを入力したときに保存がくり返し続く
-    if (v.trim() === value.trim()) return;
+    // 保存するのは、このタブで入力したときだけ
+    if (!typing) return;
     const id = setTimeout(() => {
+      setTyping(false);
+      // 空白だけのメモは保存されない（空として扱われる）ので、前後の空白を除いて比べる
+      if (v.trim() === value.trim()) return;
       save.current(v);
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
     }, 600);
     return () => clearTimeout(id);
-  }, [v, value]);
+  }, [v, value, typing]);
   return (
     <div>
       <textarea
         value={v}
-        onChange={(e) => setV(e.target.value)}
+        onChange={(e) => {
+          setV(e.target.value);
+          setTyping(true);
+        }}
         rows={3}
         placeholder="例：みほん銀行 相続センター 0120-000-000、担当 見本さん。○日に書類を郵送済み。"
         className="w-full rounded-lg border border-stone-300 p-2 text-sm focus:border-sky-500 focus:outline-none"

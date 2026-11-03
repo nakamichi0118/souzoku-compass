@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { authExpired, flushQueue, isUnsaved, queueWrite, resetQueueForTest, setQueueEnabled } from "@/lib/saveQueue";
+import { authExpired, dropUnsent, flushQueue, hasUnsent, isUnsaved, queueWrite, resetQueueForTest, resumeAfterLogin, setQueueEnabled, unsentWrites } from "@/lib/saveQueue";
 
 type Call = { body: { set: Record<string, string>; del: string[] }; resolve: (status: number) => void; reject: () => void };
 
@@ -104,6 +104,42 @@ describe("サーバーへの保存の待ち行列", () => {
     expect(authExpired()).toBe(true);
     queueWrite("k:a", "2");
     expect(await flushQueue()).toBe(false);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("ログインが切れていた間の書き込みは残しておき、もう一度ログインしたら送る", async () => {
+    const calls = fakeFetch();
+    queueWrite("k:a", "1");
+    const p = flushQueue();
+    await tick();
+    calls[0].resolve(401);
+    await p;
+    queueWrite("k:b", null);
+    expect(hasUnsent()).toBe(true);
+    expect(unsentWrites()).toEqual({ set: { "k:a": "1" }, del: ["k:b"] });
+    resumeAfterLogin();
+    expect(authExpired()).toBe(false);
+    const again = flushQueue();
+    await tick();
+    expect(calls[1].body).toEqual({ set: { "k:a": "1" }, del: ["k:b"] });
+    calls[1].resolve(200);
+    expect(await again).toBe(true);
+    expect(hasUnsent()).toBe(false);
+  });
+
+  it("捨てた書き込みは、送っている途中のものが失敗しても戻さない", async () => {
+    const calls = fakeFetch();
+    queueWrite("k:a", "1");
+    const p = flushQueue();
+    await tick();
+    queueWrite("k:b", "2");
+    expect(hasUnsent()).toBe(true);
+    dropUnsent();
+    calls[0].reject();
+    expect(await p).toBe(false);
+    expect(hasUnsent()).toBe(false);
+    expect(isUnsaved("k:a")).toBe(false);
+    expect(await flushQueue()).toBe(true);
     expect(calls).toHaveLength(1);
   });
 

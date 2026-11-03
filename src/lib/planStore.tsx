@@ -1,6 +1,6 @@
 "use client";
 
-import { isUnsaved, kvGet, kvSet, useSession } from "./cloud";
+import { isUnsaved, kvGet, kvSet, localIsMine, useSession } from "./cloud";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { blankInterview, demoInterview, type Interview } from "@/domain/procedures/interview";
 import { buildTasks } from "@/domain/procedures/rules";
@@ -83,11 +83,11 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
   }, [session.ready, session.mode]);
 
   // 別のタブで書き換えられたら、その項目を読み直す（古い画面のまま操作して、別のタブの記録を上書きしないため）。
-  // このタブにまだ送っていない記録があるときは、そちらを優先する
+  // このタブにまだ送っていない記録があるときは、そちらを優先する。別のタブで別の人がログインしたあとの値は取り込まない
   useEffect(() => {
     if (!loaded) return;
     const onStorage = (e: StorageEvent) => {
-      if (!e.key || e.newValue === null || isUnsaved(e.key)) return;
+      if (!e.key || e.newValue === null || isUnsaved(e.key) || !localIsMine()) return;
       if (e.key === IV_KEY) setIv({ ...blankInterview(), ...read<Partial<Interview>>(IV_KEY, {}) });
       else if (e.key === DONE_KEY) setDone(read<string[]>(DONE_KEY, []));
       else if (e.key === ACC_KEY) setAccount(read<Account | null>(ACC_KEY, null));

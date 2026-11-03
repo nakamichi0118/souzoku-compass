@@ -3,7 +3,7 @@
  * 図の上の点は用紙の上の位置（mm）に直し、地上の位置（m）との間の相似変換（拡大縮小・回転・平行移動）を
  * 最小二乗法で当てはめる。縮尺の分母 ＝ 地上の長さ(m) ÷ 用紙の長さ(m)。
  */
-import type { Frame, Paper } from "./frame";
+import { type Frame, type Paper, distanceM } from "./frame";
 import { type LatLng, projector } from "./lot";
 
 export interface FitPair {
@@ -46,4 +46,24 @@ export function frameFromPairs(pairs: FitPair[], paper: Paper): Frame | null {
   // 枠の回転は時計回りが正（frameCorners と同じ向き）
   const rotation = (-Math.atan2(a[1], a[0]) * 180) / Math.PI;
   return { center: P.from(cx, cy), scale: Math.round(mPerMm * 1000), rotation: Math.round(rotation * 10) / 10 };
+}
+
+/** 枠の上の位置（図の幅・高さを1とした位置、右・下が正）の緯度経度。frameCorners と同じ向き */
+export function framePoint(f: Frame, paper: Paper, img: [number, number]): LatLng {
+  const P = projector(f.center);
+  const x = ((img[0] - 0.5) * paper.widthMm * f.scale) / 1000; // 地上の m（図の右向き）
+  const y = (-(img[1] - 0.5) * paper.heightMm * f.scale) / 1000; // 地上の m（図の上向き）
+  const th = (f.rotation * Math.PI) / 180;
+  return P.from(x * Math.cos(th) + y * Math.sin(th), -x * Math.sin(th) + y * Math.cos(th));
+}
+
+/**
+ * 点の組が枠とよく合っているか。どの組も、図の上の点を枠で地図に置いた位置と地図の上の点との差が、
+ * 地上で 20m か枠の幅の 5% の大きい方以内なら合っているとする。
+ * 2組だけでは枠がどちらの組にもぴったり合ってしまい確かめられないので、3組以上のときだけ合っているとする。
+ */
+export function pairsAgree(pairs: FitPair[], paper: Paper, f: Frame): boolean {
+  if (pairs.length < 3) return false;
+  const tol = Math.max(20, ((paper.widthMm * f.scale) / 1000) * 0.05);
+  return pairs.every((p) => distanceM(framePoint(f, paper, p.img), p.latlng) <= tol);
 }

@@ -9,6 +9,7 @@ import "leaflet/dist/leaflet.css";
 import type * as Leaflet from "leaflet";
 import { useEffect, useRef, useState } from "react";
 import { type Affine, type ControlPair, solveTransform } from "@/domain/geo/georef";
+import { fromTouch } from "./wizard";
 
 type LL = [number, number];
 
@@ -55,6 +56,8 @@ interface Props {
   frame?: [number, number][] | null;
   onFrameMove?: (center: [number, number]) => void;
   pendingImg?: [number, number] | null;
+  /** 基準点を選んでいる図の名前（地図の上の案内に出す） */
+  pendingLabel?: string;
   sheet?: Sheet | null;
   opacity: number;
   showOverlay: boolean;
@@ -170,7 +173,7 @@ const centroid = (q: LL[]): LL => [q.reduce((a, p) => a + p[0], 0) / q.length, q
 const midpoint = (a: LL, b: LL): LL => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
 const toLL = (ll: Leaflet.LatLng): LL => [ll.lat, ll.lng];
 
-export default function MapView({ center, property, pairs, pins, frame, onFrameMove, pendingImg, sheet, opacity, showOverlay, onMapClick, onReady, className, lot, onLotMove, onEdgeToggle, roads, shape, onShapeChange, onShapeEdgeToggle, kozu, kozuPins }: Props) {
+export default function MapView({ center, property, pairs, pins, frame, onFrameMove, pendingImg, pendingLabel = "路線価図", sheet, opacity, showOverlay, onMapClick, onReady, className, lot, onLotMove, onEdgeToggle, roads, shape, onShapeChange, onShapeEdgeToggle, kozu, kozuPins }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Leaflet.Map | null>(null);
   const LRef = useRef<typeof Leaflet | null>(null);
@@ -190,6 +193,8 @@ export default function MapView({ center, property, pairs, pins, frame, onFrameM
   const shapeEdgeRef = useRef(onShapeEdgeToggle);
   shapeEdgeRef.current = onShapeEdgeToggle;
   const [ready, setReady] = useState(false);
+  /** 最後に角の印をドラッグした時刻（ドラッグの直後の長押しで角を消さないため） */
+  const draggedAt = useRef(0);
   const state = useRef({ sheet, pairs, kozu });
   state.current = { sheet, pairs, kozu };
 
@@ -204,7 +209,9 @@ export default function MapView({ center, property, pairs, pins, frame, onFrameM
       const std = L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png", { attribution: GSI_ATTR, maxNativeZoom: 18, maxZoom: 20 });
       const photo = L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg", { attribution: GSI_ATTR, maxNativeZoom: 18, maxZoom: 20 });
       std.addTo(map);
-      L.control.layers({ 地図: std, 航空写真: photo }, {}, { position: "topright" }).addTo(map);
+      // パソコンでは右側に案内が重なるので、地図・航空写真の切り替えと出典の表示は左側に置く
+      L.control.layers({ 地図: std, 航空写真: photo }, {}, { position: "topleft" }).addTo(map);
+      map.attributionControl.setPosition("bottomleft");
       map.on("click", (e: Leaflet.LeafletMouseEvent) => clickRef.current?.([e.latlng.lat, e.latlng.lng]));
       // 土地の形の層。層そのものはクリックを通し、辺の線だけが受け取る（下の層の線もクリックできるように）
       const shapePane = map.createPane(SHAPE_PANE);
@@ -326,7 +333,7 @@ export default function MapView({ center, property, pairs, pins, frame, onFrameM
   }, [lot, ready]);
 
   // 土地の形（多角形）：道路に面している辺は太い赤線。
-  // 直せるときは、角の印をドラッグ（ダブルクリック・右クリックで角を消す）、辺の中ほどの「＋」で角を増やす、中心の印で形ごと動かす。
+  // 直せるときは、角の印をドラッグ（ダブルクリック・右クリックで角を消す。指の長押しでは消さない）、辺の中ほどの「＋」で角を増やす、中心の印で形ごと動かす。
   // ドラッグ中は見た目だけを動かし、離したときに親へ新しい形を知らせる。
   const shapeKey = shape ? JSON.stringify(shape) : "";
   const canToggle = !!onShapeEdgeToggle;
@@ -387,12 +394,30 @@ export default function MapView({ center, property, pairs, pins, frame, onFrameM
       const title = n > 3 ? "ドラッグして角を動かす（ダブルクリック・右クリックで角を消す）" : "ドラッグして角を動かす";
       const v = L.marker(p, { draggable: true, zIndexOffset: 1000, icon: icon("shape-vertex", 26, title) }).addTo(g);
       const moved = () => pts.map((q, j) => (j === i ? toLL(v.getLatLng()) : q));
-      v.on("click", swallow);
-      v.on("drag", () => place(moved(), v));
-      v.on("dragend", () => change(moved()));
-      v.on("dblclick contextmenu", (e: Leaflet.LeafletEvent) => {
-        L.DomEvent.stopPropagation(e);
+      const remove = () => {
         if (n > 3) change(pts.filter((_, j) => j !== i));
+      };
+      v.on("click", swallow);
+      v.on("dragstart", () => (draggedAt.current = Date.now()));
+      v.on("drag", () => {
+        draggedAt.current = Date.now();
+        place(moved(), v);
+      });
+      v.on("dragend", () => {
+        draggedAt.current = Date.now();
+        change(moved());
+      });
+      // ダブルクリック（スマートフォンではダブルタップ）で角を消す
+      v.on("dblclick", (e: Leaflet.LeafletMouseEvent) => {
+        L.DomEvent.stopPropagation(e);
+        remove();
+      });
+      // 右クリックでも消す。指の長押しやゆっくりしたドラッグ（その間やすぐ後）に出る右クリックの代わりの操作では消さない
+      v.on("contextmenu", (e: Leaflet.LeafletMouseEvent) => {
+        L.DomEvent.stopPropagation(e);
+        const dragging = (v.dragging as (Leaflet.Handler & { moved?: () => boolean }) | undefined)?.moved?.();
+        if (fromTouch(e.originalEvent) || dragging || Date.now() - draggedAt.current < 800) return;
+        remove();
       });
       verts.push(v);
     });
@@ -455,7 +480,7 @@ export default function MapView({ center, property, pairs, pins, frame, onFrameM
       <div ref={el} className={className ?? "h-[520px] w-full rounded-xl border border-stone-300"} aria-label="地図" />
       {pendingImg && (
         <p className="pointer-events-none absolute left-1/2 top-3 z-[1000] -translate-x-1/2 rounded-full bg-amber-500 px-4 py-1 text-sm font-semibold text-white shadow">
-          路線価図で選んだ点と同じ場所を、地図上でクリックしてください
+          {pendingLabel}で選んだ点と同じ場所を、地図上でクリックしてください
         </p>
       )}
     </div>

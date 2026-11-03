@@ -59,6 +59,47 @@ describe("相続登記", () => {
     expect(osaka.taxBase).toBe(6_800_000);
     expect(osaka.tax).toBe(27_200);
   });
+  it("都道府県を省いた所在でも、同じ市区町村の不動産は1件の申請にまとめる", () => {
+    const c = structuredClone(demoCase);
+    const bldg = c.assets.find((a) => a.id === "home-bldg")!;
+    if (bldg.kind === "building") bldg.location = "千代田区架空町一丁目2番地3 家屋番号2番3";
+    const apps = buildRegistrations(c).filter((a) => a.applicants.length === 1 && a.applicants[0].personId === "hanako");
+    expect(apps).toHaveLength(1);
+    expect(apps[0].area).toBe("東京都千代田区");
+    expect(apps[0].properties.map((p) => p.kind)).toEqual(["land", "building"]);
+    expect(apps[0].taxBase).toBe(55_450_000);
+    expect(apps[0].tax).toBe(221_800);
+    // 申請書の所在は書かれたとおりのまま
+    expect(apps[0].properties[1].location).toBe("千代田区架空町一丁目2番地3");
+  });
+  it("土地も家屋も都道府県を省いていれば、亡くなった方の住所の都道府県で補う", () => {
+    const c = structuredClone(demoCase);
+    for (const a of c.assets) {
+      if (a.id === "home-land" && a.kind === "land") a.location = "千代田区架空町一丁目2番3";
+      if (a.id === "home-bldg" && a.kind === "building") a.location = "千代田区架空町一丁目2番地3 家屋番号2番3";
+    }
+    const apps = buildRegistrations(c).filter((a) => a.applicants[0].personId === "hanako");
+    expect(apps.map((a) => a.area)).toEqual(["東京都千代田区"]);
+  });
+  it("同じ名前の市が別の都道府県にもあるときは、都道府県を補わずに分ける", () => {
+    const c = structuredClone(demoCase);
+    c.decedent.address = "広島県府中市府川町1番1号";
+    for (const a of c.assets) {
+      if (a.id === "home-land" && a.kind === "land") a.location = "東京都府中市宮町一丁目2番3";
+      if (a.id === "home-bldg" && a.kind === "building") a.location = "府中市宮町一丁目2番地3 家屋番号2番3";
+    }
+    const apps = buildRegistrations(c).filter((a) => a.applicants[0].personId === "hanako");
+    expect(apps.map((a) => a.area).sort()).toEqual(["府中市", "東京都府中市"]);
+  });
+  it("家屋の種類が分からないときは「居宅」と決めつけず、足りない項目に挙げる", () => {
+    const c = structuredClone(demoCase);
+    const bldg = c.assets.find((a) => a.id === "home-bldg")!;
+    if (bldg.kind === "building") bldg.registry = { ...bldg.registry, buildingType: undefined };
+    const app = buildRegistrations(c).find((a) => a.properties.some((p) => p.assetId === "home-bldg"))!;
+    const p = app.properties.find((x) => x.assetId === "home-bldg")!;
+    expect(p.kind === "building" && p.type).toBe("");
+    expect(app.missing).toContain("「自宅家屋」の種類");
+  });
   it("地番が分からない土地は、足りない項目に挙げる", () => {
     const c = structuredClone(demoCase);
     const land = c.assets.find((a) => a.id === "home-land")!;

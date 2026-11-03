@@ -57,6 +57,9 @@ describe("遺産分割協議書", () => {
     if (bldg.kind === "building") bldg.registry = undefined;
     const hanako = buildDivisionDoc(c).articles.find((a) => a.heading.includes("相続 花子"))!.items.join("\n");
     expect(hanako).toContain("家屋番号　（登記事項証明書のとおり）");
+    // 種類も推測で「居宅」と書かない
+    expect(hanako).toContain("種　　類　（登記事項証明書のとおり）");
+    expect(hanako).not.toContain("居宅");
   });
   it("相続人でない人に複数の財産を割り当てても、注意は1回だけ出す", () => {
     const c = structuredClone(demoCase);

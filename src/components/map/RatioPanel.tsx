@@ -33,6 +33,7 @@ interface RatioResult {
   error?: string;
 }
 type MultiplierMethod = Extract<LandAsset["method"], { type: "multiplier" }>;
+type RatioSource = NonNullable<MultiplierMethod["source"]>;
 
 /** 宅地の欄の「1.1」「1.10」などを倍率の数に。「路線」「比準」などは null */
 export const ratioNumber = (s: string | null | undefined): number | null => {
@@ -46,21 +47,29 @@ export function RatioPanel({
   land,
   property,
   cache,
+  ratioUrl,
   onApply,
   onUseRosenka,
+  onReady,
 }: {
   step: number;
   setStep: (s: number) => void;
   land: LandAsset;
   property: [number, number];
   cache: Map<string, ArrayBuffer>;
+  /** この市区町村の評価倍率表の PDF（場所から調べたもの。行を探せなかったときの案内に使う） */
+  ratioUrl?: string | null;
   onApply: (method: MultiplierMethod, areaSqm: number) => void;
   onUseRosenka: () => void;
+  /** 倍率が決まったか（確かめたか、自分で入れたか）を知らせる。決まるまで 3. には進めない */
+  onReady?: (ready: boolean) => void;
 }) {
   const saved = land.method.type === "multiplier" ? land.method : undefined;
   const [res, setRes] = useState<RatioResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** 探せなかったときに、サーバーが教えてくれた評価倍率表の PDF */
+  const [errorPdfUrl, setErrorPdfUrl] = useState<string | null>(null);
   const [pick, setPick] = useState(0);
   const [page, setPage] = useState<Sheet | null>(null);
   const [zoom, setZoom] = useState(0.35);
@@ -68,20 +77,30 @@ export function RatioPanel({
   const [multiplier, setMultiplier] = useState<number>(saved?.multiplier ?? 0);
   const [fav, setFav] = useState<number>(saved?.fixedAssetValue ?? 0);
   const [area, setArea] = useState<number>(land.areaSqm);
-  const [ok, setOk] = useState(!!saved?.source);
+  /** 本人が「はい」と確かめた行（あとで別の行を選んでも、確かめた行の倍率と出典を使う） */
+  const [confirmed, setConfirmed] = useState<RatioSource | undefined>(saved?.source);
+
+  useEffect(() => {
+    onReady?.(multiplier > 0);
+  }, [multiplier]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 評価倍率表をコンパスくんに探してもらう
   useEffect(() => {
     let off = false;
     setBusy(true);
     setError(null);
+    setErrorPdfUrl(null);
+    setRes(null);
     (async () => {
       try {
         const r = await fetch("/api/rosenka/ratio", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ lat: property[0], lng: property[1] }) });
-        const j = (await r.json()) as RatioResult;
-        if (!r.ok) throw new Error(j.error ?? "評価倍率表を探せませんでした。");
+        const j = (await r.json().catch(() => ({}))) as Partial<RatioResult>;
         if (off) return;
-        setRes(j);
+        if (!r.ok || !j.rows) {
+          setErrorPdfUrl(j.pdfUrl ?? null);
+          throw new Error(j.error ?? "評価倍率表を探せませんでした。");
+        }
+        setRes(j as RatioResult);
         const first = j.rows.findIndex((x) => ratioNumber(x.residential) !== null);
         setPick(first >= 0 ? first : 0);
       } catch (e) {
@@ -121,6 +140,7 @@ export function RatioPanel({
   const rowRate = ratioNumber(row?.residential);
   const isRoute = !!row && /路線/.test(row.residential);
   const where = `${res?.city ?? ""}${row?.town ?? res?.town ?? ""}${row?.area ? `（${row.area}）` : ""}`;
+  const pdfUrl = res?.pdfUrl ?? errorPdfUrl ?? ratioUrl ?? null;
 
   if (step === 2)
     return (
@@ -177,8 +197,9 @@ export function RatioPanel({
                 <div className="flex flex-wrap gap-2">
                   <Button
                     onClick={() => {
+                      if (!row) return;
                       setMultiplier(rowRate);
-                      setOk(true);
+                      setConfirmed({ city: res.city ?? "", town: row.town, area: row.area || undefined, pdfUrl: res.pdfUrl ?? undefined, page: row.page });
                       setManual(false);
                       setStep(3);
                     }}
@@ -205,11 +226,18 @@ export function RatioPanel({
         {(manual || error || (res && (res.rows.length === 0 || (rowRate === null && !isRoute)))) && (
           <div className="space-y-2 rounded-lg border border-stone-200 p-3">
             <Field label="倍率（評価倍率表の宅地の欄）" hint="例：1.1">
-              <NumInput value={multiplier} step="0.1" onChange={setMultiplier} />
+              <NumInput
+                value={multiplier}
+                step="0.1"
+                onChange={(v) => {
+                  setMultiplier(v);
+                  setConfirmed(undefined);
+                }}
+              />
             </Field>
             <Button
               onClick={() => {
-                setOk(false);
+                setConfirmed(undefined);
                 setStep(3);
               }}
               disabled={!(multiplier > 0)}
@@ -228,38 +256,40 @@ export function RatioPanel({
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={page.src} alt="評価倍率表" width={page.width * zoom} height={page.height * zoom} className="max-w-none" />
             </div>
-            {res?.pdfUrl && (
-              <a href={res.pdfUrl} target="_blank" rel="noreferrer" className="text-xs text-teal-800 underline">
-                国税庁の評価倍率表（PDF）を開く
-              </a>
-            )}
           </div>
+        )}
+        {pdfUrl && (
+          <a href={pdfUrl} target="_blank" rel="noreferrer" className="block text-xs text-teal-800 underline">
+            国税庁の評価倍率表（PDF）を開く
+          </a>
         )}
       </div>
     );
 
   // 3. 評価額
-  const method: MultiplierMethod = {
-    type: "multiplier",
-    fixedAssetValue: fav,
-    multiplier,
-    source: ok && row && res ? { city: res.city ?? "", town: row.town, area: row.area || undefined, pdfUrl: res.pdfUrl ?? undefined, page: row.page } : undefined,
-  };
+  const method: MultiplierMethod = { type: "multiplier", fixedAssetValue: fav, multiplier, source: confirmed };
   const v = valueLand({ ...land, areaSqm: area, method });
+  const confirmedWhere = confirmed ? `${confirmed.city}${confirmed.town}${confirmed.area ? `（${confirmed.area}）` : ""}` : "";
+  const hasRate = multiplier > 0;
+  const hasArea = area > 0;
   return (
     <div className="space-y-3">
       <h2 className="font-bold text-stone-800">3. 固定資産税評価額を入れて評価する</h2>
-      <p className="text-sm text-stone-600">
-        倍率 <span className="font-bold">{multiplier}倍</span>
-        {ok && where ? `（${where}・宅地）` : "（自分で入力）"}
-      </p>
+      {hasRate ? (
+        <p className="text-sm text-stone-600">
+          倍率 <span className="font-bold">{multiplier}倍</span>
+          {confirmedWhere ? `（${confirmedWhere}・宅地）` : "（自分で入力）"}
+        </p>
+      ) : (
+        <Note tone="warn">倍率がまだ入っていません。「2. 評価倍率表」に戻って、倍率を確かめてください。</Note>
+      )}
       <Field label="固定資産税評価額" hint="固定資産税の課税明細書（または評価証明書）の「評価額」。課税標準額ではありません">
         <YenInput value={fav} onChange={setFav} />
       </Field>
       <Field label="地積" hint="登記簿・課税明細書の面積">
         <NumInput value={area} onChange={setArea} unit="㎡" />
       </Field>
-      {v.needsConsultation ? (
+      {!hasRate ? null : v.needsConsultation ? (
         <p className="text-sm text-stone-500">固定資産税評価額を入れると評価額を計算します。</p>
       ) : (
         <div className="rounded-lg bg-teal-50 p-3 text-sm text-teal-950">
@@ -277,7 +307,8 @@ export function RatioPanel({
           <ConsultLink topic="土地の評価" />
         </span>
       </Note>
-      <Button onClick={() => onApply(method, area)} disabled={!!v.needsConsultation} className="w-full py-3">
+      {!hasArea && <p className="text-xs text-amber-800">地積を入れてください（登記簿や課税明細書に書いてある面積）。</p>}
+      <Button onClick={() => onApply(method, area)} disabled={!!v.needsConsultation || !hasRate || !hasArea} className="w-full py-3">
         この評価を反映して財産の入力へ戻る
       </Button>
     </div>

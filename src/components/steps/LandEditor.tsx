@@ -150,7 +150,12 @@ function RoadsEditor({ a, m, patch }: { a: LandAsset; m: RosenkaMethod; patch: (
           value={m.otherCorrection}
           accept={(v) => v > 0 && v <= 1}
           onChange={(v) => patch({ method: { ...m, otherCorrection: v } })}
-          invalidMessage="補正率は1以下の数です。いまはこの値を使わず、補正なしで計算しています。"
+          invalidMessage={
+            // 以前の入力で1を超える値が保存されていると、評価額を計算できず税額も出せない。打ち直した値は保存しないので補正なしで計算する
+            m.otherCorrection != null && m.otherCorrection > 1
+              ? "補正率は0より大きく1以下の数です。以前に入れた値が1を超えているため、このままでは評価額と相続税を計算できません。正しい補正率に直すか、空欄にしてください。"
+              : "補正率は0より大きく1以下の数です。いまはこの値を使わず、補正なしで計算しています。"
+          }
         />
       </Field>
       {a.method.type === "rosenka" && a.method.lot && <p className="text-xs text-stone-500">地図で合わせた枠：間口{a.method.lot.width}m × 奥行{a.method.lot.depth}m</p>}
@@ -221,9 +226,23 @@ export function LandEditor({
         </>
       )}
       {m.type === "manual" && (
-        <Field label="評価額">
-          <YenInput value={m.value} onChange={(v) => patch({ method: { ...m, value: v } })} />
-        </Field>
+        <>
+          {!m.publicPrivateRoad && (
+            <Field label="評価額">
+              <YenInput value={m.value} onChange={(v) => patch({ method: { ...m, value: v } })} />
+            </Field>
+          )}
+          <div className="space-y-1 sm:col-span-2">
+            <Check
+              checked={!!m.publicPrivateRoad}
+              onChange={(v) => patch({ method: { ...m, publicPrivateRoad: v || undefined } })}
+              label="誰でも通り抜けできる私道なので、評価しない（0円）"
+            />
+            <p className="text-xs text-stone-500">
+              道路として誰でも通り抜けに使っている私道は、相続税では評価しません（財産評価基本通達24）。行き止まりで近くの家の人だけが使う私道などは0円になりません。分からないときは税理士にご相談ください。
+            </p>
+          </div>
+        </>
       )}
       <SmallResidential living={living} a={a} patch={patch} />
     </>

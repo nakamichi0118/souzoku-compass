@@ -244,7 +244,74 @@ export interface EngineOptions {
   ratioDigits?: number;
 }
 
+/** 小規模宅地等の特例の宅地が何筆までなら、すべての割り当て順を試すか（5筆で120通り） */
+export const SR_MAX_PERMUTE = 5;
+
+/** 0〜n-1 の並べ方をすべて、辞書順（入力順がいちばん先）に返す */
+function permutations(n: number): number[][] {
+  const out: number[][] = [];
+  const walk = (prefix: number[], rest: number[]) => {
+    if (!rest.length) out.push(prefix);
+    rest.forEach((x, i) => walk([...prefix, x], [...rest.slice(0, i), ...rest.slice(i + 1)]));
+  };
+  walk([], [...Array(n).keys()]);
+  return out;
+}
+
+/** 0.01㎡単位の面積を「12.5」のように書く */
+const sqmText = (area100: number) => String(area100 / 100);
+
 export function calculate(c: Case, opts: EngineOptions = {}): TaxResult {
+  // 割り当て順を変えて何度も計算するので、財産の評価は1回だけにする
+  const cache = new Map<Asset, Valuation>();
+  const value = (a: Asset) => {
+    let v = cache.get(a);
+    if (!v) cache.set(a, (v = valueAsset(a)));
+    return v;
+  };
+  const base = compute(c, opts, value);
+  // 特定居住用宅地等の限度面積330㎡をどの宅地に使うかは、宅地を取得した人全員の同意で選べる（措置法69条の4第1項。付表1の同意欄）。
+  // 1㎡あたりの価額が高い宅地を選ぶと減額は最大になるが、税額が0円の配偶者の宅地を選ぶと、かえって家族全体の相続税が増えることがある。
+  // そこで、選べる宅地が少なければ割り当て順をすべて試し、納める相続税の合計がいちばん少ない割り当てにする
+  // （同じなら減額が大きい方、それも同じなら入力順に近い方）。多いときは1㎡あたりの価額が高い順のままにする
+  const live = base.sr.flatMap((x, i) => (x.value > 0 && x.area100 > 0 ? [i] : []));
+  const totalArea100 = live.reduce((a, i) => a + base.sr[i].area100, 0);
+  if (live.length < 2 || live.length > SR_MAX_PERMUTE || totalArea100 <= 33000) return base.result;
+  const rest = base.sr.map((_, i) => i).filter((i) => !live.includes(i));
+  const seen = new Set<string>();
+  let best: { result: TaxResult; reduction: number } | undefined;
+  for (const perm of permutations(live.length)) {
+    const order = [...perm.map((k) => live[k]), ...rest];
+    // 割り当てる面積が同じになる並べ方（上限に届いたあとの順番違いなど）は、結果も同じなので計算しない
+    let left100 = 33000;
+    const selected = base.sr.map(() => 0);
+    for (const i of order) {
+      const x = base.sr[i];
+      selected[i] = x.value > 0 ? Math.min(x.area100, left100) : 0;
+      left100 -= selected[i];
+    }
+    const key = selected.join(",");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const { result } = compute(c, opts, value, order);
+    const reduction = result.assets.reduce((a, l) => a + l.reduction, 0);
+    if (!best || result.totalPayable < best.result.totalPayable || (result.totalPayable === best.result.totalPayable && reduction > best.reduction)) {
+      best = { result, reduction };
+    }
+  }
+  return best!.result;
+}
+
+/**
+ * 相続税の計算の本体。srOrder は小規模宅地等の特例の宅地（入力順の番号）に330㎡を割り当てる順番で、
+ * 渡さなければ1㎡あたりの価額が高い順にする。sr は特例の宅地ごとの取得者の持分に応ずる面積（0.01㎡単位）と価額
+ */
+function compute(
+  c: Case,
+  opts: EngineOptions,
+  valueOf: (a: Asset) => Valuation,
+  srOrder?: number[],
+): { result: TaxResult; sr: { area100: number; value: number }[] } {
   const blockers: string[] = [];
   const warnings: string[] = [];
   const deathYear = Number(c.decedent.deathDate.slice(0, 4));
@@ -300,7 +367,7 @@ export function calculate(c: Case, opts: EngineOptions = {}): TaxResult {
   const srCandidates: { line: AssetLine; part: { personId: string; amount: number }; landPart: number; area: number; acquirerId: string; order: number }[] = [];
   for (const a of c.assets) {
     if (a.foreign) blockers.push(`「${a.label}」は国外財産です。国外財産がある相続は税理士にご相談ください。`);
-    const valuation = valueAsset(a);
+    const valuation = valueOf(a);
     if (valuation.needsConsultation) blockers.push(`「${a.label}」：${valuation.needsConsultation}`);
     if (a.pending?.length) {
       // 書類から読み取っただけで本人が確かめていない値で申告書を作らない
@@ -348,6 +415,11 @@ export function calculate(c: Case, opts: EngineOptions = {}): TaxResult {
           fullArea = (a as LandAsset).areaSqm;
         }
         const area = (fullArea * share.numerator) / share.denominator;
+        if (!(area > 0)) {
+          // 面積が分からないと、330㎡までの減額を計算できない
+          blockers.push(`「${a.label || "名称未入力の土地"}」に小規模宅地等の特例を使うには、${a.kind === "condo" ? "敷地権の面積" : "地積"}を入れてください。`);
+          continue;
+        }
         srCandidates.push({ line, part, landPart, area, acquirerId: sr.acquirerId, order: srCandidates.length });
       } else {
         warnings.push(`「${a.label}」の小規模宅地等の特例の取得者が、この土地を取得していません。`);
@@ -356,24 +428,33 @@ export function calculate(c: Case, opts: EngineOptions = {}): TaxResult {
   }
 
   // 特定居住用宅地等の限度面積330㎡は、選んだ宅地全体で使う（措置法69条の4第2項）。
-  // 減額がいちばん大きくなるよう、1㎡あたりの価額が高い宅地から順に面積を割り当てる（同じなら入力順）
+  // srOrder の順に、なければ1㎡あたりの価額が高い宅地から順に（同じなら入力順）面積を割り当てる
   const unitPrice = (x: (typeof srCandidates)[number]) => (x.area > 0 ? x.landPart / x.area : 0);
-  srCandidates.sort((x, y) => unitPrice(y) - unitPrice(x) || x.order - y.order);
-  let srLeftSqm = 330;
-  for (const x of srCandidates) {
-    const label = x.line.asset.label;
-    if (srLeftSqm <= 0) {
-      warnings.push(`小規模宅地等の特例は合計330㎡までです。1㎡あたりの価額が高い土地から順に適用し、上限に達したため「${label}」には適用していません。`);
+  const srOrdered = srOrder ? srOrder.map((i) => srCandidates[i]) : [...srCandidates].sort((x, y) => unitPrice(y) - unitPrice(x) || x.order - y.order);
+  let srLeft100 = 33000; // 残りの面積（0.01㎡単位）
+  const srUsed: string[] = [];
+  const srSkipped: string[] = [];
+  for (const x of srOrdered) {
+    const label = `「${x.line.asset.label}」`;
+    const area100 = Math.round(x.area * 100);
+    if (srLeft100 <= 0) {
+      if (x.landPart > 0 && area100 > 0) srSkipped.push(label);
       continue;
     }
-    if (x.area > srLeftSqm) {
-      warnings.push(`小規模宅地等の特例は合計330㎡までのため、1㎡あたりの価額が高い土地から順に適用し、「${label}」は残り${Math.round(srLeftSqm * 100) / 100}㎡分だけ適用しています。`);
-    }
-    const sel = smallResidentialSelection(x.landPart, x.area, srLeftSqm);
+    const sel = smallResidentialSelection(x.landPart, x.area, srLeft100 / 100);
+    if (sel.selectedArea > 0) srUsed.push(area100 > srLeft100 ? `${label}は残り${sqmText(srLeft100)}㎡分` : `${label}に${sqmText(area100)}㎡`);
     x.line.reduction = sel.reduction;
     x.line.small = { acquirerId: x.acquirerId, area: x.area, value: x.landPart, selectedArea: sel.selectedArea, selectedValue: sel.selectedValue };
-    srLeftSqm -= Math.min(x.area, srLeftSqm);
+    srLeft100 -= Math.round(sel.selectedArea * 100);
     x.part.amount -= sel.reduction;
+  }
+  const srLive = srCandidates.filter((x) => x.landPart > 0 && Math.round(x.area * 100) > 0);
+  if (srLive.length > 1 && srLive.reduce((a, x) => a + Math.round(x.area * 100), 0) > 33000) {
+    warnings.push(
+      `小規模宅地等の特例は合計330㎡までです。${srOrder ? "家族全体で納める相続税がいちばん少なくなるように" : "1㎡あたりの価額が高い土地から順に"}、${srUsed.join("、")}を割り当てています${srSkipped.length ? `（${srSkipped.join("・")}には適用していません）` : ""}。どの土地に割り当てるかは受け継ぐ人全員の合意で選べるので、別の割り当てにしたいときは税理士にご相談ください。`,
+    );
+  } else if (srLive.length === 1 && srLive[0].area > 330) {
+    warnings.push(`小規模宅地等の特例は330㎡までのため、「${srLive[0].line.asset.label}」は330㎡分だけ適用しています。`);
   }
 
   // 債務・葬式費用は、負担する人ごとの金額の合計が債務の額と一致するまで確定しない
@@ -604,7 +685,7 @@ export function calculate(c: Case, opts: EngineOptions = {}): TaxResult {
     warnings.push("小規模宅地等の特例を適用して基礎控除以下になっています。特例を受けるには申告書の提出が必要です。");
   }
 
-  return {
+  const result: TaxResult = {
     heirsTax,
     heirsCivil,
     legalHeirCount,
@@ -625,4 +706,5 @@ export function calculate(c: Case, opts: EngineOptions = {}): TaxResult {
     warnings,
     needsFiling: needsFiling || needsFilingForRelief,
   };
+  return { result, sr: srCandidates.map((x) => ({ area100: Math.round(x.area * 100), value: x.landPart })) };
 }

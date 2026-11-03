@@ -20,18 +20,19 @@ import { AppHeader } from "@/components/shell/AppShell";
 import { Button, Check, Field, Note, NumInput, Select, TextInput, fmt } from "@/components/ui";
 import { type Frame, DEFAULT_PAPER, frameCorners, framePairs } from "@/domain/geo/frame";
 import { type LatLng, type Road, fitLot, lotCorners } from "@/domain/geo/lot";
-import { type Frontage, depthFor, directionLabel, edgeClasses, edgeTouches, frontagesOf, polygonAreaSqm, rectangle } from "@/domain/geo/polygon";
+import { depthFor, directionLabel, edgeClasses, edgeTouches, frontagesOf, polygonAreaSqm, rectangle } from "@/domain/geo/polygon";
 import type { LandAsset } from "@/domain/types";
 import { DISTRICTS, type District } from "@/domain/valuation/depth";
 import { type RoadInput, evaluateRoads } from "@/domain/valuation/roads";
 import { parseRouteNotation } from "@/domain/valuation/rosenka";
 import { useCase } from "@/lib/store";
-import type { FindResult } from "@/server/rosenkaIndex";
+import type { FindResult, SheetLayoutItem } from "@/server/rosenkaIndex";
 import { FrameControls, type PointMode, PointControls, SheetSource, SheetViewer } from "./AlignTools";
 import { type Candidate, type LocateResult, fetchSheetPdf, locateSheet } from "./locate";
 import type { GeoPair, MapApi, Sheet } from "./MapView";
 import { RatioPanel } from "./RatioPanel";
 import { cropAround, loadImage, renderPdfPage } from "./sheet";
+import { EMPTY_NOTES, type ReadCandidate, type RoadNotes, candidatesFor, frontageContext, keyOf, mergeReadings, needsRead, noteFor, notesFromSaved, readingContext, savedRoute, typeNote } from "./wizard";
 
 const MapView = dynamic(() => import("./MapView"), { ssr: false, loading: () => <div className="h-[520px] animate-pulse rounded-xl bg-stone-100" /> });
 
@@ -39,7 +40,7 @@ const TOKYO_STATION: LatLng = [35.681236, 139.767125];
 
 type Route = "rosenka" | "ratio";
 interface ReadResult {
-  candidates: { notation: string; where: string; distanceToMarker: string }[];
+  candidates: ReadCandidate[];
   districtSymbol: string | null;
   notes: string[];
 }
@@ -58,8 +59,6 @@ export function MapStep() {
     </div>
   );
 }
-
-const keyOf = (f: Frontage) => f.edges.join("-");
 
 /** 路線価図の地区区分の記号の説明（コンパスくんの読み取り）から地区区分を選ぶ */
 function districtFrom(symbol: string | null): District | null {
@@ -131,13 +130,22 @@ function LandWizard() {
   // 4. 道路と路線価
   const [edgeOn, setEdgeOn] = useState<boolean[]>([]);
   const [roadIdx, setRoadIdx] = useState<number[]>([]);
-  const [notes, setNotes] = useState<Record<string, string>>({});
-  const [cands, setCands] = useState<Record<string, ReadResult["candidates"]>>({});
-  const [readDone, setReadDone] = useState<Record<string, true>>({});
+  /** 道路ごとの路線価の欄（読んだときの条件・本人が入れたものも覚える） */
+  const [readings, setReadings] = useState<RoadNotes>(EMPTY_NOTES);
   const [roadsAnswer, setRoadsAnswer] = useState<"yes" | "no" | null>(null);
   const [district, setDistrict] = useState<District>("普通住宅地区");
   const [districtTouched, setDistrictTouched] = useState(false);
+  const touchedRef = useRef(districtTouched);
+  touchedRef.current = districtTouched;
   const [area, setArea] = useState(0);
+  // 倍率地域：倍率が決まったか（決まるまで 3. には進めない）
+  const [ratioReady, setRatioReady] = useState(false);
+  /** 土地や場所を変えるたびに増やす。前の土地・場所への問い合わせの答えが後から届いても使わない */
+  const gen = useRef(0);
+  /** 開き直した土地の形と、本人が選んだ「道路に接している辺」（形を直すまでそのまま使う） */
+  const keepEdges = useRef<{ shape: LatLng[]; on: boolean[] } | null>(null);
+  /** 開き直した土地の、確かめて保存した道路ごとの路線価（道路の情報がそろったら欄に戻す） */
+  const seed = useRef<{ shape: LatLng[]; roads: RoadInput[]; ctx: string } | null>(null);
 
   const geoLat = land?.geo?.lat;
   const geoLng = land?.geo?.lng;
@@ -145,6 +153,9 @@ function LandWizard() {
   const paper = sheet?.paper ?? DEFAULT_PAPER;
   const effectivePairs = useMemo(() => (pairs.length >= 2 ? pairs : frame ? framePairs(frame, paper) : []), [pairs, frame, paper]);
   const center = useMemo(() => property ?? TOKYO_STATION, [assetId, loaded]); // eslint-disable-line react-hooks/exhaustive-deps
+  const sheetId = sheetUrl || sheet?.src || "";
+  /** 路線価を読む条件（場所・路線価図・ページ・重ね方）。変わったら、前に読んだ路線価は使わずに読み直す */
+  const ctx = useMemo(() => readingContext({ property, sheetId, page: pageNo, pairs, frame }), [property, sheetId, pageNo, pairs, frame]);
 
   async function run<T>(label: string, f: () => Promise<T>): Promise<T | undefined> {
     setBusy(label);
@@ -161,51 +172,69 @@ function LandWizard() {
   // 土地を切り替えたら、保存してある内容から始め直す
   useEffect(() => {
     if (!land) return;
+    const g = ++gen.current;
     const m = land.method.type === "rosenka" ? land.method : undefined;
-    setShape(m?.shape ?? (m?.lot ? lotCorners(m.lot) : null));
-    setFrame(land.rosenkaSheet?.frame ?? null);
-    setPairs(land.rosenkaSheet?.points ?? []);
-    setSheetUrl(land.rosenkaSheet?.url ?? "");
-    setPageNo(land.rosenkaSheet?.page ?? 1);
+    const saved = land.rosenkaSheet;
+    const geo: LatLng | undefined = land.geo ? [land.geo.lat, land.geo.lng] : undefined;
+    const restored = m?.shape ?? (m?.lot ? lotCorners(m.lot) : null);
+    setShape(restored);
+    // 評価を終えた土地を開き直したときは、本人が選んだ辺と確かめた路線価をそのまま使う（読み直さない）
+    keepEdges.current = m?.shape && m.edgeOn?.length === m.shape.length ? { shape: m.shape, on: m.edgeOn } : null;
+    seed.current =
+      restored && m?.roads?.length
+        ? { shape: restored, roads: m.roads, ctx: readingContext({ property: geo, sheetId: saved?.url ?? "", page: saved?.page ?? 1, pairs: saved?.points ?? [], frame: saved?.frame ?? null }) }
+        : null;
+    setFrame(saved?.frame ?? null);
+    setPairs(saved?.points ?? []);
+    setSheetUrl(saved?.url ?? "");
+    setPageNo(saved?.page ?? 1);
+    setPdfData(null);
     setSheet(null);
     setSheetNo(null);
     setLocated(null);
+    setFound(null);
+    setTown(null);
+    setRoads(null);
+    setFinding(false);
     setDistrict(m?.district ?? "普通住宅地区");
     setDistrictTouched(!!m?.district);
     setArea(land.areaSqm);
-    setNotes({});
-    setCands({});
-    setReadDone({});
+    setReadings(EMPTY_NOTES);
     setRoadsAnswer(null);
     setKozu(null);
+    setKozuMode("idle");
+    setKozuPending(null);
+    setPointMode("idle");
+    setPending(null);
     setAlignOpen(false);
     setError(null);
-    setRoute(land.method.type === "multiplier" ? "ratio" : m?.roads?.length || m?.shape ? "rosenka" : null);
+    // 書類から読んだだけの仮の方法などで、路線価地域か倍率地域かが決まっていなければ、場所から調べて決める
+    const decided = savedRoute(land.method);
+    setRoute(decided);
+    setRatioReady(land.method.type === "multiplier" && land.method.multiplier > 0);
     setStep(1);
-    if (land.geo) {
-      const ll: LatLng = [land.geo.lat, land.geo.lng];
-      const hasShape = !!(m?.shape ?? m?.lot);
-      api.current?.flyTo(ll, 18);
-      void loadRoads(ll).then((rs) => {
+    if (geo) {
+      api.current?.flyTo(geo, 18);
+      void loadRoads(geo, g).then((rs) => {
         // 場所だけ保存してあるときは、最初の形（道路に正面を向けた四角形）から始める
-        if (hasShape) return;
-        const lot = fitLot(ll, rs, land.areaSqm);
+        if (!rs || restored) return;
+        const lot = fitLot(geo, rs, land.areaSqm);
         setShape((cur) => cur ?? rectangle(lot.center, lot.width, lot.depth, lot.rotation));
       });
-      void findAt(ll, false);
-    } else void showAround();
+      void findAt(geo, decided === null, g);
+    } else void showAround(g);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assetId, loaded]);
 
   /** 1. 入力済みの住所（土地の所在 → 亡くなった方の住所）の周辺を最初に表示する */
-  async function showAround() {
+  async function showAround(g: number) {
     const q = [land?.location, data.decedent.address].map((x) => x?.trim()).find((x) => x && x.length >= 4);
     if (!q) return;
     try {
       const res = await fetch(`/api/geo/search?q=${encodeURIComponent(q)}`);
       const json = await res.json();
       const hit = json.results?.[0];
-      if (hit) {
+      if (hit && g === gen.current) {
         api.current?.flyTo([hit.lat, hit.lng], 18);
         setNotice(`「${q}」の周辺を表示しています。評価する土地をクリックしてください。`);
       }
@@ -225,54 +254,80 @@ function LandWizard() {
     });
   }
 
-  async function loadRoads(ll: LatLng): Promise<Road[]> {
+  /** 道路の中心線を取ってくる。答えが届く前に土地や場所が変わったら null（何も変えない） */
+  async function loadRoads(ll: LatLng, g: number): Promise<Road[] | null> {
+    let rs: Road[] = [];
     try {
       const res = await fetch(`/api/geo/roads?lat=${ll[0]}&lng=${ll[1]}&radius=400`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
-      setRoads(json.roads);
-      return json.roads as Road[];
+      rs = json.roads as Road[];
     } catch {
-      setRoads([]);
-      return [];
+      rs = [];
     }
+    if (g !== gen.current) return null;
+    setRoads(rs);
+    return rs;
   }
 
   /** その場所の路線価図の候補（なければ倍率地域の可能性） */
-  async function findAt(ll: LatLng, decide = true) {
+  async function findAt(ll: LatLng, decide: boolean, g: number) {
     setFinding(true);
     try {
       const res = await fetch(`/api/rosenka/find?lat=${ll[0]}&lng=${ll[1]}`);
       const json = (await res.json()) as FindResult & { error?: string };
+      if (g !== gen.current) return;
       if (!res.ok) throw new Error(json.error);
       setFound(json);
       if (json.town) setTown(json.town);
       if (decide) setRoute(json.sheets.length > 0 ? "rosenka" : "ratio");
     } catch (e) {
+      if (g !== gen.current) return;
       setFound(null);
       if (decide) setRoute("rosenka");
       setError(`路線価図を自動で探せませんでした。${e instanceof Error && e.message ? `（${e.message}）` : ""}`);
     } finally {
-      setFinding(false);
+      if (g === gen.current) setFinding(false);
     }
   }
 
   async function setPropertyAt(ll: LatLng) {
-    patchLand({ geo: { lat: ll[0], lng: ll[1] } });
+    const g = ++gen.current;
+    const m = land?.method;
+    // 場所を選び直したら、前の場所の路線価図と土地の形は使わない（評価をし直すまで、前の評価額はそのまま）
+    patchLand({
+      geo: { lat: ll[0], lng: ll[1] },
+      rosenkaSheet: undefined,
+      ...(m?.type === "rosenka" && (m.shape || m.lot || m.edgeOn) ? { method: { ...m, shape: undefined, lot: undefined, edgeOn: undefined } } : {}),
+    });
+    keepEdges.current = null;
+    seed.current = null;
     setNotice(null);
+    setError(null);
     setShape(null);
     setSheet(null);
     setSheetNo(null);
+    setSheetUrl("");
+    setPdfData(null);
+    setPageNo(1);
     setFrame(null);
     setPairs([]);
     setLocated(null);
+    setAlignOpen(false);
+    setFound(null);
     setRoute(null);
     setTown(null);
-    const rs = await loadRoads(ll);
+    // 前の場所で読んだ路線価・地区区分は使わない
+    setReadings(EMPTY_NOTES);
+    setRoadsAnswer(null);
+    setDistrict("普通住宅地区");
+    setDistrictTouched(false);
+    void findAt(ll, true, g);
+    const rs = await loadRoads(ll, g);
+    if (!rs) return; // 答えが届く前に、別の場所が選ばれた
     // 2. の最初の形：いちばん近い道路に正面を向けた四角形
     const lot = fitLot(ll, rs, land?.areaSqm);
     setShape(rectangle(lot.center, lot.width, lot.depth, lot.rotation));
-    void findAt(ll);
   }
 
   // 手順を進めたら、見る範囲に地図を合わせる（2・4は土地の形、3は路線価図が見える広さ）
@@ -289,16 +344,29 @@ function LandWizard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, route]);
 
-  // 形・道路が変わったら、道路に接している辺を判定し直す
+  // 形・道路が変わったら、道路に接している辺を判定し直す（開き直した形は、本人が選んだ辺をそのまま使う）
   useEffect(() => {
     if (!shape) return;
     const t = edgeTouches(shape, roads ?? []);
-    const on = t.map((x) => x.touches);
-    if (!on.some(Boolean) && on.length > 0) on[0] = true; // 道路の情報がないときは最初の辺を正面に
+    const kept = keepEdges.current?.shape === shape ? keepEdges.current.on : null;
+    const on = kept ? [...kept] : t.map((x) => x.touches);
+    if (!kept && !on.some(Boolean) && on.length > 0) on[0] = true; // 道路の情報がないときは最初の辺を正面に
+    const idx = t.map((x) => x.roadIndex);
     setEdgeOn(on);
-    setRoadIdx(t.map((x) => x.roadIndex));
+    setRoadIdx(idx);
     setRoadsAnswer(null);
+    // 開き直した土地：道路の情報がそろったら、確かめて保存した路線価を道路ごとに欄へ戻す
+    const s = seed.current;
+    if (s && s.shape !== shape) seed.current = null;
+    else if (s && roads) {
+      seed.current = null;
+      const fr = frontagesOf(shape, on, idx);
+      setReadings(notesFromSaved(s.roads, fr, edgeClasses(fr), (f) => frontageContext(s.ctx, f)));
+    }
   }, [shape, roads]);
+
+  // 路線価図や重ね方・場所が変わったら、「接しています」の答えを聞き直す
+  useEffect(() => setRoadsAnswer(null), [ctx]);
 
   const shapeArea = shape ? polygonAreaSqm(shape) : 0;
   const areaForDepth = area > 0 ? area : shapeArea;
@@ -307,7 +375,7 @@ function LandWizard() {
   const roadInputs: RoadInput[] = frontages.flatMap((f, i) => {
     const e = classes[i];
     if (e === null || e === undefined) return [];
-    const n = notes[keyOf(f)] ?? "";
+    const n = noteFor(readings, keyOf(f), frontageContext(ctx, f));
     return [{ edge: e, price: parseRouteNotation(n)?.routePrice ?? 0, depth: depthFor(f, areaForDepth), notation: n || undefined }];
   });
   const evaluation = evaluateRoads(district, roadInputs);
@@ -317,8 +385,16 @@ function LandWizard() {
 
   // ---------------------------------------------------------------- 3. 路線価図
 
-  async function showSheet(buf: ArrayBuffer, page = 1) {
+  /** 図を表示する。描いている間に土地や場所が変わったら表示せず null */
+  async function showSheet(buf: ArrayBuffer, page: number, g: number) {
     const s = await renderPdfPage(buf, page);
+    return putSheet(s, g);
+  }
+  function putSheet<S extends Sheet>(s: S, g: number): S | null {
+    if (g !== gen.current) {
+      URL.revokeObjectURL(s.src);
+      return null;
+    }
     setSheet((old) => {
       if (old) URL.revokeObjectURL(old.src);
       return s;
@@ -329,19 +405,21 @@ function LandWizard() {
   /** 候補の中から土地が載っている図をコンパスくんに選んでもらい、重ねる */
   async function identify(list: Candidate[]) {
     if (!property || list.length === 0) return;
+    const g = gen.current;
     setLocated(null);
     setAlignOpen(false);
     await run("路線価図を探しています", async () => {
-      const r = await locateSheet({ property, candidates: list, town, cache: pdfCache.current, roads: roads ?? [], onStep: (m) => setBusy(m) });
+      const r = await locateSheet({ property, candidates: list, town, cache: pdfCache.current, roads: roads ?? [], onStep: (m) => g === gen.current && setBusy(m) });
+      if (g !== gen.current) return;
       setLocated(r);
       const c = list.find((x) => x.no === r.no) ?? (list.length === 1 ? list[0] : undefined);
       if (!c) return;
       const buf = await fetchSheetPdf(c.pdfUrl, pdfCache.current);
+      if (g !== gen.current || !(await showSheet(buf, 1, g))) return;
       setPdfData(buf);
       setPageNo(1);
       setSheetUrl(c.pdfUrl);
       setSheetNo(c.no);
-      await showSheet(buf, 1);
       setPairs([]);
       if (r.frame) setFrame(r.frame);
       else {
@@ -352,8 +430,10 @@ function LandWizard() {
   }
 
   async function loadFromUrl(url: string, keepAlignment = false) {
+    const g = gen.current;
     await run("路線価図を読み込んでいます", async () => {
       const buf = await fetchSheetPdf(url, pdfCache.current);
+      if (g !== gen.current || !(await showSheet(buf, keepAlignment ? pageNo : 1, g))) return;
       setSheetUrl(url);
       setSheetNo(found?.sheets.find((x) => x.pdfUrl === url)?.no ?? null);
       setPdfData(buf);
@@ -361,25 +441,38 @@ function LandWizard() {
         setPairs([]);
         setPageNo(1);
       }
-      await showSheet(buf, keepAlignment ? pageNo : 1);
       if (!keepAlignment || !frame) setFrame((f) => f ?? (property ? { center: property, scale: 1500, rotation: 0 } : null));
     });
   }
 
   async function loadFromFile(file: File) {
+    const g = gen.current;
     await run("路線価図を読み込んでいます", async () => {
+      let buf: ArrayBuffer | null = null;
+      if (file.type === "application/pdf") {
+        buf = await file.arrayBuffer();
+        if (!(await showSheet(buf, 1, g))) return;
+      } else if (!putSheet(await loadImage(file), g)) return;
       setSheetUrl("");
       setSheetNo(null);
       setPairs([]);
-      if (file.type === "application/pdf") {
-        const buf = await file.arrayBuffer();
-        setPdfData(buf);
-        setPageNo(1);
-        await showSheet(buf, 1);
-      } else {
-        setPdfData(null);
-        setSheet(await loadImage(file));
-      }
+      setPdfData(buf);
+      setPageNo(1);
+      setFrame((f) => f ?? (property ? { center: property, scale: 1500, rotation: 0 } : null));
+      setAlignOpen(true);
+    });
+  }
+
+  async function loadDemo() {
+    const g = gen.current;
+    await run("サンプルを読み込んでいます", async () => {
+      const buf = await (await fetch("/demo/rosenka-sample.pdf")).arrayBuffer();
+      if (g !== gen.current || !(await showSheet(buf, 1, g))) return;
+      setSheetUrl("");
+      setSheetNo(null);
+      setPdfData(buf);
+      setPageNo(1);
+      setPairs([]);
       setFrame((f) => f ?? (property ? { center: property, scale: 1500, rotation: 0 } : null));
       setAlignOpen(true);
     });
@@ -395,60 +488,58 @@ function LandWizard() {
 
   // ---------------------------------------------------------------- 4. 接している道路の路線価を読む
 
-  async function readPrices(only?: Frontage[]) {
+  /**
+   * 接している道路の路線価をコンパスくんに読んでもらう。ふだんは、いまの条件でまだ読んでいない道路だけを読む。
+   * force（本人が読み直しを頼んだ）なら、すべての道路を読み直し、欄も読み取った路線価にする。
+   */
+  async function readPrices(force = false) {
     if (!sheet) return;
-    const list = (only ?? frontages).filter((f) => !readDone[keyOf(f)] || only);
+    const g = gen.current;
+    const list = frontages.map((f) => ({ f, key: keyOf(f), ctx: frontageContext(ctx, f) })).filter((x) => force || needsRead(readings, x.key, x.ctx));
     if (list.length === 0) return;
     await run("コンパスくんが路線価図を読んでいます", async () => {
       const results = await Promise.all(
-        list.map(async (f) => {
+        list.map(async ({ f, key, ctx: c }) => {
           const at = api.current?.toSheet(f.outside);
-          if (!at || at[0] < 0 || at[0] > 1 || at[1] < 0 || at[1] > 1) return [f, null] as const;
+          if (!at || at[0] < 0 || at[0] > 1 || at[1] < 0 || at[1] > 1) return null;
           const fd = new FormData();
           fd.append("image", await cropAround(sheet, at, 640, 480), "crop.png");
           fd.append("target", "road");
           const res = await fetch("/api/rosenka/read", { method: "POST", body: fd });
           const json = await res.json();
           if (!res.ok) throw new Error(json.error ?? "読み取れませんでした。");
-          return [f, json as ReadResult] as const;
+          const r = json as ReadResult;
+          return { key, ctx: c, candidates: r.candidates, symbol: r.districtSymbol };
         }),
       );
-      const nextC = { ...cands };
-      const nextN = { ...notes };
-      const nextD = { ...readDone };
-      let symbol: string | null = null;
-      for (const [f, r] of results) {
-        const k = keyOf(f);
-        nextD[k] = true;
-        if (!r) continue;
-        nextC[k] = r.candidates;
-        symbol ??= r.districtSymbol;
-        const first = r.candidates.find((c) => parseRouteNotation(c.notation));
-        if (first && (!nextN[k] || only)) nextN[k] = first.notation;
-      }
-      setCands(nextC);
-      setNotes(nextN);
-      setReadDone(nextD);
-      const d = districtFrom(symbol);
-      if (d && !districtTouched) setDistrict(d);
-      if (results.every(([, r]) => !r)) throw new Error("土地が路線価図の外にあります。3. に戻って、路線価図の重なりを確かめてください。");
+      // 読んでいる間に土地や場所が変わったら、この結果は使わない
+      if (g !== gen.current) return;
+      // 図の外だった道路は読んだことにしない（重なりを直したら、また読む）
+      const got = results.filter((r): r is NonNullable<typeof r> => r !== null);
+      setReadings((n) => mergeReadings(n, got, force));
+      const d = districtFrom(got.find((r) => r.symbol)?.symbol ?? null);
+      if (d && !touchedRef.current) setDistrict(d);
+      if (got.length === 0) throw new Error("土地が路線価図の外にあります。3. に戻って、路線価図の重なりを確かめてください。");
     });
   }
 
+  const readKey = frontages.map((f) => `${keyOf(f)}@${frontageContext(ctx, f)}`).join("|");
   useEffect(() => {
     if (step === 4 && route === "rosenka" && sheet && !busy) void readPrices();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, frontages.map(keyOf).join("|"), sheet]);
+  }, [step, readKey, sheet]);
 
   // ---------------------------------------------------------------- 反映
 
   function applyRosenka() {
     if (!land || !shape || !evaluation) return;
     const prev = land.method.type === "rosenka" ? land.method : undefined;
-    const rest = land.pending?.filter((x) => !/路線価|奥行|倍率|地積/.test(x));
+    const areaSqm = area > 0 ? area : Math.round(shapeArea * 100) / 100;
+    // 地積が入っていないときは、「地積」の確認待ちを消さない
+    const rest = land.pending?.filter((x) => !/路線価|奥行|倍率/.test(x) && !(/地積/.test(x) && areaSqm > 0));
     patchLand({
       pending: rest?.length ? rest : undefined,
-      areaSqm: area > 0 ? area : Math.round(shapeArea * 100) / 100,
+      areaSqm,
       method: {
         type: "rosenka",
         routePrice: evaluation.front.price,
@@ -457,6 +548,7 @@ function LandWizard() {
         district,
         roads: roadInputs,
         shape,
+        edgeOn: edgeOn.length === shape.length ? edgeOn : undefined,
       },
       rosenkaSheet: { url: sheetUrl || undefined, page: pdfData ? pageNo : undefined, points: pairs, frame: frame ?? undefined, notation: evaluation.front.notation },
     });
@@ -487,7 +579,11 @@ function LandWizard() {
     );
 
   const steps = route === "ratio" ? [{ t: "土地の場所", I: MapPin }, { t: "評価倍率表", I: Table2 }, { t: "評価額", I: Calculator }] : [{ t: "土地の場所", I: MapPin }, { t: "土地の形", I: Shapes }, { t: "路線価図", I: MapIcon }, { t: "道路と路線価", I: RouteIcon }];
-  const canGo = (n: number) => n === 1 || (!!property && !!route && (route === "ratio" ? n <= 3 : n === 2 ? !!shape : n === 3 ? !!shape : !!sheet && !!shape));
+  // 倍率地域の 3. は、倍率が決まってから（2. の間は表で確かめた・入れた倍率、1. では保存してある倍率）
+  const savedRatio = land.method.type === "multiplier" && land.method.multiplier > 0;
+  const canGo = (n: number) =>
+    n === 1 ||
+    (!!property && !!route && (route === "ratio" ? n === 2 || (n === 3 && (step >= 2 ? ratioReady : savedRatio)) : n === 2 ? !!shape : n === 3 ? !!shape : !!sheet && !!shape));
   const overlayOn = route === "rosenka" && step >= 3 && showOverlay;
   const wide = route === "ratio" && step >= 2;
 
@@ -495,9 +591,10 @@ function LandWizard() {
     <div className="space-y-3">
       {/* 上：土地の選択・ステップ */}
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-stone-200 bg-white p-2 shadow-sm">
-        <div className="w-full sm:w-56">
+        {/* 読み込み・読み取りの途中は、土地を切り替えられないようにする */}
+        <fieldset className="w-full min-w-0 sm:w-56" disabled={!!busy || finding}>
           <Select value={assetId} onChange={setAssetId} options={lands.map((l) => ({ value: l.id, label: `${l.label || "（名称未入力）"}　${l.location}` }))} />
-        </div>
+        </fieldset>
         <ol className="flex min-w-0 flex-1 flex-wrap items-center gap-1" aria-label="手順">
           {steps.map((s, i) => {
             const n = i + 1;
@@ -534,7 +631,8 @@ function LandWizard() {
           pins={step === 3 ? pairs : []}
           frame={step === 3 && alignOpen && frame ? frameCorners(frame, paper) : null}
           onFrameMove={(c) => setFrame((f) => (f ? { ...f, center: c } : f))}
-          pendingImg={pointMode === "mapPoint" ? pending : kozuMode === "mapPoint" ? kozuPending : null}
+          pendingImg={step === 3 && pointMode === "mapPoint" ? pending : step === 2 && kozuMode === "mapPoint" ? kozuPending : null}
+          pendingLabel={step === 2 ? "公図" : "路線価図"}
           sheet={sheet}
           opacity={opacity}
           showOverlay={overlayOn}
@@ -766,19 +864,7 @@ function LandWizard() {
                     busy={!!busy}
                     onLoadUrl={(u) => loadFromUrl(u)}
                     onLoadFile={loadFromFile}
-                    onDemo={() =>
-                      run("サンプルを読み込んでいます", async () => {
-                        const buf = await (await fetch("/demo/rosenka-sample.pdf")).arrayBuffer();
-                        setSheetUrl("");
-                        setSheetNo(null);
-                        setPdfData(buf);
-                        setPageNo(1);
-                        setPairs([]);
-                        await showSheet(buf, 1);
-                        setFrame((f) => f ?? (property ? { center: property, scale: 1500, rotation: 0 } : null));
-                        setAlignOpen(true);
-                      })
-                    }
+                    onDemo={loadDemo}
                     town={town}
                     indexUrl={found?.indexUrl}
                   />
@@ -799,7 +885,10 @@ function LandWizard() {
                   <ul className="space-y-2">
                     {frontages.map((f, i) => {
                       const k = keyOf(f);
-                      const p = parseRouteNotation(notes[k] ?? "");
+                      const kc = frontageContext(ctx, f);
+                      const note = noteFor(readings, k, kc);
+                      const cs = candidatesFor(readings, k, kc);
+                      const p = parseRouteNotation(note);
                       const line = evaluation?.lines.find((l) => l.edge === classes[i]);
                       return (
                         <li key={k} className="rounded-lg border border-stone-200 p-2">
@@ -808,18 +897,29 @@ function LandWizard() {
                               {directionLabel(f.bearing)}の道路
                               {line && <span className="block text-[11px] font-normal text-rose-700">{{ front: "正面路線", side: "側方路線", back: "裏面路線" }[line.role]}</span>}
                             </span>
-                            <TextInput value={notes[k] ?? ""} onChange={(ev) => setNotes((n) => ({ ...n, [k]: ev.target.value }))} placeholder="例：420D" aria-label={`${directionLabel(f.bearing)}の道路の路線価`} />
+                            <TextInput
+                              value={note}
+                              disabled={!!busy}
+                              onChange={(ev) => {
+                                const v = ev.target.value;
+                                setReadings((n) => typeNote(n, k, v));
+                              }}
+                              placeholder="例：420D"
+                              aria-label={`${directionLabel(f.bearing)}の道路の路線価`}
+                            />
                             <span className="w-24 shrink-0 text-right text-xs tabular-nums text-stone-600">{p ? `${fmt(p.routePrice)}円/㎡` : "—"}</span>
                           </div>
-                          {cands[k] && cands[k].length > 1 && (
+                          {/* 候補が複数あるとき、または欄の路線価と読み取りが違うときは、候補から選べるようにする */}
+                          {cs && (cs.length > 1 || (cs.length === 1 && cs[0].notation !== note)) && (
                             <div className="mt-1 flex flex-wrap gap-1">
-                              {cands[k].map((c) => (
+                              {cs.map((c) => (
                                 <button
                                   key={c.notation + c.where}
                                   type="button"
                                   title={c.where}
-                                  onClick={() => setNotes((n) => ({ ...n, [k]: c.notation }))}
-                                  className={`rounded-full border px-2 py-0.5 font-mono text-xs ${notes[k] === c.notation ? "border-teal-700 bg-teal-700 text-white" : "border-stone-300 hover:border-teal-500"}`}
+                                  disabled={!!busy}
+                                  onClick={() => setReadings((n) => typeNote(n, k, c.notation))}
+                                  className={`rounded-full border px-2 py-0.5 font-mono text-xs ${note === c.notation ? "border-teal-700 bg-teal-700 text-white" : "border-stone-300 hover:border-teal-500"} disabled:opacity-60`}
                                 >
                                   {c.notation}
                                 </button>
@@ -849,7 +949,7 @@ function LandWizard() {
                     <Note tone="info">
                       地図の赤い枠の辺をクリックすると、「道路に接している（太い赤線）」「接していない」を切り替えられます。路線価は上の欄で直すか、読み取り直してください。
                       <span className="mt-2 flex flex-wrap gap-2">
-                        <Button variant="secondary" onClick={() => readPrices(frontages)} disabled={!!busy}>
+                        <Button variant="secondary" onClick={() => readPrices(true)} disabled={!!busy}>
                           路線価を読み取り直す
                         </Button>
                         <Button onClick={() => setRoadsAnswer("yes")} disabled={!roadsComplete}>
@@ -900,7 +1000,7 @@ function LandWizard() {
                       <ConsultLink topic="土地の評価" />
                     </span>
                   </Note>
-                  <Button onClick={applyRosenka} disabled={!(area > 0)} className="w-full py-3">
+                  <Button onClick={applyRosenka} disabled={!(area > 0) || !roadsComplete} className="w-full py-3">
                     評価完了：財産の入力へ戻る
                   </Button>
                 </section>
@@ -915,12 +1015,15 @@ function LandWizard() {
               land={land}
               property={property}
               cache={pdfCache.current}
+              ratioUrl={found?.ratioUrl}
+              onReady={setRatioReady}
               onUseRosenka={() => {
                 setRoute("rosenka");
                 setStep(2);
               }}
               onApply={(method, areaSqm) => {
-                const rest = land.pending?.filter((x) => !/路線価|奥行|倍率|固定資産税評価額|地積/.test(x));
+                // 地積が入っていないときは、「地積」の確認待ちを消さない
+                const rest = land.pending?.filter((x) => !/路線価|奥行|倍率|固定資産税評価額/.test(x) && !(/地積/.test(x) && areaSqm > 0));
                 patchLand({ method, areaSqm, pending: rest?.length ? rest : undefined });
                 router.push(`/case/assets?asset=${land.id}&applied=1`);
               }}
@@ -935,7 +1038,7 @@ function LandWizard() {
 /** 候補の路線価図を、となり合う位置関係のとおりに並べて選べるようにする */
 function SheetLayout({ found, current, disabled, onPick }: { found: FindResult | null; current: string | null; disabled: boolean; onPick: (c: Candidate) => void }) {
   if (!found || found.sheets.length === 0) return null;
-  const layout = found.layout?.length ? found.layout : found.sheets.map((s, i) => ({ no: s.no, col: i, row: 0, candidate: true, pdfUrl: s.pdfUrl }));
+  const layout: SheetLayoutItem[] = found.layout?.length ? found.layout : found.sheets.map((s, i) => ({ no: s.no, col: i, row: 0, candidate: true, pdfUrl: s.pdfUrl }));
   const cols = layout.map((l) => l.col);
   const rows = layout.map((l) => l.row);
   const c0 = Math.min(...cols);
@@ -944,7 +1047,7 @@ function SheetLayout({ found, current, disabled, onPick }: { found: FindResult |
   return (
     <div className="space-y-1">
       <p className="text-xs text-stone-600">
-        {found.town ? `「${found.town}」` : "この場所"}が載っている路線価図（濃い枠）と、そのとなりの図です。上が北です。違う図ならクリックして選び直せます。
+        {found.town ? `「${found.town}」` : "この場所"}が載っている路線価図（濃い枠）と、そのとなりの図です。上が北です。違う図ならクリックして選び直せます。{layout.some((l) => l.separate) && "点線で囲んだ図は、ほかの図とつながっていない候補です。"}
       </p>
       <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${nc}, minmax(0, 3.5rem))` }}>
         {layout.map((l) => (
@@ -954,7 +1057,7 @@ function SheetLayout({ found, current, disabled, onPick }: { found: FindResult |
             disabled={disabled}
             onClick={() => onPick({ no: l.no, pdfUrl: l.pdfUrl })}
             style={{ gridColumn: l.col - c0 + 1, gridRow: l.row - r0 + 1 }}
-            className={`rounded border px-1 py-2 font-mono text-[11px] ${l.no === current ? "border-teal-700 bg-teal-700 text-white" : l.candidate ? "border-teal-600 bg-white font-bold text-teal-900" : "border-stone-200 bg-stone-50 text-stone-500"} hover:border-teal-500 disabled:opacity-60`}
+            className={`rounded border px-1 py-2 font-mono text-[11px] ${l.no === current ? "border-teal-700 bg-teal-700 text-white" : l.candidate ? "border-teal-600 bg-white font-bold text-teal-900" : "border-stone-200 bg-stone-50 text-stone-500"} ${l.separate ? "border-dashed" : ""} hover:border-teal-500 disabled:opacity-60`}
           >
             {l.no}
           </button>

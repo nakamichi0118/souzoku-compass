@@ -8,22 +8,35 @@ import { useState } from "react";
 import { Button, TextInput } from "@/components/ui";
 import type { Frame } from "@/domain/geo/frame";
 import type { GeoPair, Sheet } from "./MapView";
+import { FINE_MAX, FINE_MIN, SCALES, fineBase } from "./wizard";
 
 export const DEFAULT_SCALE = 1500;
-const SCALES = [500, 600, 1000, 1500, 2000, 2500, 3000, 4000, 5000, 7500, 10000];
-const nearestScale = (sc: number) => SCALES.reduce((a, b) => (Math.abs(b - sc) < Math.abs(a - sc) ? b : a));
 
 export type PointMode = "idle" | "sheetPoint" | "mapPoint";
 
+/** 角度を -180〜180° に */
+const normDeg = (d: number) => ((((d + 180) % 360) + 360) % 360) - 180;
+
 export function FrameControls({ frame, setFrame, property }: { frame: Frame | null; setFrame: (f: (old: Frame | null) => Frame | null) => void; property?: [number, number] }) {
+  // 微調整の基準の縮尺。動かしている間に基準が変わって縮尺が飛ばないよう、選んだ縮尺のまま覚えておく
+  const [picked, setPicked] = useState<number | null>(null);
+  const base = frame ? fineBase(picked, frame.scale) : DEFAULT_SCALE;
+  // 向きも同じく、90°ごとの基準から ±45° をつまみで動かす（図が横向き・逆さのときは90°ずつ回す）
+  const [rotPicked, setRotPicked] = useState<number | null>(null);
+  const rot = frame?.rotation ?? 0;
+  const rotBase = rotPicked !== null && Math.abs(rot - rotPicked) <= 45 ? rotPicked : Math.round(rot / 90) * 90;
   return (
     <div className="space-y-2">
       <label className="flex items-center gap-2 text-sm text-stone-700">
         縮尺
         <select
           className="rounded border border-stone-300 px-2 py-1"
-          value={frame ? nearestScale(frame.scale) : DEFAULT_SCALE}
-          onChange={(e) => setFrame((f) => (f ? { ...f, scale: Number(e.target.value) } : f))}
+          value={base}
+          onChange={(e) => {
+            const sc = Number(e.target.value);
+            setPicked(sc);
+            setFrame((f) => (f ? { ...f, scale: sc } : f));
+          }}
           disabled={!frame}
         >
           {SCALES.map((sc) => (
@@ -37,11 +50,15 @@ export function FrameControls({ frame, setFrame, property }: { frame: Frame | nu
         微調整
         <input
           type="range"
-          min={0.8}
-          max={1.25}
+          min={FINE_MIN}
+          max={FINE_MAX}
           step={0.005}
-          value={frame ? frame.scale / nearestScale(frame.scale) : 1}
-          onChange={(e) => setFrame((f) => (f ? { ...f, scale: Math.round(nearestScale(f.scale) * Number(e.target.value)) } : f))}
+          value={frame ? frame.scale / base : 1}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            setPicked(base);
+            setFrame((f) => (f ? { ...f, scale: Math.round(base * v) } : f));
+          }}
           disabled={!frame}
           className="flex-1 accent-teal-700"
         />
@@ -50,16 +67,34 @@ export function FrameControls({ frame, setFrame, property }: { frame: Frame | nu
         向き
         <input
           type="range"
-          min={-30}
-          max={30}
+          min={rotBase - 45}
+          max={rotBase + 45}
           step={0.25}
-          value={frame?.rotation ?? 0}
-          onChange={(e) => setFrame((f) => (f ? { ...f, rotation: Number(e.target.value) } : f))}
+          value={rot}
+          onChange={(e) => {
+            setRotPicked(rotBase);
+            setFrame((f) => (f ? { ...f, rotation: Number(e.target.value) } : f));
+          }}
           disabled={!frame}
           className="flex-1 accent-teal-700"
         />
-        <span className="w-12 tabular-nums">{(frame?.rotation ?? 0).toFixed(1)}°</span>
+        <span className="w-14 text-right tabular-nums">{normDeg(rot).toFixed(1)}°</span>
       </label>
+      <div className="flex flex-wrap gap-2">
+        {[-90, 90].map((d) => (
+          <Button
+            key={d}
+            variant="ghost"
+            disabled={!frame}
+            onClick={() => {
+              setRotPicked(rotBase + d);
+              setFrame((f) => (f ? { ...f, rotation: f.rotation + d } : f));
+            }}
+          >
+            {d < 0 ? "左に90°回す" : "右に90°回す"}
+          </Button>
+        ))}
+      </div>
       {property && (
         <Button variant="ghost" onClick={() => setFrame((f) => ({ scale: DEFAULT_SCALE, rotation: 0, ...f, center: property }))}>
           枠を土地の位置に戻す

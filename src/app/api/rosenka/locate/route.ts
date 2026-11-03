@@ -138,7 +138,7 @@ export async function POST(req: Request) {
       system: SYSTEM,
       messages: [{ role: "user", content }],
     });
-    if (res.stop_reason === "refusal" || !res.parsed_output) return NextResponse.json({ error: "地図と路線価図を見比べられませんでした。" }, { status: 422 });
+    if (res.stop_reason === "refusal" || res.stop_reason === "max_tokens" || !res.parsed_output) return NextResponse.json({ error: "地図と路線価図を見比べられませんでした。" }, { status: 422 });
     const out = res.parsed_output;
     const sheetNo = matchNo(out.sheetNo, nos);
     const sheetSize = sheetNo ? sheetSizes[nos.indexOf(sheetNo)] : null;
@@ -151,7 +151,10 @@ export async function POST(req: Request) {
     };
     return NextResponse.json(result);
   } catch (e) {
-    if (e instanceof Anthropic.APIError) return NextResponse.json({ error: `Claude への問い合わせに失敗しました（${e.status}）。` }, { status: 502 });
+    if (e instanceof Anthropic.APIConnectionError) return NextResponse.json({ error: "Claude に接続できませんでした。時間をおいてお試しください。" }, { status: 502 });
+    if (e instanceof Anthropic.APIError) return NextResponse.json({ error: `Claude への問い合わせに失敗しました${e.status ? `（${e.status}）` : ""}。` }, { status: 502 });
+    // 答えが途中で切れた・決まった形になっていないなど（受け取った答えを読めなかった）。断られたときと同じ扱い
+    if (e instanceof Anthropic.AnthropicError) return NextResponse.json({ error: "地図と路線価図を見比べられませんでした。" }, { status: 422 });
     throw e;
   }
 }

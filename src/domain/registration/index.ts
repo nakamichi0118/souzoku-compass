@@ -100,6 +100,8 @@ export function regProperty(a: Asset, missing: string[] = []): RegProperty | nul
   if (a.kind === "building") {
     const value = r.assessedValue ?? a.fixedAssetValue;
     need(r.houseNumber, "家屋番号");
+    // 種類（居宅・店舗・倉庫など）は登記簿のとおりに書く。分からないまま「居宅」と決めつけない
+    need(r.buildingType, "種類");
     need(r.structure, "構造");
     need(r.floorArea, "床面積");
     return {
@@ -108,7 +110,7 @@ export function regProperty(a: Asset, missing: string[] = []): RegProperty | nul
       label: a.label,
       location: a.location.replace(/\s*家屋番号.*$/, ""),
       houseNumber: r.houseNumber ?? "",
-      type: r.buildingType || "居宅",
+      type: r.buildingType ?? "",
       structure: r.structure ?? "",
       floorArea: r.floorArea ?? "",
       value,
@@ -116,6 +118,7 @@ export function regProperty(a: Asset, missing: string[] = []): RegProperty | nul
   }
   if (a.kind === "condo") {
     need(r.houseNumber, "家屋番号");
+    need(r.buildingType, "種類");
     need(r.siteRight, "敷地権の割合");
     need(r.siteAssessedValue, "敷地権の評価額");
     return {
@@ -125,7 +128,7 @@ export function regProperty(a: Asset, missing: string[] = []): RegProperty | nul
       location: a.location,
       buildingName: r.buildingName ?? "",
       houseNumber: r.houseNumber ?? "",
-      type: r.buildingType || "居宅",
+      type: r.buildingType ?? "",
       structure: r.structure ?? "",
       floorArea: r.floorArea ?? `${a.exclusiveAreaSqm.toFixed(2)}㎡`,
       siteLand: r.siteLand ?? "",
@@ -136,14 +139,44 @@ export function regProperty(a: Asset, missing: string[] = []): RegProperty | nul
   return null;
 }
 
+/** 所在の都道府県と市区町村（家屋番号は除く） */
+function areaParts(location: string) {
+  const base = location.replace(/\s*家屋番号.*$/, "").trim();
+  const { pref, city } = splitLocation(base);
+  return { base, pref, city };
+}
+
 /**
  * 提出先の法務局を分ける目安。法務局はおおむね市区町村ごとに受け持つので、都道府県・市区町村で分ける。
  * 市区町村を読み取れない所在は、ほかの不動産とまとめずに所在ごとに分ける。
+ * 都道府県が書かれていない所在は、prefOf(市区町村) が返す都道府県で補う。
  */
-export function registrationArea(location: string): string {
-  const base = location.replace(/\s*家屋番号.*$/, "").trim();
-  const loc = splitLocation(base);
-  return loc.city ? `${loc.pref}${loc.city}` : base;
+export function registrationArea(location: string, prefOf: (city: string) => string | undefined = () => undefined): string {
+  const { base, pref, city } = areaParts(location);
+  return city ? `${pref || prefOf(city) || ""}${city}` : base;
+}
+
+/**
+ * 都道府県を省いた所在（登記事項証明書では東京23区や政令指定都市などで都道府県を書かないことが多い）を、
+ * 同じ市区町村のほかの所在と同じ申請にまとめるため、ほかの不動産の所在と亡くなった方の住所から、市区町村ごとの都道府県を集める。
+ * 同じ名前の市区町村が別の都道府県にもある（府中市・伊達市など）ときは、どちらか決められないので補わない。
+ */
+function prefFinder(c: Case): (city: string) => string | undefined {
+  const prefs = new Map<string, Set<string>>();
+  const add = (location: string | undefined) => {
+    if (!location) return;
+    const { pref, city } = areaParts(location);
+    if (!pref || !city) return;
+    const set = prefs.get(city) ?? new Set<string>();
+    set.add(pref);
+    prefs.set(city, set);
+  };
+  for (const a of c.assets) if (a.kind === "land" || a.kind === "building" || a.kind === "condo") add(a.location);
+  add(c.decedent.address);
+  return (city) => {
+    const set = prefs.get(city);
+    return set?.size === 1 ? [...set][0] : undefined;
+  };
 }
 
 /** 遺産分割で決まった取得者ごとに、相続登記の申請をまとめる（不動産のある市区町村が違えば別の申請にする） */
@@ -152,13 +185,14 @@ export function buildRegistrations(c: Case): RegApplication[] {
   const allocs = new Map(c.allocations.map((a) => [a.assetId, a]));
   const apps = new Map<string, RegApplication>();
   const death = wareki(c.decedent.deathDate);
+  const prefOf = prefFinder(c);
   for (const a of c.assets) {
     const missing: string[] = [];
     const prop = regProperty(a, missing);
     if (!prop) continue;
     const al = allocs.get(a.id);
     if (!al || al.shares.length === 0) continue;
-    const area = registrationArea(prop.location);
+    const area = registrationArea(prop.location, prefOf);
     const key = `${area}|${al.shares.map((s) => `${s.personId}:${s.numerator}/${s.denominator}`).join(",")}`;
     let app = apps.get(key);
     if (!app) {

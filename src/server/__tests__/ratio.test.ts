@@ -1,3 +1,4 @@
+import Anthropic from "@anthropic-ai/sdk";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Claude・国税庁のサイトにはつながず、呼び出し方と結果の扱いだけを確かめる
@@ -53,6 +54,40 @@ describe("評価倍率表の読み取り", () => {
     const again = await (await ratio(post({ lat: 33.59, lng: 130.42 }))).json();
     expect(again.rows).toHaveLength(8);
     expect(parse).toHaveBeenCalledTimes(1);
+  });
+
+  it("答えが途中で切れた・読めない形だった・断られたときは、本文つきの 422 を返す", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(Buffer.from("%PDF-1.4 見本"), { status: 200 })));
+    const cases: [string, () => void][] = [
+      // 答えが途中で切れると、受け取った答えを読めずにエラーになる
+      ["切れた町", () => parse.mockRejectedValueOnce(new Anthropic.AnthropicError("Failed to parse structured output as JSON: Unexpected end of JSON input"))],
+      ["上限の町", () => parse.mockResolvedValueOnce({ stop_reason: "max_tokens", parsed_output: { rows: [], notes: [] } })],
+      ["断られた町", () => parse.mockResolvedValueOnce({ stop_reason: "refusal", parsed_output: null })],
+    ];
+    for (const [town, arrange] of cases) {
+      findRatioPdf.mockResolvedValue({ pref: "福岡県", city: "福岡市博多区", town, pdfUrl: PDF });
+      arrange();
+      const res = await ratio(post({ lat: 33.59, lng: 130.42 }));
+      expect(res.status).toBe(422);
+      expect(await res.json()).toEqual({ error: "評価倍率表を読み取れませんでした。", pdfUrl: PDF });
+    }
+  });
+
+  it("Claude につながらないときは、番号のない案内を本文つきで返す", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(Buffer.from("%PDF-1.4 見本"), { status: 200 })));
+    findRatioPdf.mockResolvedValue({ pref: "福岡県", city: "福岡市博多区", town: "接続の町", pdfUrl: PDF });
+    parse.mockRejectedValueOnce(new Anthropic.APIConnectionTimeoutError());
+    const res = await ratio(post({ lat: 33.59, lng: 130.42 }));
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.error).not.toMatch(/undefined/);
+    expect(body).toMatchObject({ error: expect.stringMatching(/接続できませんでした/), pdfUrl: PDF });
+
+    findRatioPdf.mockResolvedValue({ pref: "福岡県", city: "福岡市博多区", town: "混雑の町", pdfUrl: PDF });
+    parse.mockRejectedValueOnce(new Anthropic.APIError(529, { type: "error" }, "Overloaded", new Headers()));
+    const busy = await ratio(post({ lat: 33.59, lng: 130.42 }));
+    expect(busy.status).toBe(502);
+    expect((await busy.json()).error).toBe("Claude への問い合わせに失敗しました（529）。");
   });
 
   it("国税庁から PDF でないものが返ったら、Claude に渡さない", async () => {
@@ -121,6 +156,21 @@ describe("地図と路線価図の位置合わせ", () => {
     parse.mockResolvedValue({ stop_reason: "end_turn", parsed_output: { ...answer, sheetNo: "12345" } });
     const body = await (await locate(form(["09073"]))).json();
     expect(body).toMatchObject({ sheetNo: null, landOnSheet: null, points: [] });
+  });
+
+  it("答えが読めない形・上限で切れた・つながらないときも、本文つきで返す", async () => {
+    parse.mockRejectedValueOnce(new Anthropic.AnthropicError("Failed to parse structured output: invalid"));
+    const cut = await locate(form(["09073"]));
+    expect(cut.status).toBe(422);
+    expect(await cut.json()).toEqual({ error: "地図と路線価図を見比べられませんでした。" });
+
+    parse.mockResolvedValueOnce({ stop_reason: "max_tokens", parsed_output: answer });
+    expect((await locate(form(["09073"]))).status).toBe(422);
+
+    parse.mockRejectedValueOnce(new Anthropic.APIConnectionError({ message: "Connection error." }));
+    const down = await locate(form(["09073"]));
+    expect(down.status).toBe(502);
+    expect((await down.json()).error).not.toMatch(/undefined/);
   });
 
   it("図番号と画像の数が合わなければ受け付けない", async () => {

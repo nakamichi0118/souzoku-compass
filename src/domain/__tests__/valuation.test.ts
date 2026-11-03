@@ -142,6 +142,16 @@ describe("土地の評価", () => {
     expect(v.needsConsultation).toContain("評価額が未入力");
     expect(valueLand(land({ type: "manual", value: 12_345_678 })).value).toBe(12_345_678);
   });
+
+  it("誰でも通り抜けできる私道と選んだときだけ、0円で確定する（財産評価基本通達24）", () => {
+    const road = valueLand(land({ type: "manual", value: 0, publicPrivateRoad: true }));
+    expect(road.value).toBe(0);
+    expect(road.needsConsultation).toBeUndefined();
+    expect(road.steps.join("")).toContain("評価しない");
+    // 前に入れた評価額が残っていても、私道と選んでいれば評価しない
+    expect(valueLand(land({ type: "manual", value: 5_000_000, publicPrivateRoad: true })).value).toBe(0);
+    expect(valueLand(land({ type: "manual", value: 0, publicPrivateRoad: false })).needsConsultation).toContain("評価額が未入力");
+  });
 });
 
 describe("家屋の評価", () => {

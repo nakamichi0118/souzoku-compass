@@ -42,6 +42,7 @@ const landMethod = z.looseObject({
   type: z.string().max(20),
   roads: many(z.looseObject({}), CASE_LIMITS.roads, "面している道路").optional(),
   shape: many(z.tuple([z.number(), z.number()]), CASE_LIMITS.shape, "土地の形の頂点").optional(),
+  edgeOn: many(z.boolean(), CASE_LIMITS.shape, "土地の辺").optional(),
 });
 
 const asset = z.looseObject({

@@ -112,6 +112,8 @@ export type LandMethod =
       lot?: { center: [number, number]; width: number; depth: number; rotation: number };
       /** 地図で囲んだ土地の形（多角形の頂点の緯度経度、順番どおり） */
       shape?: [number, number][];
+      /** 土地の形の各辺が道路に接しているか（本人が確かめたもの。i 番目は 頂点i → 頂点i+1 の辺） */
+      edgeOn?: boolean[];
     }
   | {
       type: "multiplier";
@@ -120,7 +122,12 @@ export type LandMethod =
       /** 倍率の出典（国税庁の評価倍率表のどの行か。本人が確認したもの） */
       source?: { city: string; town: string; area?: string; pdfUrl?: string; page?: number };
     }
-  | { type: "manual"; value: number };
+  | {
+      type: "manual";
+      value: number;
+      /** 不特定多数の人が通り抜けに使う私道で、評価しない（0円。財産評価基本通達24）と本人が選んだ */
+      publicPrivateRoad?: boolean;
+    };
 
 export interface RosenkaSheet {
   /** 国税庁の路線価図PDFのURL（アップロードした場合はなし） */

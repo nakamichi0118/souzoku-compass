@@ -33,7 +33,7 @@ export function AuthForm({ kind }: { kind: "signup" | "login" }) {
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error ?? "うまくいきませんでした。");
-      signedIn(signup ? "/my/hearing" : "/my");
+      signedIn(signup ? "/my/hearing" : "/my", j.user?.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setBusy(false);

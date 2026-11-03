@@ -9,7 +9,7 @@
  * 最後は本人が地図の上で重なりを見て確かめる。合っていなければ別の図を選ぶか、手で合わせる。
  */
 import { autoAlign } from "@/domain/geo/autoAlign";
-import { frameFromPairs } from "@/domain/geo/fit";
+import { type FitPair, frameFromPairs, pairsAgree } from "@/domain/geo/fit";
 import { type Frame, type Paper, frameCorners } from "@/domain/geo/frame";
 import { type LatLng, type Road, projector } from "@/domain/geo/lot";
 import { captureGsiMap } from "./capture";
@@ -71,8 +71,11 @@ function inside(frame: Frame, paper: Paper, p: LatLng): boolean {
   return true;
 }
 
-/** 枠が路線価図としてありえる形か（縮尺・向き・土地が枠の中） */
-const plausible = (f: Frame, paper: Paper, property: LatLng) => f.scale >= 300 && f.scale <= 20_000 && Math.abs(f.rotation) <= 30 && inside(f, paper, property);
+/** 枠が路線価図としてありえる形か（縮尺・土地が枠の中） */
+const plausible = (f: Frame, paper: Paper, property: LatLng) => f.scale >= 300 && f.scale <= 20_000 && inside(f, paper, property);
+
+/** 向きを -180°〜180° にそろえる（小数1桁） */
+const wrap180 = (d: number) => Math.round(((((d + 180) % 360) + 360) % 360 - 180) * 10) / 10;
 
 export async function locateSheet(opts: {
   property: LatLng;
@@ -105,7 +108,7 @@ export async function locateSheet(opts: {
     fd.append("sheetSize", `${r.sheet.width},${r.sheet.height}`);
   }
   const res = await fetch("/api/rosenka/locate", { method: "POST", body: fd });
-  const json = (await res.json()) as LocateResponse;
+  const json = (await res.json().catch(() => ({ error: "路線価図を選べませんでした。" }))) as LocateResponse;
   const chosen = res.ok ? rendered.find((r) => r.c.no === json.sheetNo) : undefined;
   for (const r of rendered) if (r !== chosen) URL.revokeObjectURL(r.sheet.src);
   if (!res.ok) throw new Error(json.error ?? "路線価図を選べませんでした。");
@@ -118,7 +121,12 @@ export async function locateSheet(opts: {
     .filter((p) => p.map && p.sheet && p.sheet.x >= 0 && p.sheet.x <= sw && p.sheet.y >= 0 && p.sheet.y <= sh)
     .map((p) => ({ img: [p.sheet.x / sw, p.sheet.y / sh] as [number, number], latlng: map.toLatLng(p.map.x, p.map.y) }));
   let frame = frameFromPairs(pairs, paper);
-  if ((!frame || !plausible(frame, paper, property)) && json.landOnSheet) {
+  // 路線価図は北が真上とは限らない。30°を超えて傾いた枠は、目印の組がその枠でよく合うときだけ使う
+  // （目印が2組だけなら、土地の位置も1組に加えて確かめる）
+  const land: FitPair[] = json.landOnSheet ? [{ img: [json.landOnSheet.x / sw, json.landOnSheet.y / sh], latlng: property }] : [];
+  const checks = pairs.length >= 3 ? pairs : [...pairs, ...land];
+  if (frame && !(plausible(frame, paper, property) && (Math.abs(frame.rotation) <= 30 || pairsAgree(checks, paper, frame)))) frame = null;
+  if (!frame && json.landOnSheet) {
     // 点の組が使えないときは、土地の位置だけから枠を置く（縮尺は一般的な 1/1,500 から）
     const scale = 1500;
     const x = json.landOnSheet.x / sw;
@@ -141,7 +149,7 @@ export async function locateSheet(opts: {
     const field = await sheetField(chosen.sheet);
     const r = autoAlign(field, paper, roads, property, frame, 80);
     if (r && r.score < r.before * 0.9 && plausible(r.frame, paper, property)) {
-      frame = r.frame;
+      frame = { ...r.frame, rotation: wrap180(r.frame.rotation) };
       refined = true;
     }
   }

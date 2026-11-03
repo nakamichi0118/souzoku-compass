@@ -9,10 +9,11 @@
  * - 書いたとき：写しに書き、少し待ってまとめてサーバーへ送る（閉じるときは残りをすぐ送る）
  * - ログアウト・デモへの切り替え：送っている途中の分と残りを送り終えてから写しを消す。送れなければ取りやめる
  * - デモ（架空の家族）はサーバーに送らず、このブラウザの中だけで動かす
+ * - ログインが切れて送れなかった分は残しておき、同じ人がもう一度ログインしたら送る。別の人のアカウントには送らない
  */
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { authExpired, flushQueue, queueWrite, sendRestWithBeacon, setQueueEnabled } from "./saveQueue";
-import { reportSaveFailure } from "./saveStatus";
+import { authExpired, dropUnsent, flushQueue, hasUnsent, queueWrite, resumeAfterLogin, sendRestWithBeacon, setQueueEnabled, unsentWrites } from "./saveQueue";
+import { reportSaveFailure, reportSaveRecovered } from "./saveStatus";
 
 export { isUnsaved } from "./saveQueue";
 
@@ -31,6 +32,8 @@ let mode: Mode = "none";
 let demoSwitch: Promise<void> | null = null;
 /** 開いたときの写しの持ち主（別のタブでログアウト・ログインしたら開き直すため） */
 let loadedOwner: string | null | undefined;
+/** 別のタブで別の人がログインした（またはデモに切り替えた）。このタブの入力はもう保存しない */
+let switched = false;
 
 function setMode(m: Mode) {
   mode = m;
@@ -60,14 +63,26 @@ export function kvGet(key: string): string | null {
   }
 }
 
-/** 保存する（null で消す） */
-export function kvSet(key: string, value: string | null) {
+/**
+ * 写しがまだ、このタブを開いたときと同じ人のものか（別のタブでログアウト・ログインしていないか）。
+ * 違うときは、写しに書かず、別のタブで書かれた値も取り込まない（ほかの人のデータと混ぜないため）
+ */
+export const localIsMine = () => !switched && (loadedOwner === undefined || kvGet(MODE_KEY) === loadedOwner);
+
+/** 写しに書く */
+function writeLocal(key: string, value: string | null) {
+  if (!localIsMine()) return;
   try {
     if (value === null) localStorage.removeItem(key);
     else localStorage.setItem(key, value);
   } catch {
     if (mode !== "cloud") reportSaveFailure();
   }
+}
+
+/** 保存する（null で消す） */
+export function kvSet(key: string, value: string | null) {
+  writeLocal(key, value);
   if (mode === "cloud") queueWrite(key, value);
 }
 
@@ -77,6 +92,84 @@ export function flush(): Promise<boolean> {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** 別の人のアカウントへ送らないよう、送っていない書き込みを捨てて、サーバーへ送るのをやめる */
+function stopSaving() {
+  setMode("none");
+  dropUnsent();
+}
+
+/** 同じ人が別のタブでもう一度ログインした：送れなかった入力を送る */
+function resumeFromOtherTab() {
+  resumeAfterLogin();
+  // 別のタブはサーバーのデータを読んだばかりで、この入力を知らない。
+  // 写しにも書いて渡す（そのタブの古い値で、あとから上書きされないため）
+  const { set, del } = unsentWrites();
+  for (const [k, v] of Object.entries(set)) writeLocal(k, v);
+  for (const k of del) writeLocal(k, null);
+  void flushQueue().then((ok) => {
+    if (ok) reportSaveRecovered();
+  });
+}
+
+/**
+ * 別のタブで写しの持ち主が変わったとき（ログアウト・ログイン・デモへの切り替え）。
+ * 前の人の画面のまま、次の人のアカウントへ書き込まないよう、このタブも開き直す。
+ * ただし、このタブにまだ送っていない入力があるときは、書き出せるよう開いたままにする
+ */
+export function onOwnerChanged() {
+  if (loadedOwner === undefined || switched) return;
+  const owner = kvGet(MODE_KEY);
+  if (owner === loadedOwner) {
+    // 同じ人が別のタブでもう一度ログインした：送れなかった入力を送る
+    if (mode === "cloud" && hasUnsent()) resumeFromOtherTab();
+    return;
+  }
+  const unsent = hasUnsent();
+  // ログインが切れた・ログアウトした：まだ別の人はいないので、入力を残して開いたままにする
+  // （送ろうとするとログインし直しの案内が出る。写しには書かない）
+  if (owner === null && unsent) return;
+  // 別の人がログインした・デモに切り替えた：この人の入力を、その人のアカウントへ送らない
+  stopSaving();
+  if (unsent) {
+    switched = true;
+    reportSaveFailure("switched");
+  } else {
+    window.location.reload();
+  }
+}
+
+/**
+ * ログイン・登録のあと：サーバーのデータで画面を開き直す。
+ * ログインが切れて送れなかった入力は、同じ人なら新しいログインで先に送り、別の人なら捨てる
+ */
+export async function finishSignIn(to: string, userId?: string) {
+  if (hasUnsent()) {
+    let id = userId;
+    if (!id) {
+      const u = await fetchUser();
+      if (u && u !== "error") id = u.id;
+    }
+    if (id && loadedOwner === `cloud:${id}`) {
+      // 同じ人：届かなかった分は、閉じるときにもう一度送る（待つのは長くても10秒）
+      resumeAfterLogin();
+      let wait: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([flushQueue(), new Promise((r) => (wait = setTimeout(r, 10_000)))]);
+      clearTimeout(wait);
+    } else {
+      // 別の人（または確かめられない）：前の人の入力を、この人のアカウントへ送らない
+      stopSaving();
+    }
+  }
+  window.location.href = to;
+}
+
+/** テスト用：開いたときの状態にする */
+export function setLoadedForTest(m: Mode, owner: string | null | undefined) {
+  setMode(m);
+  loadedOwner = owner;
+  switched = false;
+}
 
 /** ログイン中の人を確かめる。通信の失敗は "error"（ログアウトとは区別する） */
 async function fetchUser(): Promise<SessionUser | null | "error"> {
@@ -113,8 +206,11 @@ interface SessionCtx {
   mode: Mode;
   /** ログインの確認とサーバーのデータの読み込みが終わった */
   ready: boolean;
-  /** ログイン・登録のあと：サーバーのデータで画面を開き直す */
-  signedIn: (to: string) => void;
+  /**
+   * ログイン・登録のあと：サーバーのデータで画面を開き直す。
+   * ログインが切れて送れなかった入力は、同じ人なら先に送り、別の人なら捨てる（userId はログインした人。分からなければ問い合わせる）
+   */
+  signedIn: (to: string, userId?: string) => void;
   /** 残りを保存してからログアウトする。保存できなければログアウトせず、保存できなかったことを知らせる */
   signOut: () => Promise<void>;
   /** デモ：ログアウトして、このブラウザの中だけで動かす（保存できなければ切り替えない） */
@@ -143,10 +239,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         if (kv) {
           try {
             clearLocal();
+            // 持ち主を先に書く（ほかのタブが、この人のデータを前の人の画面に取り込まないため）
+            localStorage.setItem(MODE_KEY, `cloud:${u.id}`);
             for (const [k, v] of Object.entries(kv)) localStorage.setItem(k, v);
             // 画面の「利用者」はログイン中の人
             localStorage.setItem(`${PREFIX}account:v1`, JSON.stringify({ name: u.name, email: u.email, createdAt: u.createdAt }));
-            localStorage.setItem(MODE_KEY, `cloud:${u.id}`);
             m = "cloud";
             user = u;
           } catch {
@@ -188,10 +285,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const onHide = () => sendRestWithBeacon();
     // 別のタブでログアウト・ログイン・デモへの切り替えがあったら、このタブも開き直す
-    // （前の人の画面のまま、次の人のアカウントへ書き込まないため）
     const onStorage = (e: StorageEvent) => {
-      if (e.key !== MODE_KEY && e.key !== null) return;
-      if (loadedOwner !== undefined && kvGet(MODE_KEY) !== loadedOwner) window.location.reload();
+      if (e.key === MODE_KEY || e.key === null) onOwnerChanged();
     };
     window.addEventListener("pagehide", onHide);
     window.addEventListener("storage", onStorage);
@@ -201,9 +296,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const signedIn = useCallback((to: string) => {
-    window.location.href = to;
-  }, []);
+  const signedIn = useCallback((to: string, userId?: string) => void finishSignIn(to, userId), []);
   const signOut = useCallback(async () => {
     if (mode === "cloud" && !(await flushQueue())) {
       // 送れなかった入力を消さないよう、ログアウトは取りやめる（書き出し・送り直しの案内を出す）

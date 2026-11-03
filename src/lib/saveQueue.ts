@@ -5,7 +5,8 @@
  * - 同時に送るのは1つだけ。送っている間に書かれた分は、送り終わってから次にまとめて送る
  * - 送れなかった分は戻して、次に送り直す。ただし、そのあと同じ項目に新しい値が書かれていれば、新しいほうを残す
  *   （古い値で新しい値を上書きしないため）
- * - ログインの期限が切れた（401）ときは送り直さず、もう一度ログインするよう知らせる
+ * - ログインの期限が切れた（401）ときは送り直さず、もう一度ログインするよう知らせる。
+ *   送れなかった分は残しておき、同じ人がもう一度ログインしたら送る（別の人がログインしたら捨てる）
  */
 import { reportSaveFailure } from "./saveStatus";
 
@@ -47,6 +48,8 @@ export function setQueueEnabled(on: boolean) {
 /** ログインの期限が切れて、サーバーが受け付けなくなった */
 export const authExpired = () => authLost;
 export const hasPending = () => pending.set.size > 0 || pending.del.size > 0;
+/** まだサーバーに届いていない書き込みがあるか（送っている途中のもの・ログインが切れて送れないものを含む） */
+export const hasUnsent = () => hasPending() || inflight.size > 0 || authLost;
 /** このタブで書いて、まだサーバーに届いていない値があるか */
 export const isUnsaved = (key: string) => pending.set.has(key) || pending.del.has(key) || inflight.has(key);
 
@@ -121,6 +124,28 @@ export function flushQueue(): Promise<boolean> {
   cancelTimer();
   chain = chain.then(sendOnce, sendOnce);
   return chain;
+}
+
+/** 同じ人がもう一度ログインした：残っている書き込みを、新しいログインで送れるようにする */
+export function resumeAfterLogin() {
+  authLost = false;
+}
+
+/** 送っていない書き込み（別のタブへ渡すため）。送っている途中のものは含まない */
+export function unsentWrites(): { set: Record<string, string>; del: string[] } {
+  return { set: Object.fromEntries(pending.set), del: [...pending.del] };
+}
+
+/**
+ * 送っていない書き込みを捨てる（別の人がログインしたとき、その人のアカウントへ送らないため）。
+ * 送っている途中のものが失敗しても、戻さない
+ */
+export function dropUnsent() {
+  cancelTimer();
+  for (const k of [...pending.set.keys(), ...pending.del, ...inflight]) version.set(k, ++seq);
+  pending.set.clear();
+  pending.del.clear();
+  authLost = false;
 }
 
 /** ページを閉じるとき：残りを sendBeacon で送る（送れなければ戻しておく） */

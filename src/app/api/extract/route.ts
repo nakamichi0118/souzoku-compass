@@ -97,9 +97,10 @@ export async function POST(req: Request) {
     }
     return NextResponse.json(res.parsed_output);
   } catch (e) {
-    if (e instanceof Anthropic.APIError) {
-      return NextResponse.json({ error: `Claude への問い合わせに失敗しました（${e.status}）。` }, { status: 502 });
-    }
+    if (e instanceof Anthropic.APIConnectionError) return NextResponse.json({ error: "Claude に接続できませんでした。時間をおいてお試しください。" }, { status: 502 });
+    if (e instanceof Anthropic.APIError) return NextResponse.json({ error: `Claude への問い合わせに失敗しました${e.status ? `（${e.status}）` : ""}。` }, { status: 502 });
+    // 答えが途中で切れた・決まった形になっていないなど（受け取った答えを読めなかった）
+    if (e instanceof Anthropic.AnthropicError) return NextResponse.json({ error: "書類を読み取れませんでした。写りのよい画像でもう一度お試しください。" }, { status: 422 });
     throw e;
   }
 }

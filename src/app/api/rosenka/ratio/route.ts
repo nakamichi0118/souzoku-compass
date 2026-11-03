@@ -92,7 +92,8 @@ export async function POST(req: Request) {
   try {
     const res = await client.messages.parse({
       model: MODEL,
-      max_tokens: 8000,
+      // 考える分もここに含まれるので、長い表でも答えが途中で切れないよう多めにする
+      max_tokens: 16000,
       output_config: { effort: "medium", format: zodOutputFormat(Reading) },
       system: SYSTEM,
       messages: [
@@ -105,7 +106,7 @@ export async function POST(req: Request) {
         },
       ],
     });
-    if (res.stop_reason === "refusal" || !res.parsed_output) return NextResponse.json({ error: "評価倍率表を読み取れませんでした。", pdfUrl }, { status: 422 });
+    if (res.stop_reason === "refusal" || res.stop_reason === "max_tokens" || !res.parsed_output) return NextResponse.json({ error: "評価倍率表を読み取れませんでした。", pdfUrl }, { status: 422 });
     const data: Reading = {
       rows: res.parsed_output.rows.slice(0, 8).map((r) => ({ ...r, page: Math.max(1, Math.round(r.page) || 1) })),
       notes: res.parsed_output.notes,
@@ -115,7 +116,10 @@ export async function POST(req: Request) {
     cache.set(key, { at: Date.now(), data });
     return NextResponse.json({ ...where, ...data });
   } catch (e) {
-    if (e instanceof Anthropic.APIError) return NextResponse.json({ error: `Claude への問い合わせに失敗しました（${e.status}）。` }, { status: 502 });
+    if (e instanceof Anthropic.APIConnectionError) return NextResponse.json({ error: "Claude に接続できませんでした。時間をおいてお試しください。", pdfUrl }, { status: 502 });
+    if (e instanceof Anthropic.APIError) return NextResponse.json({ error: `Claude への問い合わせに失敗しました${e.status ? `（${e.status}）` : ""}。`, pdfUrl }, { status: 502 });
+    // 答えが途中で切れた・決まった形になっていないなど（受け取った答えを読めなかった）。断られたときと同じ扱い
+    if (e instanceof Anthropic.AnthropicError) return NextResponse.json({ error: "評価倍率表を読み取れませんでした。", pdfUrl }, { status: 422 });
     throw e;
   }
 }

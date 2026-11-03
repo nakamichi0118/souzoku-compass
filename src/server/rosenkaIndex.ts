@@ -75,12 +75,19 @@ function kanjiNumber(s: string): number {
   return KANJI_DIGIT[s] ?? NaN;
 }
 
-/** 町丁目名の表記ゆれをそろえる（例：「霞ヶ関三丁目」「霞が関３」→「霞が関3」） */
+/**
+ * 町丁目名の表記ゆれをそろえる（例：「霞ヶ関三丁目」「霞が関３」→「霞が関3」、「北一条西二丁目」「北１条西２」→「北1条西2」）。
+ * 国土地理院は漢数字、国税庁の索引は数字で書くことが多いので、「条」「線」「号」「番」「丁目」の前の漢数字は
+ * 名前のどこにあっても数字にする（「一番町」→「1番町」）。比べる両方に同じ変換をかけるので、どちらの書き方でも一致する。
+ */
 export function normalizeTown(s: string): string {
   let t = s.normalize("NFKC").replace(/[\s　]/g, "");
   t = t.replace(/^(大字|字)/, "");
   t = t.replace(/[ヶケヵ]/g, "が");
-  t = t.replace(/([一二三四五六七八九十]+)丁目$/, (_, k: string) => String(kanjiNumber(k)));
+  t = t.replace(/[一二三四五六七八九十]+(?=条|線|号|番|丁目)/g, (k) => {
+    const n = kanjiNumber(k);
+    return Number.isNaN(n) ? k : String(n);
+  });
   t = t.replace(/(\d+)丁目$/, "$1");
   return t;
 }
@@ -113,19 +120,45 @@ export function parseCityList(html: string, suffix: "fr" | "rf" = "fr"): { name:
   return out;
 }
 
+/** 一覧のリンク（j16101fr.htm・j16101rf.htm）から市区町村の記号（j16101）を取り出す */
+const cityCode = (href: string) => href.match(/([a-z]\d+)(?:fr|rf)\.htm$/i)?.[1];
+
+/** 一覧の名前が、国土地理院の市区町村名とそのまま同じか（都道府県名つきで書かれていても同じとみなす） */
+const sameCity = (name: string, city: string, pref?: string) => {
+  const n = normalizeCity(name);
+  return n === city || (!!pref && n === normalizeCity(pref) + city);
+};
+
+/** 同じ市区町村を指すかを比べるための印（一覧の記号、なければ名前） */
+const cityId = (c: { name: string; href?: string }) => (c.href && cityCode(c.href)) || normalizeCity(c.name);
+
 /**
  * 市区町村一覧から、国土地理院の市区町村名（例：福岡市博多区）に当たるものを選ぶ。
- * 一覧には「博多区」のように区名だけで載っていることがあるので、末尾が一致するもののうち
- * いちばん長く一致するものを選ぶ。
+ * 1. 名前がそのまま同じもの（「福岡県福岡市博多区」のように都道府県名つきでもよい）
+ * 2. なければ、一覧には「博多区」のように区名だけで載っていることがあるので、末尾が一致するもののうち
+ *    いちばん長く一致するもの
+ * 同じ長さで一致するものが別々の市区町村のとき（横浜市と相模原市の「緑区」など）は、決められないので選ばない
+ * （ambiguous が true）。
  */
-export function pickCity<T extends { name: string }>(cities: T[], city: string): T | undefined {
-  const exact = cities.find((c) => normalizeCity(c.name) === city);
-  if (exact) return exact;
-  const hits = cities.filter((c) => {
-    const n = normalizeCity(c.name);
-    return n.length >= 2 && (n.endsWith(city) || city.endsWith(n));
-  });
-  return hits.sort((a, b) => normalizeCity(b.name).length - normalizeCity(a.name).length)[0];
+export function matchCity<T extends { name: string; href?: string }>(cities: T[], city: string, pref?: string): { hit?: T; ambiguous: boolean } {
+  const len = (c: T) => normalizeCity(c.name).length;
+  const exact = cities.filter((c) => sameCity(c.name, city, pref));
+  let top = exact;
+  if (!exact.length) {
+    const hits = cities.filter((c) => {
+      const n = normalizeCity(c.name);
+      return n.length >= 2 && (n.endsWith(city) || city.endsWith(n));
+    });
+    const best = Math.max(0, ...hits.map(len));
+    top = hits.filter((c) => len(c) === best);
+  }
+  const ids = new Set(top.map(cityId));
+  return ids.size === 1 ? { hit: top[0], ambiguous: false } : { ambiguous: ids.size > 1 };
+}
+
+/** matchCity の選んだもの（決められなければ undefined） */
+export function pickCity<T extends { name: string; href?: string }>(cities: T[], city: string, pref?: string): T | undefined {
+  return matchCity(cities, city, pref).hit;
 }
 
 /**
@@ -236,12 +269,15 @@ export interface SheetLayoutItem {
   /** 町丁名索引で、その町丁目が載っているとされた図か */
   candidate: boolean;
   pdfUrl: string;
+  /** 最初の候補の図とつながっていない図（並びの下に1行あけて、別のかたまりとして置く） */
+  separate?: true;
 }
 
 /**
  * 候補の図と、そのとなりの図を、最初の候補を基準にした格子の上に並べる。
  * neighboursByNo は「図番号 → その図のページに書かれたとなりの図」。
- * 片方の図にしか書かれていないつながりも逆向きにたどる。最初の候補とつながらない候補は並べない。
+ * 片方の図にしか書かれていないつながりも逆向きにたどる。
+ * 最初の候補とつながらない候補も落とさず、そのとなりの図とひとかたまりにして、並びの下に1行あけて左から置く。
  * pricesBase は路線価図のフォルダ（…/prices/）。
  */
 export function buildLayout(candidates: string[], neighboursByNo: Map<string, Neighbor[]>, pricesBase: string): SheetLayoutItem[] {
@@ -254,24 +290,65 @@ export function buildLayout(candidates: string[], neighboursByNo: Map<string, Ne
       link(n.no, no, -n.dx, -n.dy);
     }
   }
-  const pos = new Map([[candidates[0], { col: 0, row: 0 }]]);
-  const taken = new Set(["0,0"]);
-  const queue = [candidates[0]];
-  while (queue.length) {
-    const no = queue.shift()!;
-    const p = pos.get(no)!;
-    for (const n of links.get(no) ?? []) {
-      const q = { col: p.col + n.dx, row: p.row + n.dy };
-      // 食い違う情報があっても、1つの図は1か所、1つの場所には1枚だけ（先に決まったほうを使う）
-      if (pos.has(n.no) || taken.has(`${q.col},${q.row}`)) continue;
-      pos.set(n.no, q);
-      taken.add(`${q.col},${q.row}`);
-      queue.push(n.no);
+  const pos = new Map<string, { col: number; row: number }>();
+  /** start からつながる図を、start を 0, 0 とした格子に並べる（すでにほかのかたまりに置いた図は飛ばす） */
+  const cluster = (start: string) => {
+    const local = new Map([[start, { col: 0, row: 0 }]]);
+    const taken = new Set(["0,0"]);
+    const queue = [start];
+    while (queue.length) {
+      const no = queue.shift()!;
+      const p = local.get(no)!;
+      for (const n of links.get(no) ?? []) {
+        const q = { col: p.col + n.dx, row: p.row + n.dy };
+        // 食い違う情報があっても、1つの図は1か所、1つの場所には1枚だけ（先に決まったほうを使う）
+        if (pos.has(n.no) || local.has(n.no) || taken.has(`${q.col},${q.row}`)) continue;
+        local.set(n.no, q);
+        taken.add(`${q.col},${q.row}`);
+        queue.push(n.no);
+      }
     }
+    return [...local];
+  };
+  for (const [no, p] of cluster(candidates[0])) pos.set(no, p);
+
+  // つながらない候補のかたまりは、最初のかたまりの下に1行あけて、左から1列ずつあけて並べる（はみ出したら次の段へ）
+  const main = [...pos.values()];
+  const left = Math.min(...main.map((p) => p.col));
+  const width = Math.max(3, Math.max(...main.map((p) => p.col)) - left + 1);
+  let top = Math.max(...main.map((p) => p.row)) + 2;
+  let x = left;
+  let shelf = 0;
+  const separate = new Set<string>();
+  for (const c of candidates) {
+    if (pos.has(c)) continue;
+    const items = cluster(c);
+    const c0 = Math.min(...items.map(([, p]) => p.col));
+    const r0 = Math.min(...items.map(([, p]) => p.row));
+    const w = Math.max(...items.map(([, p]) => p.col)) - c0 + 1;
+    const h = Math.max(...items.map(([, p]) => p.row)) - r0 + 1;
+    if (x > left && x + w > left + width) {
+      top += shelf + 1;
+      x = left;
+      shelf = 0;
+    }
+    for (const [no, p] of items) {
+      pos.set(no, { col: p.col - c0 + x, row: p.row - r0 + top });
+      separate.add(no);
+    }
+    x += w + 1;
+    shelf = Math.max(shelf, h);
   }
+
   const isCandidate = new Set(candidates);
   return [...pos]
-    .map(([no, p]) => ({ no, ...p, candidate: isCandidate.has(no), pdfUrl: `${pricesBase}pdf/${no}.pdf` }))
+    .map(([no, p]) => ({
+      no,
+      ...p,
+      candidate: isCandidate.has(no),
+      pdfUrl: `${pricesBase}pdf/${no}.pdf`,
+      ...(separate.has(no) ? { separate: true as const } : {}),
+    }))
     .sort((a, b) => a.row - b.row || a.col - b.col);
 }
 
@@ -338,19 +415,45 @@ async function whereIs(lat: number, lng: number): Promise<Place | NoPlace> {
   return { ...muni, town, dir };
 }
 
-/** 一覧のリンク（j16101fr.htm・j16101rf.htm）から市区町村の記号（j16101）を取り出す */
-const cityCode = (href: string) => href.match(/([a-z]\d+)(?:fr|rf)\.htm$/i)?.[1];
+type CityLink = { name: string; href: string };
 
-/** 評価倍率表の PDF の URL（路線価図の一覧になければ、評価倍率表の一覧から探す） */
-async function ratioPdfUrl(dir: string, city: string, priceCities?: { name: string; href: string }[]): Promise<string | null> {
-  const root = `${NTA}/${YEAR_DIR}/${dir}/`;
-  let hit = priceCities
-    ? pickCity(priceCities, city)
-    : pickCity(parseCityList(await fetchText(`${root}prices/city_frm.htm`).catch(() => "")), city);
+interface CityMatch {
+  /** 路線価図の一覧の項目（町丁名索引へのリンク）。路線価図のない市区町村や、決められなかったときはない */
+  price?: CityLink;
+  /** 市区町村の記号（評価倍率表の PDF の名前に使う） */
+  code?: string;
+  /** 同じ名前で一致するものが別々にあり、決められなかったか */
+  ambiguous: boolean;
+  /** 評価倍率表の一覧を取得できなかったときのエラー */
+  listError?: unknown;
+}
+
+/**
+ * 路線価図の一覧と評価倍率表の一覧から、その市区町村を決める。2つの一覧は同じ記号（j16101fr.htm・j16101rf.htm）を使う。
+ * 1. 路線価図の一覧に、名前がそのまま同じものがあればそれ
+ * 2. 評価倍率表の一覧に、名前がそのまま同じものがあれば、その記号。路線価図の一覧からは同じ記号のものだけを選ぶ
+ *    （区名だけで並ぶ一覧で、別の市の同じ名前の区を選ばないため。なければ路線価図のない市区町村）
+ * 3. なければ、それぞれの一覧で末尾が一致するもの（1つに決まるときだけ）
+ */
+async function resolveCity(root: string, pref: string, city: string, priceCities: CityLink[]): Promise<CityMatch> {
+  const price = matchCity(priceCities, city, pref);
+  if (price.hit && sameCity(price.hit.name, city, pref)) return { price: price.hit, code: cityCode(price.hit.href), ambiguous: false };
   // 路線価図が1枚もない町村は、評価倍率表の一覧にだけ載っている
-  hit ??= pickCity(parseCityList(await fetchText(`${root}ratios/city_frm.htm`), "rf"), city);
-  const code = hit && cityCode(hit.href);
-  return code ? `${root}ratios/pdf/${code}rt.pdf` : null;
+  let ratioCities: CityLink[] = [];
+  let listError: unknown;
+  try {
+    ratioCities = parseCityList(await fetchText(`${root}ratios/city_frm.htm`), "rf");
+  } catch (e) {
+    listError = e;
+  }
+  const ratio = matchCity(ratioCities, city, pref);
+  if (ratio.hit && sameCity(ratio.hit.name, city, pref)) {
+    const code = cityCode(ratio.hit.href);
+    return { price: code ? priceCities.find((c) => cityCode(c.href) === code) : undefined, code, ambiguous: false };
+  }
+  if (price.hit) return { price: price.hit, code: cityCode(price.hit.href), ambiguous: false };
+  if (ratio.hit) return { code: cityCode(ratio.hit.href), ambiguous: false };
+  return { ambiguous: price.ambiguous || ratio.ambiguous, listError };
 }
 
 /** 候補の図のページを開き、となりの図から並びを作る（作れなければ undefined） */
@@ -370,16 +473,18 @@ export async function findSheets(lat: number, lng: number): Promise<FindResult> 
   if (!("dir" in place)) return { ...place, sheets: [] };
   const { dir, town, ...muni } = place;
 
-  const base = `${NTA}/${YEAR_DIR}/${dir}/prices/`;
+  const root = `${NTA}/${YEAR_DIR}/${dir}/`;
+  const base = `${root}prices/`;
   const cities = parseCityList(await fetchText(`${base}city_frm.htm`));
-  const city = pickCity(cities, muni.city);
+  const { price: city, code, ambiguous } = await resolveCity(root, muni.pref, muni.city, cities);
+  const ratioUrl = code ? `${root}ratios/pdf/${code}rt.pdf` : undefined;
   if (!city) {
-    const ratioUrl = (await ratioPdfUrl(dir, muni.city, cities).catch(() => null)) ?? undefined;
-    return { ...muni, town, sheets: [], indexUrl: `${base}city_frm.htm`, ratioUrl, message: "この市区町村の路線価図が見つかりませんでした（倍率地域の可能性があります）。" };
+    const message = ambiguous
+      ? "同じ名前の市区町村が一覧にいくつかあるため、自動で決められませんでした。一覧から選んでください。"
+      : "この市区町村の路線価図が見つかりませんでした（倍率地域の可能性があります）。";
+    return { ...muni, town, sheets: [], indexUrl: `${base}city_frm.htm`, ratioUrl, message };
   }
   const indexUrl = new URL(city.href, base).toString();
-  const code = cityCode(city.href);
-  const ratioUrl = code ? `${NTA}/${YEAR_DIR}/${dir}/ratios/pdf/${code}rt.pdf` : undefined;
   if (!town) return { ...muni, town, sheets: [], indexUrl, ratioUrl, message: "町丁目名が分からないため、索引から図番号を選んでください。" };
 
   const index = parseTownIndex(await fetchText(indexUrl));
@@ -416,7 +521,12 @@ export async function findRatioPdf(lat: number, lng: number): Promise<RatioPdfRe
   const place = await whereIs(lat, lng);
   if (!("dir" in place)) return { ...place, pdfUrl: null };
   const { dir, town, ...muni } = place;
-  const pdfUrl = await ratioPdfUrl(dir, muni.city);
+  const root = `${NTA}/${YEAR_DIR}/${dir}/`;
+  const priceCities = parseCityList(await fetchText(`${root}prices/city_frm.htm`).catch(() => ""));
+  const { code, listError } = await resolveCity(root, muni.pref, muni.city, priceCities);
+  // 一覧が取れずに見つからなかったときは「見つからない」ではなく、探せなかったことを伝える
+  if (!code && listError) throw listError;
+  const pdfUrl = code ? `${root}ratios/pdf/${code}rt.pdf` : null;
   if (!pdfUrl) return { ...muni, town, pdfUrl: null, message: "この市区町村の評価倍率表が見つかりませんでした。" };
   return { ...muni, town, pdfUrl };
 }

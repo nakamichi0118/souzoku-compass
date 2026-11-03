@@ -39,12 +39,13 @@ function signedArea(xy: XY[]): number {
 /** 頂点が時計回りに並んでいるか */
 const isClockwise = (xy: XY[]) => signedArea(xy) < 0;
 
-/** 点から線分までの最短距離 */
-function toSegment(p: XY, a: XY, b: XY): number {
+/** 点から線分までの最短距離と、線分の上の最も近い点 */
+function toSegment(p: XY, a: XY, b: XY): { dist: number; at: XY } {
   const ab = sub(b, a);
   const L = dot(ab, ab);
   const k = L === 0 ? 0 : Math.max(0, Math.min(1, dot(sub(p, a), ab) / L));
-  return len(sub(p, [a[0] + ab[0] * k, a[1] + ab[1] * k]));
+  const at: XY = [a[0] + ab[0] * k, a[1] + ab[1] * k];
+  return { dist: len(sub(p, at)), at };
 }
 
 /** 土地の面積（㎡、小数2桁）。頂点が3つ未満なら0 */
@@ -78,22 +79,66 @@ export function translatePolygon(pts: LatLng[], from: LatLng, to: LatLng): LatLn
 }
 
 /**
- * 各辺（辺 i は 頂点i → 頂点i+1）が道路に面しているか。lot.ts の roadEdges と同じ基準：
+ * 地理院の道路の線は交差点やタイル（地図の区画）の境目で切れているので、端どうしが1.5m以内で、
+ * そのまままっすぐ（向きの差30°以内）続いている線は同じ道路とみなす。道路ごとに、まとめた線の中で一番小さい番号を返す。
+ */
+function sameRoadIds(lines: XY[][]): number[] {
+  const parent = lines.map((_, i) => i);
+  const find = (i: number): number => {
+    while (parent[i] !== i) i = parent[i] = parent[parent[i]];
+    return i;
+  };
+  // 線の両端の点と、端から線の内側へ向かう向き（端から2m以上離れた点まで。短い切れ端で向きがぶれないように）
+  const ends = lines.map((l) => {
+    const out: { at: XY; dir: XY }[] = [];
+    for (const pts of l.length >= 2 ? [l, [...l].reverse()] : []) {
+      let k = 1;
+      while (k < pts.length - 1 && len(sub(pts[k], pts[0])) < 2) k++;
+      const d = sub(pts[k], pts[0]);
+      const dl = len(d);
+      if (dl > 0) out.push({ at: pts[0], dir: [d[0] / dl, d[1] / dl] });
+    }
+    return out;
+  });
+  for (let i = 0; i < lines.length; i++)
+    for (let j = i + 1; j < lines.length; j++) {
+      // まっすぐ続く線は、つなぎ目から見て向きがほぼ反対になる
+      const joined = ends[i].some((p) => ends[j].some((q) => len(sub(p.at, q.at)) <= 1.5 && dot(p.dir, q.dir) <= -COS30));
+      if (!joined) continue;
+      const a = find(i);
+      const b = find(j);
+      if (a !== b) parent[Math.max(a, b)] = Math.min(a, b);
+    }
+  return lines.map((_, i) => find(i));
+}
+
+/**
+ * 各辺（辺 i は 頂点i → 頂点i+1）が道路に面しているか。距離は lot.ts の roadEdges と同じ基準：
  * 辺の上の5点から、辺とほぼ平行（35°以内）な道路の中心線までの距離を測り、3点以上で測れて
  * 平均が「道路の幅の半分（分からなければ3m）＋4m」以内なら面しているとする。1m未満の辺は面していないとする。
- * roadIndex は面している道路のうち最も近いものの番号（なければ -1）。
+ * 道路は辺の外側（土地の外）になければならない。描いた辺が道路に少しはみ出していてもよいが、中心線が
+ * 土地の中ほどより奥にある道路（奥行の浅い土地の、反対側の辺が面している道路）は数えない。
+ * roadIndex は面している道路のうち最も近いものの番号（なければ -1）。交差点などで切れていても、
+ * まっすぐ続く1本の道路は同じ番号（その道路の線のうち一番小さい番号）にする。
  */
 export function edgeTouches(pts: LatLng[], roads: Road[]): { touches: boolean; roadIndex: number; distance: number | null }[] {
   const { P, xy } = local(pts);
+  const s = isClockwise(xy) ? -1 : 1;
   const roadsXY = roads.map((r) => ({ xy: r.line.map(P.to), hw: r.width && r.width > 0 ? r.width / 2 : 3 }));
+  const ids = sameRoadIds(roadsXY.map((r) => r.xy));
   return xy.map((a, i) => {
     const dir = sub(xy[(i + 1) % xy.length], a);
     const dl = len(dir);
     if (dl < 1) return { touches: false, roadIndex: -1, distance: null };
+    // 外向きの向き（frontagesOf と同じ）と、この辺から土地の一番奥までの長さ
+    const nrm: XY = [(s * dir[1]) / dl, (-s * dir[0]) / dl];
+    const thick = Math.max(0, ...xy.map((q) => dot(sub(a, q), nrm)));
     let nearest: number | null = null;
     let best: { index: number; avg: number } | null = null;
     for (let ri = 0; ri < roadsXY.length; ri++) {
       const r = roadsXY[ri];
+      // 中心線が辺より内側に入ってよい長さ：道路の幅の半分まで、かつ土地の奥行の半分まで
+      const inner = Math.min(r.hw, thick / 2);
       const ds: number[] = [];
       for (let k = 0; k < 5; k++) {
         const t = (k + 0.5) / 5;
@@ -103,17 +148,19 @@ export function edgeTouches(pts: LatLng[], roads: Road[]): { touches: boolean; r
           const seg = sub(r.xy[j + 1], r.xy[j]);
           const sl = len(seg);
           if (sl === 0 || Math.abs(dot(seg, dir)) / (sl * dl) < COS35) continue;
-          m = Math.min(m, toSegment(p, r.xy[j], r.xy[j + 1]));
+          const q = toSegment(p, r.xy[j], r.xy[j + 1]);
+          if (dot(sub(q.at, p), nrm) <= -inner) continue; // 道路が土地の反対側にある
+          m = Math.min(m, q.dist);
         }
         if (Number.isFinite(m)) ds.push(m);
       }
       if (ds.length < 3) continue; // 辺の半分以上で道路が並んでいない
-      const avg = ds.reduce((s, d) => s + d, 0) / ds.length;
+      const avg = ds.reduce((sum, d) => sum + d, 0) / ds.length;
       if (nearest === null || avg < nearest) nearest = avg;
       if (avg <= r.hw + 4 && (!best || avg < best.avg)) best = { index: ri, avg };
     }
     const distance = best ? best.avg : nearest;
-    return { touches: !!best, roadIndex: best ? best.index : -1, distance: distance === null ? null : round(distance, 1) };
+    return { touches: !!best, roadIndex: best ? ids[best.index] : -1, distance: distance === null ? null : round(distance, 1) };
   });
 }
 
@@ -135,7 +182,8 @@ export interface Frontage {
 
 /**
  * 道路に面している辺（on）を、道路ごとのまとまりにする。隣り合う辺（最後の辺と最初の辺も隣とみなす）は、
- * 同じ道路（どちらも不明でもよい）で、外向きの向きの差が30°以内なら同じまとまりにする。間口距離の長い順に返す。
+ * 外向きの向きの差が30°以内で、同じ道路か、どちらかの道路が分からない（本人が「接している」に切り替えた辺など）
+ * なら同じまとまりにする。間口距離の長い順に返す。
  */
 export function frontagesOf(pts: LatLng[], on: boolean[], roadIndexOf: number[]): Frontage[] {
   const n = pts.length;
@@ -154,7 +202,8 @@ export function frontagesOf(pts: LatLng[], on: boolean[], roadIndexOf: number[])
   // 長さがほぼ0の辺（同じ点の重複など）は無いものとして扱う
   const valid = edges.filter((e) => e.l >= 0.01);
   const m = valid.length;
-  const joins = (p: E, q: E) => !!on[p.i] && !!on[q.i] && p.road === q.road && dot(p.nrm, q.nrm) >= COS30 - 1e-9;
+  const sameRoad = (p: E, q: E) => p.road === q.road || p.road < 0 || q.road < 0;
+  const joins = (p: E, q: E) => !!on[p.i] && !!on[q.i] && sameRoad(p, q) && dot(p.nrm, q.nrm) >= COS30 - 1e-9;
   // まとまりの切れ目から数え始める（すべてつながる場合は先頭から）
   const start = Math.max(0, valid.findIndex((e, k) => !joins(valid[(k - 1 + m) % m], e)));
   const groups: E[][] = [];
@@ -184,7 +233,7 @@ export function frontagesOf(pts: LatLng[], on: boolean[], roadIndexOf: number[])
       const out = (k: 0 | 1) => (longest.a[k] + longest.b[k]) / 2 + longest.nrm[k] * 4;
       return {
         edges: g.map((e) => e.i),
-        roadIndex: g[0].road,
+        roadIndex: g.find((e) => e.road >= 0)?.road ?? -1,
         bearing: norm360(round(bearingOf(nrm), 1)),
         frontage: round(total(g), 1),
         depthRect: round(depthRect, 1),
@@ -203,20 +252,35 @@ export function depthFor(f: Frontage, areaSqm: number): number {
 }
 
 /**
- * 各まとまりを evaluateRoads の辺の番号に直す。最初のまとまりを0とし、向かいを2、横を1と3にする。
- * 同じ番号になったときは間口の長い方が使い、もう一方は null（計算に入れない）。
+ * 各まとまりを evaluateRoads の辺の番号に直す。最初のまとまりの向きから測って、30°未満なら0（正面）、
+ * 30°〜150°なら1、150°〜210°なら2（向かい）、210°〜330°なら3（1と3が横）にする。
+ * 間口の長い方から順に決め、先に決めた道路と同じ向き（30°以内）なら null（計算に入れない）。
+ * 向きが違うのに番号が空いていなければ、空いている横の番号（1か3）を使い、それもなければ null。
  */
 export function edgeClasses(frontages: Frontage[]): (Edge | null)[] {
   if (frontages.length === 0) return [];
   const b0 = frontages[0].bearing;
-  const cls = frontages.map((f) => (Math.round(norm360(f.bearing - b0) / 90) % 4) as Edge);
+  /** 2つの向きの差（0〜180°） */
+  const apart = (x: number, y: number) => {
+    const d = norm360(x - y);
+    return Math.min(d, 360 - d);
+  };
+  const band = (b: number): Edge => {
+    const d = norm360(b - b0);
+    return d < 30 || d > 330 ? 0 : d <= 150 ? 1 : d < 210 ? 2 : 3;
+  };
   const order = frontages.map((_, i) => i).sort((i, j) => frontages[j].frontage - frontages[i].frontage);
   const out: (Edge | null)[] = frontages.map(() => null);
-  const taken = new Set<Edge>();
+  const owner = new Map<Edge, number>();
   for (const i of order) {
-    if (taken.has(cls[i])) continue;
-    taken.add(cls[i]);
-    out[i] = cls[i];
+    const b = frontages[i].bearing;
+    if ([...owner.values()].some((j) => apart(b, frontages[j].bearing) <= 30)) continue;
+    const want = band(b);
+    const free = ([1, 3] as Edge[]).filter((k) => !owner.has(k)).sort((x, y) => apart(b, b0 + 90 * x) - apart(b, b0 + 90 * y));
+    const c = owner.has(want) ? free[0] : want;
+    if (c === undefined) continue;
+    owner.set(c, i);
+    out[i] = c;
   }
   return out;
 }

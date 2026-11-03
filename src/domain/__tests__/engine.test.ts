@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { apportionRatios, calculate, progressiveTax } from "../tax/engine";
 import type { Asset, Case, Person } from "../types";
+import { demoCase } from "@/data/demo";
 
 const decedent = { name: "相続 太郎", birthDate: "1950-01-01", deathDate: "2026-03-15", address: "東京都千代田区" };
 const dep = (id: string, amount: number): Asset => ({ id, kind: "deposit", label: id, amount });
@@ -241,6 +242,15 @@ describe("土地の入力漏れ", () => {
     expect(r.blockers).toEqual([]);
     expect(r.assets[0].valuation.value).toBe(30_000_000);
   });
+  it("誰でも通り抜けできる私道と選んだ土地は0円で止めずに計算する（財産評価基本通達24）", () => {
+    const road = land({ label: "私道持分", method: { type: "manual", value: 0, publicPrivateRoad: true } });
+    const r = calculate(mk([c1], [road, dep("預金", 50_000_000)], [all("l", ["c1", 1, 1]), all("預金", ["c1", 1, 1])]));
+    expect(r.blockers).toEqual([]);
+    expect(r.assets[0].valuation.value).toBe(0);
+    expect(r.totalTaxable).toBe(50_000_000);
+    const unset = calculate(mk([c1], [land({ method: { type: "manual", value: 0 } })], [all("l", ["c1", 1, 1])]));
+    expect(unset.blockers.some((b) => b.includes("未入力"))).toBe(true);
+  });
 });
 
 describe("配偶者の法定相続分相当額（相続税法19条の2）", () => {
@@ -394,17 +404,17 @@ describe("自動では計算できない事項", () => {
 });
 
 describe("小規模宅地等の330㎡の割り当て順", () => {
-  it("入力順ではなく1㎡あたりの価額が高い宅地から割り当てる", () => {
-    const lot = (id: string, areaSqm: number, value: number): Asset => ({
-      id,
-      kind: "land",
-      label: id,
-      location: "x",
-      areaSqm,
-      landUse: "宅地",
-      method: { type: "manual", value },
-      smallResidential: { applies: true, acquirerId: "s" },
-    });
+  const lot = (id: string, areaSqm: number, value: number, acquirerId = "s"): Asset => ({
+    id,
+    kind: "land",
+    label: id,
+    location: "x",
+    areaSqm,
+    landUse: "宅地",
+    method: { type: "manual", value },
+    smallResidential: { applies: true, acquirerId },
+  });
+  it("相続税の合計が同じなら、入力順ではなく減額が大きくなる（1㎡あたりの価額が高い）宅地から割り当てる", () => {
     // A：330㎡ 5,000万円（約15万円/㎡）を先に入力、B：200㎡ 6,000万円（30万円/㎡）
     const r = calculate(mk([spouse, c1], [lot("A", 330, 50_000_000), lot("B", 200, 60_000_000)], [all("A", ["s", 1, 1]), all("B", ["s", 1, 1])]));
     const [a, b] = r.assets;
@@ -413,5 +423,51 @@ describe("小規模宅地等の330㎡の割り当て順", () => {
     expect(a.small?.selectedArea).toBe(130);
     expect(a.reduction).toBe(Math.floor((Math.floor((50_000_000 * 130) / 330) * 8) / 10));
     expect(r.warnings.some((w) => w.includes("「A」は残り130㎡分"))).toBe(true);
+  });
+
+  it("税額が0円の配偶者の宅地より、相続税を納める子の宅地を先に選び、家族全体の相続税を少なくする", () => {
+    // A：配偶者 200㎡ 6,000万円（30万円/㎡）、B：同居の子 250㎡ 7,000万円（28万円/㎡）、預金1億円を半分ずつ。
+    // 1㎡あたりの価額が高いAから割り当てる（A 200㎡＋B 130㎡）と、納める相続税の合計は 11,451,500円になる
+    const r = calculate(
+      mk(
+        [spouse, c1],
+        [lot("A", 200, 60_000_000, "s"), lot("B", 250, 70_000_000, "c1"), dep("預金", 100_000_000)],
+        [all("A", ["s", 1, 1]), all("B", ["c1", 1, 1]), all("預金", ["s", 1, 2], ["c1", 1, 2])],
+      ),
+    );
+    const [a, b] = r.assets;
+    expect(b.small?.selectedArea).toBe(250);
+    expect(b.reduction).toBe(56_000_000);
+    expect(a.small?.selectedArea).toBe(80);
+    expect(a.reduction).toBe(19_200_000);
+    expect(r.totalPayable).toBe(8_202_500);
+    expect(r.persons.find((p) => p.person.id === "s")?.payable).toBe(0);
+    const w = r.warnings.find((x) => x.includes("330㎡"));
+    expect(w).toContain("「B」に250㎡、「A」は残り80㎡分");
+    expect(w).toContain("税理士");
+    expect(r.blockers).toEqual([]);
+  });
+
+  it("特例の宅地が1筆だけのデモの案件は、これまでどおりの税額になる", () => {
+    const r = calculate(demoCase);
+    expect(r.assets.find((l) => l.asset.id === "home-land")?.reduction).toBe(55_608_000);
+    expect(r.totalPayable).toBe(3_928_200);
+    expect(r.warnings.some((w) => w.includes("330㎡"))).toBe(false);
+  });
+
+  it("同じ宅地どうしなら入力順に割り当てる", () => {
+    const r = calculate(mk([spouse, c1], [lot("A", 200, 60_000_000, "c1"), lot("B", 200, 60_000_000, "c1")], [all("A", ["c1", 1, 1]), all("B", ["c1", 1, 1])]));
+    const [a, b] = r.assets;
+    expect(a.small?.selectedArea).toBe(200);
+    expect(b.small?.selectedArea).toBe(130);
+  });
+
+  it("宅地が6筆以上なら、1㎡あたりの価額が高い順に割り当て、その旨を知らせる", () => {
+    const lots = [lot("A", 60, 3_000_000, "s"), lot("B", 60, 12_000_000, "c1"), lot("C", 60, 9_000_000, "s"), lot("D", 60, 18_000_000, "c1"), lot("E", 60, 15_000_000, "s"), lot("F", 60, 6_000_000, "c1")];
+    const r = calculate(mk([spouse, c1], lots, lots.map((l) => all(l.id, [(l as Extract<Asset, { kind: "land" }>).smallResidential!.acquirerId!, 1, 1]))));
+    expect(r.assets.map((l) => l.small?.selectedArea)).toEqual([30, 60, 60, 60, 60, 60]);
+    const w = r.warnings.find((x) => x.includes("330㎡"))!;
+    expect(w).toContain("1㎡あたりの価額が高い土地から順に");
+    expect(w).toContain("「A」は残り30㎡分");
   });
 });

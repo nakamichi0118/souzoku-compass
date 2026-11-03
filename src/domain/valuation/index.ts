@@ -94,7 +94,7 @@ export function valueLand(a: LandAsset): Valuation {
     }
     // 税理士に確認した補正率（任意）。未入力・0以下は「補正なし」（1）として扱い、0円にならないようにする
     const oc = m.otherCorrection != null && m.otherCorrection > 0 ? m.otherCorrection : 1;
-    if (oc > 1) return consult(`税理士に確認した補正率（${m.otherCorrection}）が1を超えています。補正率は0より大きく1以下の数です。入力した値を確かめてください。`);
+    if (oc > 1) return consult(`税理士に確認した補正率（${m.otherCorrection}）が1を超えています。補正率は0より大きく1以下の数です。土地の画面で正しい補正率に直すか、空欄にしてください（空欄なら補正なしで計算します）。`);
     const ocStep = oc !== 1 ? ` × 補正 ${oc}` : "";
     if (m.roads?.length) {
       const r = evaluateRoads(m.district ?? "普通住宅地区", m.roads)!;
@@ -135,8 +135,10 @@ export function valueLand(a: LandAsset): Valuation {
       steps: [`固定資産税評価額 ${m.fixedAssetValue.toLocaleString()}円 × 倍率 ${m.multiplier} = ${value.toLocaleString()}円`],
     };
   }
+  // 不特定多数の人が通り抜けに使う私道は評価しない（財産評価基本通達24）。本人がそう選んだときだけ0円にする
+  if (m.publicPrivateRoad) return { value: 0, quantity, steps: ["誰でも通り抜けできる私道のため評価しない（財産評価基本通達24）"] };
   // 直接入力：0円のまま確定すると課税価格が過少になるため止める
-  if (!(m.value > 0)) return consult("土地の評価額が未入力です。評価額を入力してください。");
+  if (!(m.value > 0)) return consult("土地の評価額が未入力です。評価額を入力してください。誰でも通り抜けできる私道で評価しない土地なら、土地の画面でそのことを選んでください。");
   return { value: Math.floor(m.value), quantity, steps: ["評価額を直接入力"] };
 }
 
