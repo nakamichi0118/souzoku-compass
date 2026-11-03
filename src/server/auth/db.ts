@@ -142,7 +142,9 @@ export async function getDb(): Promise<AuthDb> {
   if (db) return db;
   // Cloud Run（K_SERVICE）か Firestore エミュレータがあるときだけ Firestore を使う
   if (process.env.K_SERVICE || process.env.FIRESTORE_EMULATOR_HOST || process.env.USE_FIRESTORE === "1") {
-    const { Firestore } = await import("@google-cloud/firestore");
+    const mod = (await import("@google-cloud/firestore")) as typeof import("@google-cloud/firestore") & { default?: typeof import("@google-cloud/firestore") };
+    // CommonJS のパッケージなので、読み込み方によっては default の下に入る
+    const Firestore = mod.Firestore ?? mod.default?.Firestore;
     db = firestoreDb(new Firestore({ ignoreUndefinedProperties: true }));
   } else {
     console.warn("[auth] Firestore を使わず、メモリに保存します（開発用）");

@@ -3,6 +3,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Cloud Run 用に、実行に必要なファイルだけをまとめる
   output: "standalone",
+  // Firestore の SDK は gRPC などを使うため、まとめずに node_modules から読み込む
+  serverExternalPackages: ["@google-cloud/firestore"],
   // 申告書PDFの作成でサーバーが読む様式画像・フォント
   outputFileTracingIncludes: {
     "/api/forms": ["./public/forms/**/*", "./assets/fonts/**/*"],
