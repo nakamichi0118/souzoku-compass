@@ -3,11 +3,14 @@
 import Link from "next/link";
 import { MonthCalendar } from "@/components/plan/MonthCalendar";
 import { AppShell, PageHead } from "@/components/shell/AppShell";
-import { toICS } from "@/domain/procedures/calendar";
-import { daysBetween, jpDate } from "@/domain/procedures/dates";
+import { Panel } from "@/components/ui/Panel";
+import { icsStamp, toICS } from "@/domain/procedures/calendar";
+import { jpDate } from "@/domain/procedures/dates";
 import { encodeInterview } from "@/domain/procedures/share";
+import { saveBlob } from "@/lib/download";
+import { naId } from "@/lib/planStore";
 import { useOverall } from "@/lib/overall";
-import { Panel } from "./Home";
+import { daysLeftLabel } from "@/lib/taskStatus";
 
 export function CalendarPage() {
   const o = useOverall();
@@ -23,20 +26,14 @@ export function CalendarPage() {
     );
 
   const host = window.location.host;
-  const feedPath = `/api/calendar?d=${encodeInterview(o.iv)}`;
+  // 購読するカレンダーにも画面と同じ手続きが載るよう、評価した結果の判定と「不要」にした手続きも渡す
+  const skip = o.main.filter((t) => o.done.includes(naId(t.id))).map((t) => t.id);
+  const feedPath = `/api/calendar?d=${encodeInterview(o.iv, { verdict: o.verdict, skip })}`;
   const googleSubscribe = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(`webcal://${host}${feedPath}`)}`;
   const appleSubscribe = `webcal://${host}${feedPath}`;
   function downloadICS() {
-    const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
-    const ics = toICS(o.live, { name: "相続の手続き（相続コンパス）", stamp, appUrl: `${window.location.origin}/my` });
-    const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "souzoku-tetsuzuki.ics";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const ics = toICS(o.live, { name: "相続の手続き（相続コンパス）", stamp: icsStamp(), appUrl: `${window.location.origin}/my` });
+    saveBlob(new Blob([ics], { type: "text/calendar" }), "souzoku-tetsuzuki.ics");
   }
   const upcoming = o.main.filter((t) => !o.closed(t.id) && t.date >= o.now).slice(0, 6);
   const overdue = o.main.filter((t) => !o.closed(t.id) && t.date < o.now);
@@ -70,7 +67,7 @@ export function CalendarPage() {
                 <li key={t.id}>
                   <Link href={`/my/tasks?id=${t.id}`} className="block rounded-lg px-2 py-1 hover:bg-stone-50">
                     <span className={`text-xs font-semibold ${t.hard ? "text-orange-700" : "text-stone-500"}`}>
-                      {jpDate(t.date)}（あと{daysBetween(o.now, t.date)}日）
+                      {jpDate(t.date)}（{daysLeftLabel(o.now, t.date)}）
                     </span>
                     <span className="block font-semibold text-stone-800">{t.title}</span>
                   </Link>
@@ -92,7 +89,7 @@ export function CalendarPage() {
                 Outlookなどほかのカレンダーに追加（ファイルを保存）
               </button>
             </div>
-            <p className="mt-2 text-xs leading-relaxed text-stone-500">相続の手続き専用のカレンダーとして追加されます。</p>
+            <p className="mt-2 text-xs leading-relaxed text-stone-500">相続の手続き専用のカレンダーとして追加されます。あとから質問の答えを変えたり、手続きを「不要」にしたりしたときは、追加し直してください。</p>
           </Panel>
         </div>
       </div>

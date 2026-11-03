@@ -10,11 +10,11 @@ async function loadPdf(data: ArrayBuffer) {
 }
 
 /** PDF の1ページを高解像度の画像にする */
-export async function renderPdfPage(data: ArrayBuffer, pageNo = 1): Promise<Sheet & { pages: number }> {
+export async function renderPdfPage(data: ArrayBuffer, pageNo = 1, width = TARGET_WIDTH): Promise<Sheet & { pages: number }> {
   const pdf = await loadPdf(data);
   const page = await pdf.getPage(Math.min(Math.max(1, pageNo), pdf.numPages));
   const base = page.getViewport({ scale: 1 });
-  const viewport = page.getViewport({ scale: TARGET_WIDTH / base.width });
+  const viewport = page.getViewport({ scale: width / base.width });
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(viewport.width);
   canvas.height = Math.round(viewport.height);
@@ -77,4 +77,23 @@ export async function sheetField(sheet: Sheet, width = 1000) {
   const dark = new Uint8Array(w * h);
   for (let i = 0; i < dark.length; i++) dark[i] = px[i * 4] * 0.3 + px[i * 4 + 1] * 0.59 + px[i * 4 + 2] * 0.11 < 150 ? 1 : 0;
   return { d: distanceField(dark, w, h), w, h };
+}
+
+/** 画像を長い辺が max 画素以内になるよう縮めた PNG にする（コンパスくんに送る用） */
+export async function shrink(sheet: Sheet, max = 1600): Promise<{ blob: Blob; width: number; height: number }> {
+  const img = new Image();
+  img.src = sheet.src;
+  await img.decode();
+  const k = Math.min(1, max / Math.max(sheet.width, sheet.height));
+  const width = Math.round(sheet.width * k);
+  const height = Math.round(sheet.height * k);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(img, 0, 0, width, height);
+  const blob = await new Promise<Blob>((ok) => canvas.toBlob((b) => ok(b!), "image/png"));
+  return { blob, width, height };
 }

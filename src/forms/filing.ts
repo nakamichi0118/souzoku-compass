@@ -194,8 +194,15 @@ export function buildFilingPages(c: Case, r: TaxResult): PageFill[] {
  */
 export function formsNotGenerated(c: Case, r: TaxResult): { form: string; reason: string }[] {
   const out: { form: string; reason: string }[] = [];
+  if (r.persons.some((p) => p.surcharge > 0))
+    out.push({ form: "第4表（相続税額の加算金額の計算書）", reason: "相続税が2割増しになる人（孫や兄弟姉妹など）がいます" });
+  if (r.persons.some((p) => p.giftTaxCredit > 0)) out.push({ form: "第4表の2（暦年課税分の贈与税額控除額の計算書）", reason: "贈与税額控除を使っています" });
   if (r.persons.some((p) => p.otherCredits > 0))
     out.push({ form: "第8の8表（税額控除額及び納付税額の計算書）", reason: "未成年者控除・障害者控除を使っています" });
-  if (r.persons.some((p) => p.giftTaxCredit > 0)) out.push({ form: "第4表の2（暦年課税分の贈与税額控除額の計算書）", reason: "贈与税額控除を使っています" });
+  // 小規模宅地等の特例を使う土地（マンションの敷地を含む）を2人以上で取得したときは、付表1に別表1を添える
+  if (r.assets.some((l) => l.small && l.byPerson.filter((b) => b.amount > 0).length > 1))
+    out.push({ form: "第11・11の2表の付表1（別表1）（小規模宅地等についての課税価格の計算明細）", reason: "小規模宅地等の特例を使う土地を2人以上で分けて取得しています" });
+  if (r.persons.some((p) => p.gifts > 0))
+    out.push({ form: "第14表（純資産価額に加算される暦年課税分の贈与財産価額などの明細書）", reason: "亡くなる前3年以内に受けた贈与を足しています" });
   return out;
 }

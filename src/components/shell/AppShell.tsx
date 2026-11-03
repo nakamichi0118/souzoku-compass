@@ -74,10 +74,7 @@ export function AppHeader() {
               <button
                 type="button"
                 className="block w-full rounded-lg px-3 py-2 text-left text-stone-600 hover:bg-stone-50"
-                onClick={() => {
-                  o.signOut();
-                  router.push("/");
-                }}
+                onClick={() => o.signOut()}
               >
                 ログアウト
               </button>

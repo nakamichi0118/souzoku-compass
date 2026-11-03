@@ -31,6 +31,11 @@ export interface HeirResult {
   count: number;
   /** 個人ごとの法定相続分（civil は相続人全員、tax は養子制限前の個人按分） */
   byPerson: Map<string, Fraction>;
+  /**
+   * 先に亡くなった子（孫）の代わりに相続人となった直系卑属（代襲相続人）の id。
+   * civil では実際に代襲が起きた人だけ（親が相続放棄した場合や本人が放棄した場合は含まない）。
+   */
+  substitutes: Set<string>;
   notes: string[];
 }
 
@@ -48,40 +53,71 @@ function excluded(p: Person, mode: Mode) {
   return mode === "civil" && !!p.renounced;
 }
 
-/** 被代襲者 p の枝を株分けで展開する。maxDepth は再代襲を何代まで認めるか */
-function expandStock(p: Person, all: Person[], mode: Mode, maxDepth: number): { person: Person; weight: Fraction }[] {
+/** 被代襲者 id → その代襲相続人（子）の一覧 */
+type SubsMap = Map<string, Person[]>;
+
+/**
+ * 被代襲者 p の枝を株分けで展開する。maxDepth は再代襲を何代まで認めるか。
+ * path は今たどっている枝の人の id（同じ人を二度たどらないための安全装置）。
+ */
+function expandStock(
+  p: Person,
+  subsOf: SubsMap,
+  mode: Mode,
+  maxDepth: number,
+  path: Set<string> = new Set(),
+): { person: Person; weight: Fraction }[] {
   if (excluded(p, mode)) return [];
   if (isAlive(p)) return [{ person: p, weight: ONE }];
-  if (maxDepth <= 0) return [];
-  const subs = all.filter((s) => s.substituteOf === p.id);
-  const branches = subs
-    .map((s) => expandStock(s, all, mode, maxDepth - 1))
+  if (maxDepth <= 0 || path.has(p.id)) return [];
+  const next = new Set(path).add(p.id);
+  const branches = (subsOf.get(p.id) ?? [])
+    .filter((s) => !next.has(s.id))
+    .map((s) => expandStock(s, subsOf, mode, maxDepth - 1, next))
     .filter((b) => b.length > 0);
   if (branches.length === 0) return [];
   const each = frac(1, branches.length);
   return branches.flatMap((b) => b.map((m) => ({ person: m.person, weight: mul(m.weight, each) })));
 }
 
-function buildStocks(roots: Person[], all: Person[], mode: Mode, maxDepth: number): Stock[] {
+function buildStocks(roots: Person[], subsOf: SubsMap, mode: Mode, maxDepth: number): Stock[] {
   return roots
     .map((root) => ({
       root,
-      members: expandStock(root, all, mode, maxDepth),
+      members: expandStock(root, subsOf, mode, maxDepth),
       limitedAdopted:
         root.relation === "adoptedChild" && isAlive(root) && !root.adoptedCountsAsBiological,
     }))
     .filter((s) => s.members.length > 0);
 }
 
-export function determineHeirs(persons: Person[], mode: Mode): HeirResult {
+/** 同じ id の人が重複していれば最初の1人だけを使う（壊れた入力でも計算が止まらないように） */
+function uniqueById(persons: Person[]): Person[] {
+  const seen = new Set<string>();
+  return persons.filter((p) => {
+    if (seen.has(p.id)) return false;
+    seen.add(p.id);
+    return true;
+  });
+}
+
+export function determineHeirs(input: Person[], mode: Mode): HeirResult {
   const notes: string[] = [];
+  const persons = uniqueById(input);
+  const subsOf: SubsMap = new Map();
+  for (const p of persons) {
+    if (!p.substituteOf || p.substituteOf === p.id) continue;
+    const list = subsOf.get(p.substituteOf);
+    if (list) list.push(p);
+    else subsOf.set(p.substituteOf, [p]);
+  }
   const spouse = persons.find((p) => p.relation === "spouse" && isAlive(p) && !excluded(p, mode));
 
   // 第1順位：子（代襲・再代襲あり）
   const childRoots = persons.filter(
     (p) => (p.relation === "child" || p.relation === "adoptedChild") && !p.substituteOf,
   );
-  const childStocks = buildStocks(childRoots, persons, mode, 10);
+  const childStocks = buildStocks(childRoots, subsOf, mode, 10);
 
   // 第2順位：直系尊属（親等の近い者）
   const parents = persons.filter((p) => p.relation === "parent" && isAlive(p) && !excluded(p, mode));
@@ -90,13 +126,14 @@ export function determineHeirs(persons: Person[], mode: Mode): HeirResult {
   );
   // 第3順位：兄弟姉妹（代襲は甥姪まで）
   const siblingRoots = persons.filter((p) => p.relation === "sibling" && !p.substituteOf);
-  const siblingStocks = buildStocks(siblingRoots, persons, mode, 1);
+  const siblingStocks = buildStocks(siblingRoots, subsOf, mode, 1);
 
   let rank: Rank = 0;
   let bloodShare = ZERO;
   let spouseShare = ONE;
   const slots: ShareSlot[] = [];
   const byPerson = new Map<string, Fraction>();
+  const substitutes = new Set<string>();
 
   const bloodTotal = (s: Fraction) => (spouse ? s : ONE);
 
@@ -121,6 +158,9 @@ export function determineHeirs(persons: Person[], mode: Mode): HeirResult {
     const pooledSlots = pooled.length > 0 ? (stocks.length > 0 ? 1 : 2) : 0;
     const slotCount = stocks.length + pooledSlots;
     const perStock = div(bloodShare, frac(slotCount));
+    for (const st of childStocks) {
+      for (const m of st.members) if (m.person.id !== st.root.id) substitutes.add(m.person.id);
+    }
     for (const st of stocks) {
       for (const m of st.members) {
         const share = mul(perStock, m.weight);
@@ -185,20 +225,25 @@ export function determineHeirs(persons: Person[], mode: Mode): HeirResult {
     slots,
     count: slots.length,
     byPerson,
+    substitutes,
     notes,
   };
 }
 
 /**
  * 相続税額の2割加算の対象か（相続税法18条）。
- * 一親等の血族（代襲相続人となった孫等を含む）と配偶者以外が対象。
+ * 一親等の血族（代襲して相続人となった孫等を含む）と配偶者以外が対象。
  * 孫養子は一親等の血族だが、代襲相続人でない限り加算対象（18条2項）。
+ * 代襲相続人かどうかは、実際に代襲が起きたか（民法上の相続人の判定）で決める。
+ * 親が相続放棄した孫や、自分が相続放棄した孫は代襲相続人ではないので加算対象になる。
+ *
+ * @param substituted 民法上の判定（determineHeirs(persons, "civil").substitutes）で代襲相続人となった人の id
  */
-export function isSurchargeTarget(p: Person): boolean {
+export function isSurchargeTarget(p: Person, substituted: ReadonlySet<string>): boolean {
   if (p.relation === "spouse" || p.relation === "parent") return false;
   if (p.relation === "child") return false;
-  if (p.relation === "adoptedChild") return !!p.grandchildAdopted && !p.substituteOf;
-  if ((p.relation === "grandchild" || p.relation === "greatGrandchild") && p.substituteOf) {
+  if (p.relation === "adoptedChild") return !!p.grandchildAdopted && !substituted.has(p.id);
+  if ((p.relation === "grandchild" || p.relation === "greatGrandchild") && substituted.has(p.id)) {
     return false;
   }
   return true;

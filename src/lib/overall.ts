@@ -1,19 +1,17 @@
 "use client";
 
-import { useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo } from "react";
 import { DOCS, type DocCategory } from "@/domain/procedures/documents";
-import { isValidDate } from "@/domain/procedures/dates";
+import { isValidDate, todayISO } from "@/domain/procedures/dates";
 import type { Interview, Verdict } from "@/domain/procedures/interview";
 import { buildTasks, type Task } from "@/domain/procedures/rules";
+import { hasRealEstate } from "@/domain/realEstate";
 import type { Case } from "@/domain/types";
-import { naId, usePlan } from "./planStore";
+import { naId, usePlan, type ItemStatus } from "./planStore";
 import { filingSteps } from "./progress";
 import { useCase } from "./store";
 
-export const todayISO = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
 
 export interface DocItem {
   id: string;
@@ -23,40 +21,50 @@ export interface DocItem {
   na: boolean;
 }
 
+/** 相続税申告の画面で「次へ」で終えたステップと、それで完了にするやることリストの項目 */
+const AUTO_DONE: [step: string, task: string][] = [
+  ["assets", "asset-valuation"],
+  ["division", "division"],
+];
+
+const NO_TASKS: Task[] = [];
+
 /** マイページ全体で使う集計（手続き・書類・相続税申告の進み具合） */
 export function useOverall() {
   const plan = usePlan();
-  const { data: c0 } = useCase();
-  // 相続税申告の画面で「次へ」で終えたステップは、やることリストの対応する項目も完了にする
-  const done = useMemo(() => {
-    const auto = [...(c0.progress?.completed.includes("assets") ? ["asset-valuation"] : []), ...(c0.progress?.completed.includes("division") ? ["division"] : [])];
-    return auto.length ? [...new Set([...plan.done, ...auto])] : plan.done;
-  }, [plan.done, c0.progress]);
-  const iv = useMemo(() => withAssets(plan.iv, c0), [plan.iv, c0]);
   const { data: c, result } = useCase();
-  const closed = (id: string) => done.includes(id) || done.includes(naId(id));
+  // 相続税申告の記録が、聞き取りと同じ相続（同じ亡くなった日）のものか
+  const sameCase = c.decedent.deathDate === plan.iv.deathDate;
+  const completed = c.progress?.completed;
+  // 相続税申告の画面で「次へ」で終えたステップは、やることリストの対応する項目も完了にする
+  const autoDone = useMemo(() => (sameCase && completed ? AUTO_DONE.filter(([step]) => completed.includes(step)).map(([, task]) => task) : []), [sameCase, completed]);
+  const done = useMemo(() => (autoDone.length ? [...new Set([...plan.done, ...autoDone])] : plan.done), [plan.done, autoDone]);
+  const statusOf = useCallback((id: string): ItemStatus => (done.includes(id) ? "done" : done.includes(naId(id)) ? "na" : "open"), [done]);
+  const closed = useCallback((id: string) => done.includes(id) || done.includes(naId(id)), [done]);
+  const iv = useMemo(() => withAssets(plan.iv, c), [plan.iv, c]);
   const valid = isValidDate(iv.deathDate);
   // 財産の入力を「次へ」で終えるまでは、途中の金額で判定が変わらないよう聞き取りの目安を使う
-  const linked = valid && c.decedent.deathDate === iv.deathDate && c.assets.length > 0 && !!result && !!c.progress?.completed.includes("assets") && result.blockers.length === 0;
+  const linked = valid && sameCase && c.assets.length > 0 && !!result && !!completed?.includes("assets") && result.blockers.length === 0;
   const precise = useMemo(
     () => (linked && result ? { taxable: result.totalTaxable, basic: result.basicDeduction, payable: result.totalPayable, needsFiling: result.needsFiling } : null),
     [linked, result],
   );
   const verdict: Verdict | undefined = precise ? (!precise.needsFiling ? "none" : precise.payable > 0 ? "likely" : "relief") : undefined;
   const built = useMemo(() => (valid ? buildTasks(iv, { verdict }) : null), [iv, valid, verdict]);
-  const tasks = built?.tasks ?? [];
+  const tasks = built?.tasks ?? NO_TASKS;
   const est = built?.est ?? null;
-  const main = tasks.filter((t) => !t.optional);
-  const steps = filingSteps(c.decedent.deathDate === iv.deathDate ? c : { ...c, progress: { completed: [] } }, result);
-  const filing = main.some((t) => t.id === "inheritance-tax");
+  const main = useMemo(() => tasks.filter((t) => !t.optional), [tasks]);
+  // 「不要」にした手続きを除いたもの。進み具合・書類・カレンダーはこれで数える
+  const live = useMemo(() => main.filter((t) => !done.includes(naId(t.id))), [main, done]);
+  const steps = useMemo(() => filingSteps(sameCase ? c : { ...c, progress: { completed: [] } }, result), [sameCase, c, result]);
+  const filing = live.some((t) => t.id === "inheritance-tax");
 
   const docs: DocItem[] = useMemo(() => {
     const m = new Map<string, Task[]>();
-    for (const t of main) for (const id of t.docs) if (DOCS[id]) m.set(id, [...(m.get(id) ?? []), t]);
+    for (const t of live) for (const id of t.docs) if (DOCS[id]) m.set(id, [...(m.get(id) ?? []), t]);
     return [...m.entries()].map(([id, used]) => ({ id, used, done: done.includes(`doc:${id}`), na: done.includes(naId(`doc:${id}`)) }));
-  }, [main, done]);
+  }, [live, done]);
 
-  const live = main.filter((t) => !done.includes(naId(t.id)));
   const liveDocs = docs.filter((d) => !d.na);
   const doneTasks = live.filter((t) => done.includes(t.id)).length;
   const doneSteps = filing ? steps.filter((s) => s.done).length : 0;
@@ -66,7 +74,6 @@ export function useOverall() {
   const pct = total ? Math.round((finished / total) * 100) : 0;
   const now = todayISO();
   const next = main.find((t) => !closed(t.id));
-  const urgent = main.filter((t) => !closed(t.id) && t.date <= addDaysISO(now, 7));
 
   const byCategory = useMemo(() => {
     const m = new Map<DocCategory, DocItem[]>();
@@ -77,13 +84,21 @@ export function useOverall() {
     return m;
   }, [docs]);
 
-  return { ...plan, done, iv, closed, live, valid, est, precise, verdict, tasks, main, steps, filing, docs, byCategory, doneTasks, doneSteps, doneDocs, total, finished, pct, now, next, urgent, case: c, result };
+  return { ...plan, done, autoDone, statusOf, iv, closed, live, valid, est, precise, verdict, tasks, main, steps, filing, docs, byCategory, doneTasks, doneSteps, doneDocs, total, finished, pct, now, next, case: c, result };
 }
 
-function addDaysISO(d: string, n: number) {
-  const x = new Date(d + "T00:00:00Z");
-  x.setUTCDate(x.getUTCDate() + n);
-  return x.toISOString().slice(0, 10);
+/**
+ * 聞き取りが済んでいない（または亡くなった日がない）ときは、マイページのトップへ戻す。
+ * 描画中に画面を移動しないよう、移動は effect で行う。戻り値が true のときだけ中身を表示する。
+ */
+export function useRequireHearing(o: { loaded: boolean; heard: boolean; valid: boolean }): boolean {
+  const router = useRouter();
+  const ready = o.loaded && o.heard && o.valid;
+  const leave = o.loaded && !ready;
+  useEffect(() => {
+    if (leave) router.replace("/my");
+  }, [leave, router]);
+  return ready;
 }
 
 /**
@@ -98,6 +113,6 @@ export function withAssets(iv: Interview, c: Case): Interview {
   if (!iv.deposits && has(["deposit", "cash"])) next.deposits = Math.max(1, sum(["deposit", "cash"]));
   if (!iv.securities && has(["listedStock", "unlistedStock"])) next.securities = 1;
   if (!iv.insurance && has(["insurance"])) next.insurance = Math.max(1, sum(["insurance"]));
-  if (!iv.homeValue && !iv.otherRealEstate && has(["land", "building", "condo"])) next.otherRealEstate = 1;
+  if (!iv.homeValue && !iv.otherRealEstate && hasRealEstate(c.assets)) next.otherRealEstate = 1;
   return next;
 }

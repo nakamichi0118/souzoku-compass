@@ -32,7 +32,13 @@ export async function verifyPassword(pw: string, stored: string): Promise<boolea
 }
 
 export const normalizeEmail = (e: string) => e.normalize("NFKC").trim().toLowerCase();
-export const validEmail = (e: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) && e.length <= 254;
+/**
+ * 長さを先に確かめる（長い文字列で正規表現を動かさない）。
+ * ドメインは「.」で区切った部分ごとに数えるため、どんな入力でも文字数に比例する時間で終わる。
+ */
+export const validEmail = (e: string) => e.length <= 254 && /^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$/.test(e);
+/** ログイン用のゆるい確認（以前の確認で登録できたアドレスはすべて通す。長さと「@」が1つあることだけを見る） */
+export const plausibleEmail = (e: string) => e.length <= 254 && /^[^@\s]+@[^@\s]+$/.test(e);
 /** 8文字以上、英字と数字を両方含む */
 export const passwordProblem = (pw: string): string | null =>
   pw.length < 8 ? "パスワードは8文字以上にしてください。" : pw.length > 128 ? "パスワードは128文字以内にしてください。" : !/[A-Za-z]/.test(pw) || !/\d/.test(pw) ? "パスワードには英字と数字を両方入れてください。" : null;
@@ -95,6 +101,8 @@ export async function endSession(token: string | undefined) {
 
 // ---------------------------------------------------------------- 総当たり対策（簡易）
 
-/** 同じ相手から10分に10回まで */
-export const tooManyAttempts = (key: string) => overLimit(key, 10, 10 * 60_000);
+/** 同じ相手から10分に max 回まで（既定は10回） */
+export const tooManyAttempts = (key: string, max = 10) => overLimit(key, max, 10 * 60_000);
 export const resetAttempts = (key: string) => resetLimit(key);
+/** ログインの失敗を数えるキー（接続元とメールアドレスの組。メールアドレスはハッシュにして短く持つ） */
+export const loginKey = (ip: string, email: string) => `login:${ip}:${createHash("sha256").update(normalizeEmail(email)).digest("base64url").slice(0, 22)}`;

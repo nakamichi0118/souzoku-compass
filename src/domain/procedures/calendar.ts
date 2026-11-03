@@ -5,8 +5,12 @@
 import { addDays } from "./dates";
 import type { Task } from "./rules";
 
-const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/;/g, "\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+/** TEXT の値のエスケープ（RFC 5545 3.3.11）：\ ; , と改行 */
+const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
 const compact = (d: string) => d.replace(/-/g, "");
+
+/** DTSTAMP 用の日時（UTC、例：20261103T091500Z） */
+export const icsStamp = (at: Date = new Date()) => at.toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
 
 /** 75オクテットを超える行を折り返す（UTF-8 の文字の途中では切らない） */
 function fold(line: string): string {

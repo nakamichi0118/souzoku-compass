@@ -4,9 +4,18 @@ import { Button, Card, Field, Note, Select, TextInput, YenInput, fmt } from "@/c
 import type { Debt } from "@/domain/types";
 import { newId, useCase } from "@/lib/store";
 
+/** 申告書（第13表）の「種類」。値は申告書の表記、表示は分かりやすい説明つき */
+const DEBT_TYPES: { value: NonNullable<Debt["debtType"]>; label: string }[] = [
+  { value: "公租公課", label: "公租公課（まだ納めていない税金・保険料）" },
+  { value: "銀行借入金", label: "銀行借入金（銀行などからの借入れ）" },
+  { value: "未払金", label: "未払金（医療費・公共料金などの支払い残り）" },
+  { value: "その他", label: "その他" },
+];
+
 export function DebtsStep() {
   const { data, update, result } = useCase();
   const living = data.persons.filter((p) => !p.predeceased);
+  const isLiving = (id: string) => living.some((p) => p.id === id);
   const add = (kind: Debt["kind"]) =>
     update((c) => ({ ...c, debts: [...c.debts, { id: newId(), kind, label: "", amount: 0, bearers: living[0] ? [{ personId: living[0].id, amount: 0 }] : [] }] }));
   const patch = (id: string, p: Partial<Debt>) => update((c) => ({ ...c, debts: c.debts.map((d) => (d.id === id ? { ...d, ...p } : d)) }));
@@ -48,20 +57,32 @@ export function DebtsStep() {
               <Field label="金額">
                 <YenInput value={d.amount} onChange={(v) => patch(d.id, { amount: v, bearers: d.bearers.length === 1 ? [{ ...d.bearers[0], amount: v }] : d.bearers })} />
               </Field>
+              {d.kind === "debt" && (
+                <Field label="種類" hint="申告書（第13表）に記載します">
+                  <Select
+                    value={d.debtType ?? ""}
+                    onChange={(v) => patch(d.id, { debtType: (v || undefined) as Debt["debtType"] })}
+                    options={[{ value: "", label: "選んでください" }, ...DEBT_TYPES]}
+                  />
+                </Field>
+              )}
             </div>
             <h3 className="mb-2 mt-4 text-sm font-bold text-stone-700">誰が負担しますか</h3>
             <div className="space-y-2">
               {d.bearers.map((b, i) => (
-                <div key={i} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2">
-                  <Select
-                    value={b.personId}
-                    onChange={(v) => patch(d.id, { bearers: d.bearers.map((x, j) => (j === i ? { ...x, personId: v } : x)) })}
-                    options={living.map((p) => ({ value: p.id, label: p.name || "（未入力）" }))}
-                  />
-                  <YenInput value={b.amount} onChange={(v) => patch(d.id, { bearers: d.bearers.map((x, j) => (j === i ? { ...x, amount: v } : x)) })} />
-                  <Button variant="danger" onClick={() => patch(d.id, { bearers: d.bearers.filter((_, j) => j !== i) })}>
-                    ×
-                  </Button>
+                <div key={i}>
+                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2">
+                    <Select
+                      value={isLiving(b.personId) ? b.personId : ""}
+                      onChange={(v) => patch(d.id, { bearers: d.bearers.map((x, j) => (j === i ? { ...x, personId: v } : x)) })}
+                      options={[{ value: "", label: "選んでください" }, ...living.map((p) => ({ value: p.id, label: p.name || "（未入力）" }))]}
+                    />
+                    <YenInput value={b.amount} onChange={(v) => patch(d.id, { bearers: d.bearers.map((x, j) => (j === i ? { ...x, amount: v } : x)) })} />
+                    <Button variant="danger" onClick={() => patch(d.id, { bearers: d.bearers.filter((_, j) => j !== i) })}>
+                      ×
+                    </Button>
+                  </div>
+                  {!isLiving(b.personId) && <p className="mt-1 text-xs font-medium text-amber-800">負担する人を選んでください。選ぶまで相続税の計算を確定できません。</p>}
                 </div>
               ))}
               <Button variant="ghost" onClick={() => patch(d.id, { bearers: [...d.bearers, { personId: living[0]?.id ?? "", amount: 0 }] })}>
@@ -89,8 +110,8 @@ export function DebtsStep() {
             const set = (p: Partial<typeof g>) => update((c) => ({ ...c, priorGifts: c.priorGifts.map((x, j) => (j === i ? { ...x, ...p } : x)) }));
             return (
               <div key={i} className="grid items-end gap-2 rounded-lg border border-stone-200 p-2 sm:grid-cols-[1fr_10rem_1fr_1fr_auto]">
-                <Field label="受け取った人">
-                  <Select value={g.personId} onChange={(v) => set({ personId: v })} options={[{ value: "", label: "選んでください" }, ...living.map((p) => ({ value: p.id, label: p.name || "（未入力）" }))]} />
+                <Field label="受け取った人" hint={g.personId && !isLiving(g.personId) ? "選ばれていた人は一覧にいないか、先に亡くなっています。選び直してください" : undefined}>
+                  <Select value={isLiving(g.personId) ? g.personId : ""} onChange={(v) => set({ personId: v })} options={[{ value: "", label: "選んでください" }, ...living.map((p) => ({ value: p.id, label: p.name || "（未入力）" }))]} />
                 </Field>
                 <Field label="贈与の日">
                   <TextInput type="date" value={g.date} onChange={(e) => set({ date: e.target.value })} />
@@ -110,7 +131,9 @@ export function DebtsStep() {
           <Button variant="secondary" onClick={() => update((c) => ({ ...c, priorGifts: [...c.priorGifts, { personId: living[0]?.id ?? "", date: "", amount: 0, giftTaxPaid: 0 }] }))}>
             ＋ 贈与を追加
           </Button>
-          {data.priorGifts.some((g) => !g.personId || !g.date) && <Note tone="warn">受け取った人と贈与の日を入れてください。入れるまで計算に入りません。</Note>}
+          {data.priorGifts.some((g) => !isLiving(g.personId) || !g.date) && (
+            <Note tone="warn">受け取った人と贈与の日を入れてください。入れるまで相続税の計算を確定できず、申告書も作れません。</Note>
+          )}
         </div>
       </Card>
     </div>

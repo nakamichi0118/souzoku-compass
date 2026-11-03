@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { Asset, Case, Debt, Person, PriorGift } from "@/domain/types";
+import type { Asset, Case, Debt, LandMethod, Person, PriorGift } from "@/domain/types";
 
 /** /api/extract が返す、書類から読み取った候補 */
 export interface ExtractedAsset {
@@ -82,6 +82,15 @@ export function matchPerson(name: string | null | undefined, persons: Person[]):
 }
 
 const pos = (v: number | null | undefined) => (typeof v === "number" && v > 0 ? v : 0);
+/** 空でない文字列か（書類から読めた文字だけを使うため） */
+const has = (s: string | null | undefined): s is string => typeof s === "string" && s.trim() !== "";
+/** YYYY-MM-DD の形で、実在する日付だけを通す（それ以外は「読めなかった」として扱う） */
+export function isoDate(s: string | null | undefined): string {
+  const t = (s ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) return "";
+  const d = new Date(`${t}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === t ? t : "";
+}
 
 /** 書類から読み取れなかったため、登録後に確かめる・入れる項目 */
 export function missingItems(x: ExtractedAsset, persons: Person[]): string[] {
@@ -104,7 +113,7 @@ export function missingItems(x: ExtractedAsset, persons: Person[]): string[] {
   if ((x.kind === "debt" || x.kind === "funeral") && !matchPerson(x.personName, persons)) m.push("負担する人");
   if (x.kind === "gift") {
     if (!matchPerson(x.personName, persons)) m.push("贈与を受けた人");
-    if (!x.date) m.push("贈与の日");
+    if (!isoDate(x.date)) m.push("贈与の日");
   }
   if (x.amount == null && ["deposit", "cash", "insurance", "debt", "funeral", "gift", "other"].includes(x.kind)) m.push("金額");
   return m;
@@ -168,7 +177,8 @@ export function toDebt(x: ExtractedAsset, persons: Person[]): Debt {
 }
 
 export function toGift(x: ExtractedAsset, persons: Person[]): PriorGift {
-  return { personId: matchPerson(x.personName, persons)?.id ?? "", date: x.date ?? "", amount: pos(x.amount), giftTaxPaid: pos(x.giftTaxPaid) };
+  // 受け取った人・贈与の日が読めなければ空のまま登録する（贈与の入力欄で「入れてください」と表示され、入れるまで申告書は作れない）
+  return { personId: matchPerson(x.personName, persons)?.id ?? "", date: isoDate(x.date), amount: pos(x.amount), giftTaxPaid: pos(x.giftTaxPaid) };
 }
 
 export type Ref = { type: "asset" | "debt"; id: string } | { type: "gift"; index: number };
@@ -201,31 +211,182 @@ export function findSame(x: ExtractedAsset, c: Case): Ref | undefined {
   return a ? { type: "asset", id: a.id } : undefined;
 }
 
-/** 読み取った候補を登録する。replace があれば、その既存の項目を読み取った内容で更新する（id は残す） */
+/** 土地の評価方法が、評価額を出せるだけそろっているか（valueLand と同じ条件） */
+function methodReady(m: LandMethod): boolean {
+  if (m.type === "rosenka") return m.roads?.length ? m.roads.every((r) => r.price > 0 && r.depth > 0) : m.routePrice > 0 && m.depthCorrection > 0;
+  if (m.type === "multiplier") return m.fixedAssetValue > 0 && m.multiplier > 0;
+  return m.value > 0;
+}
+
+/** 「確認待ち」の項目ごとに、登録済みの値でもう埋まっているかを確かめる */
+const PENDING_RULES: [RegExp, (a: Asset, living: Set<string>) => boolean][] = [
+  [/^地積/, (a) => a.kind === "land" && a.areaSqm > 0],
+  [/^(奥行と地区区分|路線価または倍率)/, (a) => a.kind === "land" && methodReady(a.method)],
+  [/^受取人/, (a, living) => (a.kind === "insurance" || a.kind === "retirement") && living.has(a.recipientId)],
+  [/^株数/, (a) => a.kind === "listedStock" && a.shares > 0],
+  [/^4つの価格/, (a) => a.kind === "listedStock" && [a.prices.close, a.prices.monthAvg, a.prices.prevMonthAvg, a.prices.prev2MonthAvg].every((v) => v > 0)],
+  [
+    /^区分所有補正/,
+    (a) => a.kind === "condo" && a.exclusiveAreaSqm > 0 && a.landShareSqm > 0 && a.totalFloors > 0 && a.floor > 0 && (a.builtYearsMonths.years > 0 || a.builtYearsMonths.months > 0),
+  ],
+  [/^敷地利用権/, (a) => a.kind === "condo" && a.landValueBeforeCorrection > 0],
+  [/^金額/, (a) => "amount" in a && a.amount > 0],
+];
+
+/** 書類から分からなかった項目と前から残っていた確認待ちのうち、まだ埋まっていないものだけを残す */
+function stillPending(items: string[], a: Asset, persons: Person[]): string[] {
+  const living = new Set(persons.filter((p) => !p.predeceased).map((p) => p.id));
+  const seen = new Set<number | string>();
+  const out: string[] = [];
+  for (const item of items) {
+    const i = PENDING_RULES.findIndex(([re]) => re.test(item));
+    if (i >= 0 && PENDING_RULES[i][1](a, living)) continue;
+    const key = i >= 0 ? i : item;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
+/**
+ * 登録済みの財産に、書類から読めた値だけを重ねる。
+ * 読めなかった項目（null・0・空）と、書類にない入力（分け方・特例・地図の枠など）は、登録済みの値のまま残す。
+ * 種類が違うときは null（上書きせず別の財産として登録する）。
+ */
+function mergeAsset(old: Asset, x: ExtractedAsset, persons: Person[]): Asset | null {
+  const fresh = toAsset(x, persons);
+  if (fresh.kind !== old.kind) return null;
+  const reg = { ...(has(x.lotNumber) ? { lotNumber: x.lotNumber } : {}), ...(has(x.houseNumber) ? { houseNumber: x.houseNumber } : {}), ...(pos(x.fixedAssetValue) ? { assessedValue: pos(x.fixedAssetValue) } : {}) };
+  const location = has(x.location) ? { location: x.location } : {};
+  let m: Asset;
+  switch (old.kind) {
+    case "land": {
+      const om = old.method;
+      const rp = pos(x.routePrice);
+      // 地図で入れた土地の形や奥行は、評価がまだそろっていなくても消さない
+      const drawn = om.type === "rosenka" && (!!om.lot || !!om.shape?.length || !!om.roads?.some((r) => r.depth > 0));
+      const method: LandMethod =
+        fresh.kind === "land" && rp && !methodReady(om) && !drawn
+          ? fresh.method
+          : om.type === "multiplier" && pos(x.fixedAssetValue)
+            ? { ...om, fixedAssetValue: pos(x.fixedAssetValue) }
+            : om;
+      m = { ...old, ...location, ...(pos(x.areaSqm) ? { areaSqm: pos(x.areaSqm) } : {}), method, registry: { ...old.registry, ...reg } };
+      break;
+    }
+    case "building":
+      m = { ...old, ...location, ...(pos(x.fixedAssetValue) ? { fixedAssetValue: pos(x.fixedAssetValue) } : {}), registry: { ...old.registry, ...reg } };
+      break;
+    case "condo": {
+      const c = x.condo;
+      const bfv = pos(c?.buildingFixedAssetValue) || pos(x.fixedAssetValue);
+      m = {
+        ...old,
+        ...location,
+        ...(pos(c?.landValueBeforeCorrection) ? { landValueBeforeCorrection: pos(c?.landValueBeforeCorrection) } : {}),
+        ...(bfv ? { buildingFixedAssetValue: bfv } : {}),
+        ...(c?.builtYears != null ? { builtYearsMonths: { years: c.builtYears, months: c.builtMonths ?? 0 } } : {}),
+        ...(pos(c?.totalFloors) ? { totalFloors: pos(c?.totalFloors) } : {}),
+        ...(c?.floor != null ? { floor: c.floor } : {}),
+        ...(pos(c?.landShareSqm) ? { landShareSqm: pos(c?.landShareSqm) } : {}),
+        ...(pos(c?.exclusiveAreaSqm) ? { exclusiveAreaSqm: pos(c?.exclusiveAreaSqm) } : {}),
+        registry: { ...old.registry, ...reg },
+      };
+      break;
+    }
+    case "insurance":
+    case "retirement": {
+      const who = matchPerson(x.personName, persons);
+      m = { ...old, ...(pos(x.amount) ? { amount: pos(x.amount) } : {}), ...(who ? { recipientId: who.id } : {}) };
+      break;
+    }
+    case "listedStock": {
+      const p = x.prices;
+      const pick = (v: number | null | undefined, cur: number) => pos(v) || cur;
+      m = {
+        ...old,
+        ...(pos(x.shares) ? { shares: pos(x.shares) } : {}),
+        prices: {
+          close: pick(p?.close, old.prices.close),
+          monthAvg: pick(p?.monthAvg, old.prices.monthAvg),
+          prevMonthAvg: pick(p?.prevMonthAvg, old.prices.prevMonthAvg),
+          prev2MonthAvg: pick(p?.prev2MonthAvg, old.prices.prev2MonthAvg),
+        },
+      };
+      break;
+    }
+    case "deposit":
+    case "cash":
+    case "household":
+    case "other":
+      m = {
+        ...old,
+        ...(pos(x.amount) ? { amount: pos(x.amount) } : {}),
+        ...(typeof x.accruedInterest === "number" && x.accruedInterest >= 0 ? { accruedInterest: x.accruedInterest } : {}),
+        ...(has(x.institution) ? { institution: x.institution } : {}),
+        ...(has(x.branch) ? { branch: x.branch } : {}),
+        ...(has(x.accountType) ? { accountType: x.accountType } : {}),
+      };
+      break;
+    default:
+      return null;
+  }
+  m.label = old.label || fresh.label;
+  // 確認待ちは、重ねたあとの値で数え直す（書類で埋まった項目は外し、まだ空の項目は残す）
+  const pending = stillPending([...missingItems(x, persons), ...(old.pending ?? [])], m, persons);
+  if (pending.length) m.pending = pending;
+  else delete m.pending;
+  return m;
+}
+
+/** 登録済みの債務・葬式費用に、書類から読めた値だけを重ねる */
+function mergeDebt(old: Debt, x: ExtractedAsset, persons: Person[]): Debt {
+  const who = matchPerson(x.personName, persons);
+  const amount = pos(x.amount) || old.amount;
+  let bearers = old.bearers;
+  // 負担する人を自分で分けていた（2人以上）ときは、その分け方を残す
+  if (who && bearers.length <= 1) bearers = [{ personId: who.id, amount }];
+  else if (!who && bearers.length === 1 && bearers[0].amount === old.amount) bearers = [{ ...bearers[0], amount }];
+  return { ...old, label: old.label || x.label, amount, ...(has(x.institution) ? { creditor: x.institution } : {}), bearers };
+}
+
+/** 登録済みの贈与に、書類から読めた値だけを重ねる */
+function mergeGift(old: PriorGift, x: ExtractedAsset, persons: Person[]): PriorGift {
+  const who = matchPerson(x.personName, persons);
+  const date = isoDate(x.date);
+  return {
+    ...old,
+    ...(who ? { personId: who.id } : {}),
+    ...(date ? { date } : {}),
+    ...(pos(x.amount) ? { amount: pos(x.amount) } : {}),
+    ...(typeof x.giftTaxPaid === "number" && x.giftTaxPaid >= 0 ? { giftTaxPaid: x.giftTaxPaid } : {}),
+  };
+}
+
+/** 読み取った候補を登録する。replace があれば、その既存の項目に読み取れた値だけを重ねる（id は残す） */
 export function applyExtracted(c: Case, x: ExtractedAsset, replace?: Ref): { next: Case; ref: Ref } {
   if (x.kind === "debt" || x.kind === "funeral") {
-    const d = toDebt(x, c.persons);
-    if (replace?.type === "debt") {
-      const old = c.debts.find((y) => y.id === replace.id);
-      const merged = { ...d, id: replace.id, creditorAddress: old?.creditorAddress, bearers: d.bearers.length ? d.bearers : (old?.bearers ?? []) };
-      return { next: { ...c, debts: c.debts.map((y) => (y.id === replace.id ? merged : y)) }, ref: replace };
+    const old = replace?.type === "debt" ? c.debts.find((y) => y.id === replace.id) : undefined;
+    if (old && replace) {
+      const merged = mergeDebt(old, x, c.persons);
+      return { next: { ...c, debts: c.debts.map((y) => (y.id === old.id ? merged : y)) }, ref: replace };
     }
+    const d = toDebt(x, c.persons);
     return { next: { ...c, debts: [...c.debts, d] }, ref: { type: "debt", id: d.id } };
   }
   if (x.kind === "gift") {
-    const g = toGift(x, c.persons);
-    if (replace?.type === "gift") return { next: { ...c, priorGifts: c.priorGifts.map((y, i) => (i === replace.index ? g : y)) }, ref: replace };
-    return { next: { ...c, priorGifts: [...c.priorGifts, g] }, ref: { type: "gift", index: c.priorGifts.length } };
+    if (replace?.type === "gift" && replace.index < c.priorGifts.length) {
+      const merged = mergeGift(c.priorGifts[replace.index], x, c.persons);
+      return { next: { ...c, priorGifts: c.priorGifts.map((y, i) => (i === replace.index ? merged : y)) }, ref: replace };
+    }
+    return { next: { ...c, priorGifts: [...c.priorGifts, toGift(x, c.persons)] }, ref: { type: "gift", index: c.priorGifts.length } };
   }
+  const old = replace?.type === "asset" ? c.assets.find((y) => y.id === replace.id) : undefined;
+  const merged = old ? mergeAsset(old, x, c.persons) : null;
+  if (old && merged && replace) return { next: { ...c, assets: c.assets.map((y) => (y.id === old.id ? merged : y)) }, ref: replace };
+  // 更新する相手が見つからない・種類が違うときは、消さずに別の財産として登録する
   const a = toAsset(x, c.persons);
-  if (replace?.type === "asset") {
-    const old = c.assets.find((y) => y.id === replace.id);
-    // 書類から読めた値で更新し、書類にない入力（分け方・特例・地図の枠など）は残す
-    const merged = { ...(old ?? {}), ...a, id: replace.id, label: old?.label || a.label } as Asset;
-    if (old && (old.kind === "land" || old.kind === "condo") && "smallResidential" in old) (merged as typeof old).smallResidential = old.smallResidential;
-    if (old?.kind === "land" && merged.kind === "land" && old.method.type === "rosenka" && (old.method.roads?.some((r) => r.depth > 0) || old.method.lot)) merged.method = old.method;
-    return { next: { ...c, assets: c.assets.map((y) => (y.id === replace.id ? merged : y)) }, ref: replace };
-  }
   return { next: { ...c, assets: [...c.assets, a] }, ref: { type: "asset", id: a.id } };
 }
 

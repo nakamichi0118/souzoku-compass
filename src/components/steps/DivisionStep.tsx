@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import { Button, Card, Note, fmt } from "@/components/ui";
-import { determineHeirs } from "@/domain/heirs";
+import { civilHeirIds, determineHeirs } from "@/domain/heirs";
 import type { Allocation, Person } from "@/domain/types";
 import { useCase } from "@/lib/store";
 import { kindLabel } from "./AssetsStep";
 
 function parseShare(s: string): { n: number; d: number } | null {
-  const t = s.trim().replace(/[／]/g, "/");
+  // 全角の数字や「／」で入力されても読めるように、半角にそろえる
+  const t = s.normalize("NFKC").trim();
   if (!t) return null;
   const m = t.match(/^(\d+)\s*\/\s*(\d+)$/);
   if (m && Number(m[2]) > 0) return { n: Number(m[1]), d: Number(m[2]) };
@@ -35,6 +36,15 @@ export function DivisionStep() {
   const { data, update, result } = useCase();
   const heirs = data.persons.filter((p) => !p.predeceased);
   const divisible = data.assets.filter((a) => a.kind !== "insurance" && a.kind !== "retirement");
+  // 「均等に分ける」の対象は、相続放棄をしていない民法上の相続人だけ（相続人でない人・放棄した人は含めない）
+  const evenHeirs = (() => {
+    try {
+      const ids = civilHeirIds(data.persons);
+      return heirs.filter((h) => ids.has(h.id));
+    } catch {
+      return [];
+    }
+  })();
 
   const byLegalShare = () => {
     const civil = determineHeirs(data.persons, "civil");
@@ -53,7 +63,7 @@ export function DivisionStep() {
       {heirs.length === 0 && <Note tone="warn">先に「相続人」で家族を登録してください。</Note>}
       <ol className="space-y-4">
         {divisible.map((a, i) => (
-          <AssetChoice key={a.id} no={i + 1} assetId={a.id} heirs={heirs} />
+          <AssetChoice key={a.id} no={i + 1} assetId={a.id} heirs={heirs} evenHeirs={evenHeirs} />
         ))}
       </ol>
 
@@ -79,8 +89,8 @@ export function DivisionStep() {
           )}
         </Card>
       )}
-      {result?.warnings.map((w) => (
-        <Note key={w} tone="warn">
+      {result?.warnings.map((w, i) => (
+        <Note key={`${i}:${w}`} tone="warn">
           {w}
         </Note>
       ))}
@@ -91,14 +101,17 @@ export function DivisionStep() {
 type ChoiceMode = "one" | "many" | "undecided";
 
 /** 財産1件の分け方：「1人が全部」「複数人で分ける」「まだ決まっていない」から選ぶ */
-function AssetChoice({ no, assetId, heirs }: { no: number; assetId: string; heirs: Person[] }) {
+function AssetChoice({ no, assetId, heirs, evenHeirs }: { no: number; assetId: string; heirs: Person[]; evenHeirs: Person[] }) {
   const { data, update, result } = useCase();
   const a = data.assets.find((x) => x.id === assetId)!;
   const alloc = data.allocations.find((x) => x.assetId === assetId);
   const shares = alloc?.shares ?? [];
   const derived: ChoiceMode | null = shares.length === 0 ? (alloc ? "undecided" : null) : shares.length === 1 && shares[0].numerator === shares[0].denominator ? "one" : "many";
   const [picked, setPicked] = useState<ChoiceMode | null>(null);
-  const mode = picked ?? derived;
+  // 選んだ分け方は、保存されている内容と食い違わないときだけ使う
+  // （「すべて法定相続分どおりにする」などで中身が変わったら、中身のほうを表示する）
+  const fits = (m: ChoiceMode) => m === "many" || shares.length === 0 || m === derived;
+  const mode = picked && fits(picked) ? picked : derived;
   const total = shares.reduce((s, x) => s + x.numerator / x.denominator, 0);
   const line = result?.assets.find((l) => l.asset.id === assetId);
 
@@ -106,10 +119,15 @@ function AssetChoice({ no, assetId, heirs }: { no: number; assetId: string; heir
     update((c) => ({ ...c, allocations: [...c.allocations.filter((x) => x.assetId !== assetId), { assetId, shares: next }] }));
   const setOne = (personId: string, text: string) => {
     const p = parseShare(text);
+    // 読み取れない入力のときは、いまの割合を消さずにそのまま残す（欄は赤く表示される）
+    if (!p && text.trim() !== "") return;
     const others = shares.filter((s) => s.personId !== personId);
     setAlloc(p && p.n > 0 ? [...others, { personId, numerator: p.n, denominator: p.d }] : others);
   };
-  const even = () => setAlloc(heirs.map((h) => ({ personId: h.id, numerator: 1, denominator: heirs.length })));
+  const even = () => {
+    if (evenHeirs.length === 0) return;
+    setAlloc(evenHeirs.map((h) => ({ personId: h.id, numerator: 1, denominator: evenHeirs.length })));
+  };
 
   const choose = (m: ChoiceMode) => {
     setPicked(m);
@@ -170,8 +188,8 @@ function AssetChoice({ no, assetId, heirs }: { no: number; assetId: string; heir
             ))}
           </ul>
           <div className="flex items-center justify-between">
-            <button type="button" onClick={even} className="text-sm text-sky-800 underline">
-              全員で均等に分ける
+            <button type="button" onClick={even} disabled={evenHeirs.length === 0} className="text-sm text-sky-800 underline disabled:text-stone-400 disabled:no-underline">
+              相続人全員で均等に分ける
             </button>
             {shares.length > 0 && Math.abs(total - 1) > 1e-9 && <span className="text-xs text-red-700">合計が1になっていません（いま {Math.round(total * 1000) / 1000}）</span>}
           </div>

@@ -5,7 +5,7 @@
  */
 import type { PersonTax, TaxResult } from "@/domain/tax/engine";
 import type { Case, DeemedAsset } from "@/domain/types";
-import { ageAt, yen } from "./format";
+import { yen } from "./format";
 import type { PageFill } from "./render";
 
 const chunk = <T,>(xs: T[], n: number): T[][] => {
@@ -63,12 +63,12 @@ export const build10 = (c: Case, r: TaxResult) => deemedPages(c, r, "retirement"
 
 // ---------------------------------------------------------------- 第6表
 
-/** 第6表③：第1表の（⑨＋⑪－⑫－⑬）の相続税額（贈与税額控除・配偶者の税額軽減の後） */
-export const beforeOtherCredits = (p: PersonTax) => Math.max(0, p.computed + p.surcharge - p.giftTaxCredit - p.spouseCredit);
+/** 第6表③：第1表の（⑨＋⑪－⑫－⑬）の相続税額（贈与税額控除・配偶者の税額軽減の後）。エンジンの値をそのまま使う */
+export const beforeOtherCredits = (p: PersonTax) => p.beforeOtherCredits;
 
 export function build06(c: Case, r: TaxResult): PageFill[] {
-  const at = c.decedent.deathDate;
-  const age = (p: PersonTax) => ageAt(p.person.birthDate, at) ?? 0;
+  // 相続開始時の年齢はエンジンが計算したもの（亡くなった後に生まれた子は0歳）
+  const age = (p: PersonTax) => p.age ?? 0;
   const minors = r.persons.filter((p) => p.minorCredit + p.minorExcess > 0);
   const disabled = r.persons.filter((p) => p.disabilityCredit + p.disabilityExcess > 0);
   if (minors.length === 0 && disabled.length === 0) return [];
@@ -116,16 +116,39 @@ export function build06(c: Case, r: TaxResult): PageFill[] {
 
 // ---------------------------------------------------------------- 付表1
 
+/**
+ * 1 特例の適用にあたっての同意：特例の対象となり得る宅地等を取得した全員の氏名（措置法施行令40条の2第5項3号）。
+ * 特例を受ける人だけでなく、自宅の敷地として特例の取得者を選んだ土地・マンションを一緒に取得した人も含める。
+ * 並びは申告書の人の順。
+ */
+export function agreeingPersonIds(r: TaxResult): string[] {
+  const ids = new Set<string>();
+  for (const l of r.assets) {
+    if (l.small && l.reduction > 0) ids.add(l.small.acquirerId);
+    const a = l.asset;
+    if ((a.kind === "land" || a.kind === "condo") && a.smallResidential?.acquirerId) {
+      for (const b of l.byPerson) if (b.amount > 0) ids.add(b.personId);
+    }
+  }
+  const order = new Map(r.persons.map((p, i) => [p.person.id, i]));
+  const pos = (id: string) => order.get(id) ?? Number.MAX_SAFE_INTEGER;
+  return [...ids].sort((x, y) => pos(x) - pos(y));
+}
+
 export function buildF1(c: Case, r: TaxResult): PageFill[] {
   const lots = r.assets.filter((l) => l.small && l.reduction > 0);
   if (lots.length === 0) return [];
   const name = new Map(c.persons.map((p) => [p.id, p.name]));
-  // 1 特例の適用にあたっての同意：対象となり得る宅地等を取得した全員（ここでは特例を受ける取得者）
-  const agree = [...new Set(lots.map((l) => l.small!.acquirerId))].map((id) => name.get(id) ?? "");
+  const agree = agreeingPersonIds(r).map((id) => name.get(id) ?? "");
   const selected = sum(lots.map((l) => l.small!.selectedArea));
-  return chunk(lots, 3).map((group, i) => {
+  // 同意欄は1枚に6人まで。7人以上なら2枚目以降の付表1に続けて書く（黙って省かない）
+  const lotPages = chunk(lots, 3);
+  const agreePages = chunk(agree, 6);
+  const n = Math.max(lotPages.length, agreePages.length);
+  return Array.from({ length: n }, (_, i) => {
+    const group = lotPages[i] ?? [];
     const values: PageFill["values"] = { "d.name": c.decedent.name };
-    if (i === 0) agree.slice(0, 6).forEach((n, j) => (values[`agree${j}`] = n));
+    (agreePages[i] ?? []).forEach((who, j) => (values[`agree${j}`] = who));
     group.forEach((l, j) => {
       const s = l.small!;
       values[`b${j}.kind`] = "1"; // 特定居住用宅地等

@@ -1,10 +1,11 @@
 "use client";
 
 /** 土地の入力（評価方法・面している道路と路線価）と、小規模宅地等の特例の確認 */
+import { MapPin } from "lucide-react";
 import Link from "next/link";
 import { ConsultLink } from "@/components/compass/ConsultLink";
 import { Choice } from "@/components/plan/inputs";
-import { Button, Check, Field, Note, NumInput, Select, TextInput, YenInput, fmt } from "@/components/ui";
+import { Button, Check, Field, Note, NumInput, OptionalNumInput, Select, TextInput, YenInput, fmt } from "@/components/ui";
 import type { Asset, LandAsset, Person } from "@/domain/types";
 import { DISTRICTS, type District } from "@/domain/valuation/depth";
 import { type Edge, type RoadInput, evaluateRoads } from "@/domain/valuation/roads";
@@ -45,7 +46,12 @@ export function SmallResidential({ living, a, patch }: { living: Person[]; a: Ex
         ask("special", "老人ホームへの入居、二世帯住宅、建物の一部を貸していた などの事情はありますか？", "亡くなる前に老人ホームへ入っていた場合や、二世帯住宅の場合は、使える範囲の判断が変わります。")}
       {check.ownHome === "yes" && check.special === "no" && (
         <Field label="この土地を取得する人" hint="遺産の分け方で決めた人を選んでください。">
-          <Select value={sr.acquirerId ?? ""} onChange={(v) => set({ acquirerId: v })} options={[{ value: "", label: "選んでください" }, ...living.map((p) => ({ value: p.id, label: `${p.name || "（未入力）"}（${p.relationLabel ?? ""}）` }))]} />
+          <Select
+            value={sr.acquirerId ?? ""}
+            // 取得する人を変えたら、前の人についての答え（同居・住み続けるか）と税理士への確認は引き継がない
+            onChange={(v) => v !== (sr.acquirerId ?? "") && set({ acquirerId: v, check: { ownHome: check.ownHome, special: check.special } })}
+            options={[{ value: "", label: "選んでください" }, ...living.map((p) => ({ value: p.id, label: `${p.name || "（未入力）"}（${p.relationLabel ?? ""}）` }))]}
+          />
         </Field>
       )}
       {check.ownHome === "yes" && check.special === "no" && acquirer && !isSpouse && (
@@ -86,6 +92,8 @@ function RoadsEditor({ a, m, patch }: { a: LandAsset; m: RosenkaMethod; patch: (
   const free = ([0, 1, 2, 3] as Edge[]).filter((e) => !used.has(e));
   const ev = evaluateRoads(district, roads);
   const role = (e: Edge) => ev?.lines.find((l) => l.edge === e)?.role;
+  // 路線価か奥行が入っていない道路があると評価額は確定しない（その道路を外して低く計算しないため）
+  const incomplete = !!m.roads?.length && m.roads.some((r) => !(r.price > 0) || !(r.depth > 0));
   return (
     <div className="space-y-3 sm:col-span-2">
       <Field label="地区区分" hint="路線価図で路線価を囲む記号の形で決まります（記号がなければ普通住宅地区）">
@@ -124,7 +132,8 @@ function RoadsEditor({ a, m, patch }: { a: LandAsset; m: RosenkaMethod; patch: (
         )}
         <p className="text-xs text-stone-500">路線価図の数字は千円単位です（例：「420D」→ 420,000円）。奥行は、その道路から土地の反対側までの距離です。</p>
       </div>
-      {ev && (
+      {incomplete && <Note tone="warn">路線価か奥行が入っていない道路があります。すべての道路に入れるまで評価額は計算しません。面していない道路は「削除」してください。</Note>}
+      {ev && !incomplete && (
         <div className="rounded-lg bg-teal-50 p-3 text-sm text-teal-950">
           <p className="font-semibold">1㎡あたり {fmt(ev.perSqm)}円</p>
           {ev.lines.length > 1 && <p className="text-xs">正面は、路線価×奥行価格補正率がいちばん高い道路です（財産評価基本通達16）。</p>}
@@ -136,8 +145,13 @@ function RoadsEditor({ a, m, patch }: { a: LandAsset; m: RosenkaMethod; patch: (
           <ConsultLink topic="土地の評価" />
         </span>
       </Note>
-      <Field label="税理士に確認した補正率（任意）" hint="不整形地・間口狭小などの補正率を税理士に確認した場合だけ入力。通常は1">
-        <NumInput value={m.otherCorrection ?? 1} onChange={(v) => patch({ method: { ...m, otherCorrection: v } })} />
+      <Field label="税理士に確認した補正率（任意）" hint="不整形地・間口狭小などの補正率を税理士に確認した場合だけ、0より大きく1以下の数（例：0.92）を入力。空欄なら補正なしで計算します">
+        <OptionalNumInput
+          value={m.otherCorrection}
+          accept={(v) => v > 0 && v <= 1}
+          onChange={(v) => patch({ method: { ...m, otherCorrection: v } })}
+          invalidMessage="補正率は1以下の数です。いまはこの値を使わず、補正なしで計算しています。"
+        />
       </Field>
       {a.method.type === "rosenka" && a.method.lot && <p className="text-xs text-stone-500">地図で合わせた枠：間口{a.method.lot.width}m × 奥行{a.method.lot.depth}m</p>}
     </div>
@@ -183,8 +197,9 @@ export function LandEditor({
         />
       </Field>
       <div className="flex items-end">
-        <Link href={`/case/map?asset=${a.id}`} className="rounded-lg border border-teal-700 px-4 py-2 text-sm font-semibold text-teal-800 hover:bg-teal-50">
-          地図で土地の形と路線価を入れる
+        <Link href={`/case/map?asset=${a.id}`} className="inline-flex items-center gap-1.5 rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800">
+          <MapPin className="h-4 w-4" aria-hidden />
+          地図で土地を評価する（路線価・倍率）
         </Link>
       </div>
       {m.type === "rosenka" && <RoadsEditor a={a} m={m} patch={patch} />}
@@ -193,8 +208,15 @@ export function LandEditor({
           <Field label="固定資産税評価額">
             <YenInput value={m.fixedAssetValue} onChange={(v) => patch({ method: { ...m, fixedAssetValue: v } })} />
           </Field>
+          {m.source && (
+            <p className="text-xs text-teal-900 sm:col-span-2">
+              評価倍率表で確認済み：{m.source.city}
+              {m.source.town}
+              {m.source.area ? `（${m.source.area}）` : ""}の宅地
+            </p>
+          )}
           <Field label="倍率" hint="国税庁の評価倍率表で確認します">
-            <NumInput value={m.multiplier} step="0.1" onChange={(v) => patch({ method: { ...m, multiplier: v } })} />
+            <NumInput value={m.multiplier} step="0.1" onChange={(v) => patch({ method: { ...m, multiplier: v, source: v === m.multiplier ? m.source : undefined } })} />
           </Field>
         </>
       )}

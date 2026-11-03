@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { calculate } from "@/domain/tax/engine";
-import type { Case } from "@/domain/types";
 import { buildFilingPages } from "@/forms/filing";
 import { renderForms } from "@/forms/render";
+import { failureMessage, readCaseRequest } from "@/server/caseRequest";
 
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
-  const c = (await req.json()) as Case;
+  const r0 = await readCaseRequest(req, "forms");
+  if ("res" in r0) return r0.res;
+  const c = r0.case;
   try {
     const r = calculate(c);
     if (r.blockers.length > 0) {
@@ -21,6 +23,6 @@ export async function POST(req: Request) {
       },
     });
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
+    return NextResponse.json({ error: failureMessage(e, "申告書を作れませんでした。入力内容を確かめてください。") }, { status: 400 });
   }
 }

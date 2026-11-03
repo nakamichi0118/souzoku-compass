@@ -156,21 +156,78 @@ describe("養子の数の制限（相続税法15条2項・3項）", () => {
 });
 
 describe("2割加算（相続税法18条）", () => {
+  const none = new Set<string>();
   it("配偶者・子・父母・代襲相続人の孫は対象外", () => {
-    expect(isSurchargeTarget(P("a", "spouse"))).toBe(false);
-    expect(isSurchargeTarget(P("a", "child"))).toBe(false);
-    expect(isSurchargeTarget(P("a", "parent"))).toBe(false);
-    expect(isSurchargeTarget(P("a", "grandchild", { substituteOf: "x" }))).toBe(false);
+    expect(isSurchargeTarget(P("a", "spouse"), none)).toBe(false);
+    expect(isSurchargeTarget(P("a", "child"), none)).toBe(false);
+    expect(isSurchargeTarget(P("a", "parent"), none)).toBe(false);
+    expect(isSurchargeTarget(P("a", "grandchild", { substituteOf: "x" }), new Set(["a"]))).toBe(false);
   });
   it("兄弟姉妹・甥姪・孫養子・相続人でない受遺者は対象", () => {
-    expect(isSurchargeTarget(P("a", "sibling"))).toBe(true);
-    expect(isSurchargeTarget(P("a", "nephewNiece", { substituteOf: "x" }))).toBe(true);
-    expect(isSurchargeTarget(P("a", "adoptedChild", { grandchildAdopted: true }))).toBe(true);
-    expect(isSurchargeTarget(P("a", "other"))).toBe(true);
+    expect(isSurchargeTarget(P("a", "sibling"), none)).toBe(true);
+    expect(isSurchargeTarget(P("a", "nephewNiece", { substituteOf: "x" }), new Set(["a"]))).toBe(true);
+    expect(isSurchargeTarget(P("a", "adoptedChild", { grandchildAdopted: true }), none)).toBe(true);
+    expect(isSurchargeTarget(P("a", "other"), none)).toBe(true);
   });
   it("孫養子でも代襲相続人なら対象外", () => {
     expect(
-      isSurchargeTarget(P("a", "adoptedChild", { grandchildAdopted: true, substituteOf: "x" })),
+      isSurchargeTarget(P("a", "adoptedChild", { grandchildAdopted: true, substituteOf: "x" }), new Set(["a"])),
     ).toBe(false);
+  });
+
+  const surcharged = (ps: Person[], id: string) =>
+    isSurchargeTarget(ps.find((p) => p.id === id)!, determineHeirs(ps, "civil").substitutes);
+
+  it("先に亡くなった子の子は代襲相続人なので対象外", () => {
+    const ps = [P("長男", "child", { predeceased: true }), P("孫", "grandchild", { substituteOf: "長男" }), P("長女", "child")];
+    expect(determineHeirs(ps, "civil").substitutes).toEqual(new Set(["孫"]));
+    expect(surcharged(ps, "孫")).toBe(false);
+  });
+  it("親が相続放棄しただけの孫は代襲相続人ではないので対象（被代襲者の欄が残っていても）", () => {
+    const ps = [P("長男", "child", { renounced: true }), P("孫", "grandchild", { substituteOf: "長男" }), P("長女", "child")];
+    expect(surcharged(ps, "孫")).toBe(true);
+  });
+  it("代襲相続人の孫が自分で相続放棄した場合は対象（遺贈や保険金で受け取ったとき）", () => {
+    const ps = [P("長男", "child", { predeceased: true }), P("孫", "grandchild", { substituteOf: "長男", renounced: true }), P("長女", "child")];
+    expect(surcharged(ps, "孫")).toBe(true);
+  });
+  it("親が生きている孫（被代襲者の欄だけ残っている）は対象", () => {
+    const ps = [P("長男", "child"), P("孫", "grandchild", { substituteOf: "長男" })];
+    expect(surcharged(ps, "孫")).toBe(true);
+  });
+  it("再代襲のひ孫は対象外", () => {
+    const ps = [
+      P("長男", "child", { predeceased: true }),
+      P("孫", "grandchild", { substituteOf: "長男", predeceased: true }),
+      P("ひ孫", "greatGrandchild", { substituteOf: "孫" }),
+    ];
+    expect(surcharged(ps, "ひ孫")).toBe(false);
+  });
+});
+
+describe("壊れた入力への備え", () => {
+  it("同じ id の人が大量に重複していても、すぐに終わり1人として数える", () => {
+    // 重複をそのまま展開すると 8^7 通りの枝になる入力
+    const ps: Person[] = [P("c", "child", { predeceased: true })];
+    for (let level = 0; level < 7; level++) {
+      for (let k = 0; k < 8; k++) {
+        ps.push(P(`g${level}`, "grandchild", { substituteOf: level === 0 ? "c" : `g${level - 1}`, predeceased: level < 6 }));
+      }
+    }
+    const t0 = Date.now();
+    const r = determineHeirs(ps, "civil");
+    expect(Date.now() - t0).toBeLessThan(1000);
+    expect(shares(ps, "civil")).toEqual({ g6: "1" });
+    expect(r.count).toBe(1);
+  });
+  it("代襲の親子関係が輪になっていても止まる", () => {
+    const ps = [
+      P("長男", "child", { predeceased: true }),
+      P("A", "grandchild", { substituteOf: "B", predeceased: true }),
+      P("B", "grandchild", { substituteOf: "A", predeceased: true }),
+      P("自分", "grandchild", { substituteOf: "自分" }),
+      P("長女", "child"),
+    ];
+    expect(shares(ps, "civil")).toEqual({ 長女: "1" });
   });
 });

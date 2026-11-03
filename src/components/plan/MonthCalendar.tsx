@@ -8,9 +8,8 @@ const WEEK = ["月", "火", "水", "木", "金", "土", "日"];
 const pad = (n: number) => String(n).padStart(2, "0");
 
 /** 手続きの期限・目安の日を載せた月表示のカレンダー */
-export function MonthCalendar({ tasks, done, today, compact, initial }: { tasks: Task[]; done: string[]; today: string; compact?: boolean; initial?: string }) {
-  const start = initial ?? today;
-  const [ym, setYm] = useState<[number, number]>([Number(start.slice(0, 4)), Number(start.slice(5, 7))]);
+export function MonthCalendar({ tasks, done, today, compact }: { tasks: Task[]; done: string[]; today: string; compact?: boolean }) {
+  const [ym, setYm] = useState<[number, number]>([Number(today.slice(0, 4)), Number(today.slice(5, 7))]);
   const [sel, setSel] = useState<string | null>(null);
   const [y, m] = ym;
   const byDate = useMemo(() => {

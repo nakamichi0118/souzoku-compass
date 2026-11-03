@@ -3,6 +3,7 @@
  * HTML としては解釈せず、React の要素として組み立てる。
  */
 import { Fragment } from "react";
+import { classifyLine } from "./markdownLine";
 
 function inline(text: string, key: string) {
   const out: React.ReactNode[] = [];
@@ -46,31 +47,27 @@ export function Markdown({ text }: { text: string }) {
     list = null;
   };
   for (const raw of lines) {
-    const line = raw.trim();
-    const h = line.match(/^#{1,4}\s+(.*)$/);
-    const ul = line.match(/^[-*・]\s+(.*)$/);
-    const ol = line.match(/^\d+[.)．]\s*(.*)$/);
-    if (!line) flush();
-    else if (h) {
+    const c = classifyLine(raw);
+    if (c.kind === "blank") flush();
+    else if (c.kind === "heading") {
       flush();
       blocks.push(
         <p key={`h${blocks.length}`} className="font-bold text-sky-950">
-          {inline(h[1], `h${blocks.length}`)}
+          {inline(c.text, `h${blocks.length}`)}
         </p>,
       );
-    } else if (ul || ol) {
+    } else if (c.kind === "item") {
       if (para.length) {
         const p = para;
         para = [];
         blocks.push(<p key={`p${blocks.length}`}>{inline(p.join(""), `p${blocks.length}`)}</p>);
       }
-      const ordered = !!ol;
-      if (list && list.ordered !== ordered) flush();
-      list ??= { ordered, items: [] };
-      list.items.push((ul ?? ol)![1]);
+      if (list && list.ordered !== c.ordered) flush();
+      list ??= { ordered: c.ordered, items: [] };
+      list.items.push(c.text);
     } else {
       if (list) flush();
-      para.push(line);
+      para.push(c.text);
     }
   }
   flush();

@@ -48,6 +48,8 @@ export interface Person {
   adoptedCountsAsBiological?: boolean;
   /** 孫を養子にした場合（代襲相続人でない孫養子は2割加算の対象） */
   grandchildAdopted?: boolean;
+  /** 孫養子が、先に亡くなった子の代わりに相続する人（代襲相続人）でもある（二重の資格）。自動計算の対象外 */
+  alsoSubstituteHeir?: boolean;
   /** 障害者控除の区分 */
   disability?: "none" | "general" | "special";
   /** 住所（申告書第1表・遺産分割協議書用） */
@@ -67,6 +69,8 @@ export interface Decedent {
   occupation?: string;
   /** 亡くなった方が、亡くなる前10年以内に相続で財産を受け取り相続税を納めていた（相次相続控除の対象。自動計算の対象外） */
   priorInheritanceTax?: boolean;
+  /** 相続時精算課税を選んで贈与した財産がある（自動計算の対象外） */
+  settlementGift?: boolean;
 }
 
 export type AssetKind =
@@ -104,10 +108,18 @@ export type LandMethod =
       district?: District;
       /** 面している道路ごとの路線価と奥行（2つ以上の道路に面する場合の評価に使う） */
       roads?: RoadInput[];
-      /** 地図で合わせた土地の枠（間口・奥行・向き） */
+      /** 地図で合わせた土地の枠（間口・奥行・向き）。以前の四角形の入力 */
       lot?: { center: [number, number]; width: number; depth: number; rotation: number };
+      /** 地図で囲んだ土地の形（多角形の頂点の緯度経度、順番どおり） */
+      shape?: [number, number][];
     }
-  | { type: "multiplier"; fixedAssetValue: number; multiplier: number }
+  | {
+      type: "multiplier";
+      fixedAssetValue: number;
+      multiplier: number;
+      /** 倍率の出典（国税庁の評価倍率表のどの行か。本人が確認したもの） */
+      source?: { city: string; town: string; area?: string; pdfUrl?: string; page?: number };
+    }
   | { type: "manual"; value: number };
 
 export interface RosenkaSheet {
@@ -180,6 +192,8 @@ export interface CondoAsset extends AssetBase {
   floor: number;
   landShareSqm: number; // 敷地利用権の面積
   exclusiveAreaSqm: number; // 専有部分の床面積
+  /** 居住用の専有部分が3室以下で、そのすべてを本人・親族が住まいに使っている（区分所有補正の対象外） */
+  fewUnitsFamily?: boolean;
   smallResidential?: { applies: boolean; acquirerId?: string; landShareSqm?: number; check?: SmallResidentialCheck };
   registry?: RegistryInfo;
 }
@@ -233,6 +247,8 @@ export interface Debt {
   /** 申告書（第13表）用：債権者・支払先の氏名又は名称と住所 */
   creditor?: string;
   creditorAddress?: string;
+  /** 申告書（第13表）の種類 */
+  debtType?: "公租公課" | "銀行借入金" | "未払金" | "その他";
   /** 負担者ごとの金額 */
   bearers: { personId: string; amount: number }[];
 }

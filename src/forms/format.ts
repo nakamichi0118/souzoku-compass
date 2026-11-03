@@ -39,5 +39,6 @@ export function ageAt(birth: string | undefined, at: string): number | undefined
   const [y, m, d] = at.split("-").map(Number);
   let age = y - by;
   if (m < bm || (m === bm && d < bd)) age--;
-  return age;
+  // 亡くなった後に生まれた子（胎児）は0歳とする
+  return Math.max(0, age);
 }

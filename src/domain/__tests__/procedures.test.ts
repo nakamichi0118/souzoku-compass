@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { addMonths, skipWeekend, withinDays, isValidDate, jpDate } from "../procedures/dates";
+import { addDays, addMonths, isClosedDay, monthsDeadline, skipWeekend, withinDays, isValidDate, jpDate } from "../procedures/dates";
 import { blankInterview, demoInterview, estimate, needsFinalReturn, type Interview } from "../procedures/interview";
-import { blueReturnDue, buildTasks, vacantHomeDue } from "../procedures/rules";
-import { googleEventUrl, toICS } from "../procedures/calendar";
-import { decodeInterview, encodeInterview } from "../procedures/share";
+import { VACANT_HOME_LAST_SALE, blueFilerDue, blueReturnDue, buildTasks, newBusinessBlueDue, saleCostDue, vacantHomeDue, type Task } from "../procedures/rules";
+import { googleEventUrl, icsStamp, toICS } from "../procedures/calendar";
+import { decodeFeed, decodeInterview, encodeInterview } from "../procedures/share";
 import { DOCS } from "../procedures/documents";
 import { areaOf, cityOf, isTokyoWard } from "../procedures/offices";
 
@@ -28,11 +28,27 @@ describe("期限日の計算", () => {
     expect(isValidDate("2026-02-28")).toBe(true);
     expect(jpDate("2026-11-06")).toBe("2026年11月6日（金）");
   });
-  it("青色申告の承認申請と空き家特例の期限", () => {
-    expect(blueReturnDue("2026-03-10")).toBe("2026-07-10");
-    expect(blueReturnDue("2026-09-15")).toBe("2026-12-31");
-    expect(blueReturnDue("2026-11-15")).toBe("2027-02-15");
+  it("青色申告の承認申請の期限：亡くなった方が青色申告だった場合とそうでない場合", () => {
+    // 亡くなった方が青色申告をしていた場合（所得税基本通達144-1）
+    expect(blueFilerDue("2026-03-10")).toBe("2026-07-10");
+    expect(blueFilerDue("2026-09-15")).toBe("2026-12-31");
+    expect(blueFilerDue("2026-11-15")).toBe("2027-02-15");
+    // そうでない場合は、引き継いだ日から2か月以内（1月15日までなら3月15日）
+    expect(newBusinessBlueDue("2026-01-10")).toBe("2026-03-15");
+    expect(newBusinessBlueDue("2026-01-16")).toBe("2026-03-16");
+    expect(newBusinessBlueDue("2026-03-10")).toBe("2026-05-10");
+  });
+  it("青色申告だったか分からないので、早いほうの日を期限にする", () => {
+    expect(blueReturnDue("2026-01-10")).toBe("2026-03-15");
+    expect(blueReturnDue("2026-03-10")).toBe("2026-05-10");
+    expect(blueReturnDue("2026-09-15")).toBe("2026-11-15");
+    expect(blueReturnDue("2026-10-31")).toBe("2026-12-31");
+    expect(blueReturnDue("2026-12-20")).toBe("2027-02-15"); // 2か月後の2/20より、青色の2/15が早い
+  });
+  it("空き家特例の売る期限：3年を経過する日（3年後の前日）の属する年の12月31日", () => {
     expect(vacantHomeDue("2026-01-06")).toBe("2029-12-31");
+    expect(vacantHomeDue("2026-01-01")).toBe("2028-12-31"); // 3年を経過する日は2028-12-31
+    expect(vacantHomeDue("2026-12-31")).toBe("2029-12-31");
   });
 });
 
@@ -150,6 +166,31 @@ describe("カレンダー", () => {
     expect(back).toEqual({ ...d, decedentName: "", address: "", myRelation: "" });
     expect(decodeInterview("@@@")).toBeNull();
   });
+  it("購読 URL に判定と「不要」にした手続きも入れられ、古い URL も読める", () => {
+    const d = iv({ children: 1 });
+    const s = encodeInterview(d, { verdict: "likely", skip: ["utilities", "digital", "../bad id"] });
+    const feed = decodeFeed(s)!;
+    expect(feed.verdict).toBe("likely");
+    expect(feed.skip).toEqual(["utilities", "digital"]);
+    expect(feed.iv).toEqual({ ...d, decedentName: "", address: "", myRelation: "" });
+    // 判定などを入れても、聞き取りの答えだけを読む関数はそのまま使える
+    expect(decodeInterview(s)).toEqual(feed.iv);
+    // 判定・不要のない古い URL
+    const old = decodeFeed(encodeInterview(d))!;
+    expect(old.verdict).toBeUndefined();
+    expect(old.skip).toEqual([]);
+    // おかしな判定は無視する
+    const bad = btoa(JSON.stringify({ deathDate: "2026-01-06", $v: "maybe", $x: "utilities" })).replace(/=+$/, "");
+    expect(decodeFeed(bad)!.verdict).toBeUndefined();
+    expect(decodeFeed(bad)!.skip).toEqual([]);
+  });
+  it("TEXT の ; , \\ と改行をエスケープする", () => {
+    const t: Task = { ...tasks[0], hard: false, title: "a;b,c\\d" };
+    const ics = toICS([t], { name: "x;y\nz", stamp: icsStamp(new Date("2026-11-03T09:15:30.123Z")) });
+    expect(ics).toContain("SUMMARY:a\\;b\\,c\\\\d");
+    expect(ics).toContain("X-WR-CALNAME:x\\;y\\nz");
+    expect(ics).toContain("DTSTAMP:20261103T091530Z");
+  });
 });
 
 describe("書類と提出先", () => {
@@ -173,6 +214,59 @@ describe("書類と提出先", () => {
     const t = buildTasks(iv({ children: 1 }), { verdict: "likely" }).tasks.find((t) => t.id === "inheritance-tax")!;
     expect(t.optional).toBe(false);
     expect(t.title).toBe("相続税の申告と納付");
+  });
+});
+
+describe("月末に亡くなった場合の「〇か月以内」", () => {
+  it("2月28日に亡くなった場合の10か月は12月31日（応当日の前日ではなく月末）", () => {
+    expect(addMonths("2026-02-28", 10)).toBe("2026-12-28"); // 法要の日の数え方
+    expect(monthsDeadline("2026-02-28", 10)).toBe("2026-12-31");
+    expect(monthsDeadline("2026-02-28", 4)).toBe("2026-06-30");
+    expect(monthsDeadline("2026-02-28", 3)).toBe("2026-05-31");
+  });
+  it("6月30日に亡くなった場合の4か月は10月31日", () => {
+    expect(monthsDeadline("2026-06-30", 4)).toBe("2026-10-31");
+    expect(monthsDeadline("2026-06-30", 10)).toBe("2027-04-30");
+    expect(monthsDeadline("2026-06-30", 3)).toBe("2026-09-30");
+  });
+  it("月末でなければ応当日（なければ月末）", () => {
+    expect(monthsDeadline("2026-01-06", 10)).toBe("2026-11-06");
+    expect(monthsDeadline("2026-01-30", 1)).toBe("2026-02-28");
+    expect(monthsDeadline("2026-06-29", 4)).toBe("2026-10-29");
+    expect(monthsDeadline("2027-02-28", 12)).toBe("2028-02-29"); // うるう年の2月末
+  });
+  it("手続きリストの期限にも使う（相続税・準確定申告・相続放棄）", () => {
+    const at = (date: string, id: string) => buildTasks(iv({ deathDate: date, spouse: true, children: 1, work: "selfEmployed" }), { verdict: "likely" }).tasks.find((t) => t.id === id)!;
+    expect(at("2026-02-28", "inheritance-tax").date).toBe("2027-01-04"); // 期限12/31は年末年始の休み→1/4（以前は12/28になっていた）
+    expect(at("2026-06-30", "final-return").date).toBe("2026-11-02"); // 10/31は土曜→11/2
+    expect(at("2026-02-28", "renounce").date).toBe("2026-06-01"); // 5/31は日曜→6/1
+    expect(at("2026-06-30", "isshuki").date).toBe("2027-06-30"); // 法要は同じ月日
+  });
+});
+
+describe("売る期限は休日でもずらさない", () => {
+  it("取得費加算：ずらした後の申告期限の翌日から3年", () => {
+    // 2026-02-28 死亡 → 申告期限 12/31 は休み → 2027-01-04。その3年後
+    expect(saleCostDue("2026-02-28")).toBe("2030-01-04");
+    expect(saleCostDue("2026-01-06")).toBe("2029-11-06"); // 申告期限 2026-11-06（金）
+    const t = buildTasks(iv({ children: 1, deposits: 100_000_000, homeValue: 1 })).tasks.find((x) => x.id === "sale-cost")!;
+    expect(t.date).toBe("2029-11-06"); // 2029-11-06 は火曜
+  });
+  it("取得費加算の期限が休日でも、その日のまま", () => {
+    // 売る期限が土日祝日になる亡くなった日を探す
+    const death = Array.from({ length: 365 }, (_, i) => addDays("2026-01-01", i)).find((d) => isClosedDay(saleCostDue(d)));
+    expect(death).toBeDefined();
+    const t = buildTasks(iv({ deathDate: death!, children: 1, deposits: 100_000_000, homeValue: 1 })).tasks.find((x) => x.id === "sale-cost")!;
+    expect(t.date).toBe(saleCostDue(death!));
+    expect(isClosedDay(t.date)).toBe(true);
+  });
+  it("空き家特例：今の法律の最後の日（2027年12月31日）を期限にし、休日でもずらさない", () => {
+    const t = buildTasks(iv({ children: 1, homeValue: 10_000_000 })).tasks.find((x) => x.id === "vacant-home")!;
+    expect(VACANT_HOME_LAST_SALE).toBe("2027-12-31");
+    expect(t.date).toBe("2027-12-31"); // 年末年始の休みだが、ずらさない
+    expect(t.hard).toBe(true);
+    expect(t.what).toContain("2027年（令和9年）12月31日");
+    expect(t.what).toContain("2029年12月31日");
   });
 });
 

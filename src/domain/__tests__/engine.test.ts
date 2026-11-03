@@ -242,3 +242,176 @@ describe("土地の入力漏れ", () => {
     expect(r.assets[0].valuation.value).toBe(30_000_000);
   });
 });
+
+describe("配偶者の法定相続分相当額（相続税法19条の2）", () => {
+  it("1,000円単位に切り捨てない（課税価格の合計 400,001,000円 × 1/2 ＝ 200,000,500円）", () => {
+    const r = calculate(
+      mk([spouse, c1], [dep("A", 300_001_000), dep("B", 100_000_000)], [all("A", ["s", 1, 1]), all("B", ["c1", 1, 1])]),
+    );
+    expect(r.totalTaxable).toBe(400_001_000);
+    expect(r.spouse?.legalShareAmount).toBe(200_000_500);
+    expect(r.spouse?.base).toBe(200_000_500);
+  });
+});
+
+describe("債務・葬式費用を差し引ける人（相続税法13条、相基通13-1）", () => {
+  const naien: Person = { id: "n", name: "内縁の妻", relation: "other" };
+  it("相続人でない受遺者が負担した葬式費用は差し引かず、止める", () => {
+    const r = calculate(
+      mk([c1, naien], [dep("預金", 80_000_000), dep("遺贈", 10_000_000)], [all("預金", ["c1", 1, 1]), all("遺贈", ["n", 1, 1])], {
+        debts: [{ id: "f", kind: "funeral", label: "葬式", amount: 2_000_000, bearers: [{ personId: "n", amount: 2_000_000 }] }],
+      }),
+    );
+    const n = r.persons.find((p) => p.person.id === "n")!;
+    expect(n.funeralOnly).toBe(0);
+    expect(n.debts).toBe(0);
+    expect(n.taxable).toBe(10_000_000);
+    expect(r.blockers.some((b) => b.includes("内縁の妻さんは相続人ではない"))).toBe(true);
+  });
+  it("相続を放棄した人は葬式費用だけ差し引ける（債務は差し引かない）", () => {
+    const r = calculate(
+      mk(
+        [c1, { ...c2, renounced: true }],
+        [dep("預金", 80_000_000), { id: "保険", kind: "insurance", label: "保険", amount: 10_000_000, recipientId: "c2" }],
+        [all("預金", ["c1", 1, 1])],
+        {
+          debts: [
+            { id: "f", kind: "funeral", label: "葬式", amount: 1_000_000, bearers: [{ personId: "c2", amount: 1_000_000 }] },
+            { id: "d", kind: "debt", label: "借入", amount: 500_000, bearers: [{ personId: "c2", amount: 500_000 }] },
+          ],
+        },
+      ),
+    );
+    const b = r.persons.find((p) => p.person.id === "c2")!;
+    expect(b.funeralOnly).toBe(1_000_000);
+    expect(b.debtOnly).toBe(0);
+    expect(b.net).toBe(9_000_000);
+    expect(r.blockers).toEqual([]);
+    expect(r.warnings.some((w) => w.includes("放棄"))).toBe(true);
+  });
+});
+
+describe("3年以内の贈与の入力漏れ", () => {
+  const base = (g: Case["priorGifts"][number], persons: Person[] = [c1]) =>
+    calculate(mk(persons, [dep("預金", 50_000_000)], [all("預金", ["c1", 1, 1])], { priorGifts: [g] }));
+  it.each([
+    ["受け取った人が空欄", { personId: "", date: "2025-05-01", amount: 1_000_000, giftTaxPaid: 0 }, "受け取った人"],
+    ["一覧にいない人", { personId: "deleted", date: "2025-05-01", amount: 1_000_000, giftTaxPaid: 0 }, "受け取った人"],
+    ["日付が空欄", { personId: "c1", date: "", amount: 1_000_000, giftTaxPaid: 0 }, "贈与の日"],
+    ["実在しない日付", { personId: "c1", date: "2025-02-30", amount: 1_000_000, giftTaxPaid: 0 }, "贈与の日"],
+    ["亡くなった日より後", { personId: "c1", date: "2026-04-01", amount: 1_000_000, giftTaxPaid: 0 }, "亡くなった日より後"],
+    ["納めた贈与税だけ入っている", { personId: "", date: "", amount: 0, giftTaxPaid: 100_000 }, "受け取った人"],
+  ])("%s なら止める", (_, g, word) => {
+    const r = base(g);
+    expect(r.blockers.some((b) => b.includes(word))).toBe(true);
+    expect(r.persons[0].gifts).toBe(0);
+  });
+  it("先に亡くなった人への贈与は止めて削除を案内する", () => {
+    const r = base({ personId: "c2", date: "2025-05-01", amount: 1_000_000, giftTaxPaid: 0 }, [c1, { ...c2, predeceased: true }]);
+    expect(r.blockers.some((b) => b.includes("先に亡くなって"))).toBe(true);
+  });
+  it("金額が0円の空の行は止めない", () => {
+    expect(base({ personId: "", date: "", amount: 0, giftTaxPaid: 0 }).blockers).toEqual([]);
+  });
+  it("相続や遺贈で何も受け取らない人への贈与は足さず、その旨を知らせる", () => {
+    const r = base({ personId: "c2", date: "2025-05-01", amount: 1_000_000, giftTaxPaid: 0 }, [c1, c2]);
+    expect(r.blockers).toEqual([]);
+    expect(r.persons.find((p) => p.person.id === "c2")!.gifts).toBe(0);
+    expect(r.warnings.some((w) => w.includes("贈与は相続税の計算に足していません"))).toBe(true);
+  });
+});
+
+describe("未成年者控除・障害者控除の対象", () => {
+  it("何も受け取らない未成年の法定相続人には控除しない", () => {
+    const minor: Person = { id: "m", name: "次男", relation: "child", birthDate: "2015-01-01" };
+    const r = calculate(mk([c1, minor], [dep("預金", 80_000_000)], [all("預金", ["c1", 1, 1])]));
+    const m = r.persons.find((p) => p.person.id === "m")!;
+    expect(m.acquiresSomething).toBe(false);
+    expect(m.minorCredit + m.minorExcess).toBe(0);
+    expect(r.blockers).toEqual([]);
+  });
+  it("亡くなった後に生まれた子は0歳として18年分（180万円）", () => {
+    const baby: Person = { id: "b", name: "胎児", relation: "child", birthDate: "2026-08-01" };
+    const r = calculate(mk([baby], [dep("預金", 100_000_000)], [all("預金", ["b", 1, 1])]));
+    const b = r.persons[0];
+    expect(b.age).toBe(0);
+    expect(b.minorCredit + b.minorExcess).toBe(1_800_000);
+  });
+  it("引ききれない控除は、ほかに税額のある人がいれば止める（扶養義務者からの控除は自動計算しない）", () => {
+    const minor: Person = { id: "m", name: "次男", relation: "child", birthDate: "2024-01-01" }; // 2歳 → 160万円
+    const r = calculate(mk([c1, minor], [dep("預金", 80_000_000), dep("少し", 2_000_000)], [all("預金", ["c1", 1, 1]), all("少し", ["m", 1, 1])]));
+    const m = r.persons.find((p) => p.person.id === "m")!;
+    expect(m.minorExcess).toBeGreaterThan(0);
+    expect(m.beforeOtherCredits).toBe(m.minorCredit);
+    expect(r.blockers.some((b) => b.includes("扶養義務者"))).toBe(true);
+  });
+  it("ほかに税額のある人がいなければ止めずに知らせるだけ", () => {
+    const minor: Person = { id: "m", name: "長男", relation: "child", birthDate: "2024-01-01" };
+    const r = calculate(mk([minor], [dep("預金", 40_000_000)], [all("預金", ["m", 1, 1])]));
+    expect(r.persons[0].minorExcess).toBeGreaterThan(0);
+    expect(r.blockers).toEqual([]);
+    expect(r.warnings.some((w) => w.includes("引ききれません"))).toBe(true);
+  });
+});
+
+describe("2割加算と代襲", () => {
+  it("親が相続放棄しただけの孫は、被代襲者の欄が残っていても2割加算", () => {
+    const grand: Person = { id: "g", name: "孫", relation: "grandchild", substituteOf: "c2" };
+    const r = calculate(
+      mk([c1, { ...c2, renounced: true }, grand], [dep("預金", 100_000_000)], [all("預金", ["c1", 1, 2], ["g", 1, 2])]),
+    );
+    const g = r.persons.find((p) => p.person.id === "g")!;
+    expect(g.surcharge).toBe(Math.floor(g.computed / 5));
+    expect(g.surcharge).toBeGreaterThan(0);
+  });
+  it("先に亡くなった子の代襲相続人の孫は2割加算しない", () => {
+    const grand: Person = { id: "g", name: "孫", relation: "grandchild", substituteOf: "c2" };
+    const r = calculate(
+      mk([c1, { ...c2, predeceased: true }, grand], [dep("預金", 100_000_000)], [all("預金", ["c1", 1, 2], ["g", 1, 2])]),
+    );
+    expect(r.persons.find((p) => p.person.id === "g")!.surcharge).toBe(0);
+  });
+});
+
+describe("自動では計算できない事項", () => {
+  it("相続時精算課税を選んだ贈与があれば止める", () => {
+    const r = calculate({ ...mk([c1], [dep("預金", 50_000_000)], [all("預金", ["c1", 1, 1])]), decedent: { ...decedent, settlementGift: true } });
+    expect(r.blockers.some((b) => b.includes("相続時精算課税"))).toBe(true);
+  });
+  it("孫養子が代襲相続人でもある（二重の資格）なら止める", () => {
+    const ga: Person = { id: "ga", name: "孫養子", relation: "adoptedChild", grandchildAdopted: true, alsoSubstituteHeir: true };
+    const r = calculate(mk([c1, ga], [dep("預金", 50_000_000)], [all("預金", ["c1", 1, 1])]));
+    expect(r.blockers.some((b) => b.includes("二重の資格"))).toBe(true);
+  });
+  it("書類から読み取って確かめていない財産があれば止める", () => {
+    const r = calculate(mk([c1], [{ ...dep("預金", 50_000_000), pending: ["残高"] } as Asset], [all("預金", ["c1", 1, 1])]));
+    expect(r.blockers.some((b) => b.includes("確かめていない"))).toBe(true);
+  });
+  it("同じ id の人が二重に登録されていれば止める", () => {
+    const r = calculate(mk([c1, c1], [dep("預金", 50_000_000)], [all("預金", ["c1", 1, 1])]));
+    expect(r.blockers.some((b) => b.includes("二重に登録"))).toBe(true);
+  });
+});
+
+describe("小規模宅地等の330㎡の割り当て順", () => {
+  it("入力順ではなく1㎡あたりの価額が高い宅地から割り当てる", () => {
+    const lot = (id: string, areaSqm: number, value: number): Asset => ({
+      id,
+      kind: "land",
+      label: id,
+      location: "x",
+      areaSqm,
+      landUse: "宅地",
+      method: { type: "manual", value },
+      smallResidential: { applies: true, acquirerId: "s" },
+    });
+    // A：330㎡ 5,000万円（約15万円/㎡）を先に入力、B：200㎡ 6,000万円（30万円/㎡）
+    const r = calculate(mk([spouse, c1], [lot("A", 330, 50_000_000), lot("B", 200, 60_000_000)], [all("A", ["s", 1, 1]), all("B", ["s", 1, 1])]));
+    const [a, b] = r.assets;
+    expect(b.reduction).toBe(48_000_000);
+    expect(b.small?.selectedArea).toBe(200);
+    expect(a.small?.selectedArea).toBe(130);
+    expect(a.reduction).toBe(Math.floor((Math.floor((50_000_000 * 130) / 330) * 8) / 10));
+    expect(r.warnings.some((w) => w.includes("「A」は残り130㎡分"))).toBe(true);
+  });
+});

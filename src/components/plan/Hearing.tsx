@@ -282,7 +282,7 @@ export function Hearing() {
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-stone-200 bg-white/95 px-4 py-3 backdrop-blur">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
           <p className="text-sm text-stone-600">
-            {!dateOk ? "亡くなった日を入力してください。" : unanswered > 0 ? `まだ選んでいない質問が${unanswered}つあります（選ばなければ「いいえ・ない」として扱います）。` : "答えはあとから変えられます。"}
+            {!dateOk ? "亡くなった日を入力してください。" : unanswered > 0 ? `まだ選んでいない質問が${unanswered}つあります。選ばないままだと仮の答えで手続きを出すため、必要な手続きが抜けることがあります（答えはあとから変えられます）。` : "答えはあとから変えられます。"}
           </p>
           <button
             id="hearing-finish"

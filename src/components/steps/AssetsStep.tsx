@@ -41,10 +41,11 @@ export function blankAsset(kind: AssetKind, recipientId = ""): Asset {
         landValueBeforeCorrection: 0,
         buildingFixedAssetValue: 0,
         builtYearsMonths: { years: 0, months: 0 },
-        totalFloors: 1,
-        floor: 1,
+        // 0 は「未入力」。入れるまで評価額を確定しない（仮の値のまま計算されないようにする）
+        totalFloors: 0,
+        floor: 0,
         landShareSqm: 0,
-        exclusiveAreaSqm: 1,
+        exclusiveAreaSqm: 0,
       };
     case "listedStock":
       return { ...base, kind, shares: 0, prices: { close: 0, monthAvg: 0, prevMonthAvg: 0, prev2MonthAvg: 0 } };
@@ -133,7 +134,8 @@ export function AssetsStep() {
   }, [scrollTo, data.assets]);
 
   const add = (kind: AssetKind) => {
-    const a = blankAsset(kind, living[0]?.id);
+    // 保険金・退職金の受取人は空のまま始め、本人に選んでもらう（最初の人に勝手に割り当てない）
+    const a = blankAsset(kind);
     update((c) => ({ ...c, assets: [...c.assets, a] }));
     setOpenId(a.id);
     setScrollTo(a.id);
@@ -270,8 +272,8 @@ export function AssetsStep() {
                     <details className="text-sm text-stone-600">
                       <summary className="cursor-pointer font-medium text-teal-800">評価の計算過程</summary>
                       <ul className="mt-2 list-disc space-y-1 pl-5">
-                        {line.valuation.steps.map((s) => (
-                          <li key={s}>{s}</li>
+                        {line.valuation.steps.map((s, i) => (
+                          <li key={`${i}:${s}`}>{s}</li>
                         ))}
                       </ul>
                     </details>
@@ -410,8 +412,8 @@ function AssetEditor({
               ["prev2MonthAvg", "前々月の終値平均"],
             ] as const
           ).map(([k, l]) => (
-            <Field key={k} label={l}>
-              <YenInput value={a.prices[k]} onChange={(v) => patch({ prices: { ...a.prices, [k]: v } })} />
+            <Field key={k} label={l} hint={k === "close" ? "4つの価格は、1円未満の数字（例：1523.5）もそのまま入れてください" : undefined}>
+              <NumInput value={a.prices[k]} onChange={(v) => patch({ prices: { ...a.prices, [k]: v } })} unit="円" />
             </Field>
           ))}
         </>
@@ -445,7 +447,7 @@ function AssetEditor({
               <NumInput value={a.builtYearsMonths.months} onChange={(v) => patch({ builtYearsMonths: { ...a.builtYearsMonths, months: v } })} unit="月" />
             </div>
           </Field>
-          <Field label="総階数（地階を除く）／所在階">
+          <Field label="総階数（地階を除く）／所在階" hint="地下を除いて2階建て以下の建物は、区分所有補正をしません">
             <div className="flex gap-2">
               <NumInput value={a.totalFloors} onChange={(v) => patch({ totalFloors: v })} unit="階建" />
               <NumInput value={a.floor} onChange={(v) => patch({ floor: v })} unit="階" />
@@ -457,6 +459,14 @@ function AssetEditor({
               <NumInput value={a.exclusiveAreaSqm} onChange={(v) => patch({ exclusiveAreaSqm: v })} unit="㎡" />
             </div>
           </Field>
+          <div className="space-y-1 sm:col-span-2">
+            <Check
+              checked={!!a.fewUnitsFamily}
+              onChange={(v) => patch({ fewUnitsFamily: v || undefined })}
+              label="この建物の住まい用の部屋は3室以下で、そのすべてを持ち主（亡くなった方）や親族が住まいに使っている"
+            />
+            <p className="text-xs text-stone-500">二世帯住宅などで当てはまる場合は、区分所有補正をしません。当てはまるか分からない場合は、税理士に確認してください。</p>
+          </div>
           <SmallResidential living={living} a={a} patch={patch} />
         </>
       );

@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 import { Button, Card, Note, fmt } from "@/components/ui";
+import { useAsk } from "@/components/compass/AskCompass";
 import { toString as fracText } from "@/domain/fraction";
 import { RATE_TABLE, rateFor } from "@/domain/tax/engine";
 import { Markdown } from "@/components/compass/Markdown";
-import { addMonths, jpDate, nextOpenDay } from "@/domain/procedures/dates";
+import { jpDate, monthsDeadline, nextOpenDay } from "@/domain/procedures/dates";
 import { relationLabel } from "@/forms/filing";
 import { useCase } from "@/lib/store";
 import { summarizeForAssistant } from "@/lib/summary";
@@ -23,38 +23,22 @@ function Row({ label, value, sub, strong }: { label: React.ReactNode; value: num
   );
 }
 
+const EXPLAIN_QUESTION = "この計算結果を、相続税に詳しくない家族にも分かるように説明してください。なぜこの税額になるのか、配偶者の税額軽減などの効果も含めて。";
+
 export function TaxStep() {
   const { data, result, error } = useCase();
-  const [explain, setExplain] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  // 説明の依頼は相談欄と同じ仕組みを使う（通信に失敗したときも、その旨を表示する）
+  const explainer = useAsk("tax", () => summarizeForAssistant(data, result));
   if (error) return <Note tone="stop">計算できませんでした：{error}</Note>;
   if (!result) return <Note tone="info">亡くなった日を入力すると計算できます。</Note>;
   const r = result;
-
-  async function askExplain() {
-    setBusy(true);
-    try {
-      const res = await fetch("/api/assist", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          step: "tax",
-          question: "この計算結果を、相続税に詳しくない家族にも分かるように説明してください。なぜこの税額になるのか、配偶者の税額軽減などの効果も含めて。",
-          context: summarizeForAssistant(data, result).slice(0, 6000),
-        }),
-      });
-      const j = await res.json();
-      setExplain(j.answer ?? j.error ?? "うまく説明できませんでした。");
-    } finally {
-      setBusy(false);
-    }
-  }
+  const { answer: explain, busy } = explainer;
 
   const man = (n: number) => (n >= 10_000 ? `約${(Math.round(n / 1_000) / 10).toLocaleString("ja-JP")}万円` : `${fmt(n)}円`);
   const payers = r.persons.filter((p) => p.taxable > 0 || p.payable > 0);
   const maxBar = Math.max(1, ...payers.map((p) => p.computed + p.surcharge));
   const basicPart = Math.min(r.basicDeduction, r.totalTaxable);
-  const deadline = data.decedent.deathDate ? nextOpenDay(addMonths(data.decedent.deathDate, 10)) : null;
+  const deadline = data.decedent.deathDate ? nextOpenDay(monthsDeadline(data.decedent.deathDate, 10)) : null;
 
   // 確認待ちの財産や、取得する人が決まっていない財産があるうちは、税額は暫定
   const pendingAssets = data.assets.filter((a) => a.pending?.length || r.assets.find((l) => l.asset.id === a.id)?.valuation.needsConsultation);
@@ -86,8 +70,8 @@ export function TaxStep() {
           </ul>
         </Note>
       )}
-      {r.blockers.map((b) => (
-        <Note key={b} tone="stop">
+      {r.blockers.map((b, i) => (
+        <Note key={`${i}:${b}`} tone="stop">
           {b}
         </Note>
       ))}
@@ -290,12 +274,18 @@ export function TaxStep() {
         </Card>
       )}
 
-      <Card title="コンパスくんの説明" actions={<Button onClick={askExplain} disabled={busy}>{busy ? "作成中…" : "この結果を説明してもらう"}</Button>}>
-        {explain ? <div className="text-sm text-stone-800"><Markdown text={explain} /></div> : <p className="text-sm text-stone-500">「この結果を説明してもらう」を押すと、コンパスくんが計算結果をやさしく説明します。</p>}
+      <Card title="コンパスくんの説明" actions={<Button onClick={() => explainer.ask(EXPLAIN_QUESTION)} disabled={busy}>{busy ? "作成中…" : "この結果を説明してもらう"}</Button>}>
+        {busy ? (
+          <p className="text-sm text-stone-500">説明を作っています…</p>
+        ) : explain ? (
+          <div className="text-sm text-stone-800"><Markdown text={explain} /></div>
+        ) : (
+          <p className="text-sm text-stone-500">「この結果を説明してもらう」を押すと、コンパスくんが計算結果をやさしく説明します。</p>
+        )}
       </Card>
 
-      {r.warnings.map((w) => (
-        <Note key={w} tone="warn">
+      {r.warnings.map((w, i) => (
+        <Note key={`${i}:${w}`} tone="warn">
           {w}
         </Note>
       ))}

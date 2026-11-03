@@ -7,10 +7,11 @@ import { Bubble, CompassAvatar } from "@/components/compass/CompassKun";
 import { OfficeLookup } from "@/components/plan/OfficeLookup";
 import { AppHeader } from "@/components/shell/AppShell";
 import { Card, Field, Note, TextInput, YenInput } from "@/components/ui";
-import { addYears, jpDate } from "@/domain/procedures/dates";
+import { jpDate, nextOpenDay, yearsDeadline } from "@/domain/procedures/dates";
 import { buildRegistrations } from "@/domain/registration";
 import type { Asset, RegistryInfo } from "@/domain/types";
 import { useCase } from "@/lib/store";
+import { saveBlob } from "@/lib/download";
 
 const DOCS = [
   ["登記事項証明書（登記簿謄本）", "申請書の「不動産の表示」を写すため。法務局・オンラインで取得"],
@@ -62,7 +63,7 @@ export function RegistrationPage() {
   if (!loaded) return null;
   const props = data.assets.filter((a): a is RegAsset => a.kind === "land" || a.kind === "building" || a.kind === "condo");
   const apps = buildRegistrations(data);
-  const deadline = data.decedent.deathDate ? jpDate(addYears(data.decedent.deathDate, 3)) : "";
+  const deadline = data.decedent.deathDate ? jpDate(nextOpenDay(yearsDeadline(data.decedent.deathDate, 3))) : "";
   const unallocated = props.filter((p) => !data.allocations.some((a) => a.assetId === p.id && a.shares.length));
 
   async function download() {
@@ -71,14 +72,7 @@ export function RegistrationPage() {
     try {
       const res = await fetch("/api/registration", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data) });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "作成に失敗しました。");
-      const url = URL.createObjectURL(await res.blob());
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "登記申請書_相続.pdf";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      saveBlob(await res.blob(), "登記申請書_相続.pdf");
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -156,6 +150,7 @@ export function RegistrationPage() {
                   取得する人：{app.applicants.map((a) => `${a.name}${a.share ? `（持分${a.share}）` : ""}`).join("、")}
                 </p>
                 <p className="text-sm text-stone-600">不動産：{app.properties.map((p) => p.label).join("、")}</p>
+                <p className="text-sm text-stone-600">提出先：{app.area}を受け持つ法務局（上の「提出先の法務局」で確かめてください）</p>
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   <div className="rounded-lg bg-stone-50 p-3">
                     <p className="text-xs text-stone-500">課税価格（固定資産評価額の合計・1,000円未満切捨て）</p>
@@ -175,7 +170,9 @@ export function RegistrationPage() {
             <button type="button" onClick={download} disabled={busy || apps.length === 0} className="rounded-lg bg-sky-700 px-5 py-2.5 font-semibold text-white hover:bg-sky-800 disabled:bg-stone-300">
               {busy ? "作成中…" : "登記申請書（PDF）をダウンロード"}
             </button>
-            <span className="text-xs text-stone-500">取得する人の組み合わせごとに1通ずつ作ります。申請日と法務局名は提出時に書き入れてください。</span>
+            <span className="text-xs text-stone-500">
+              取得する人の組み合わせと、不動産のある市区町村ごとに1通ずつ作ります。市町村の合併などで、同じ市の中でも受け持つ法務局が地域によって分かれていることがあるので、提出先は必ず確かめてください。申請日と法務局名は提出時に書き入れてください。
+            </span>
           </div>
           {err && <p className="mt-2 text-sm text-rose-700">{err}</p>}
         </Card>

@@ -3,7 +3,7 @@
 import { kvGet, kvSet } from "@/lib/cloud";
 import { Clock, MapPin, Phone } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CompassAvatar } from "@/components/compass/CompassKun";
 import { OFFICE_LABEL, areaOf, cityOf, isTokyoWard, type OfficeKind } from "@/domain/procedures/offices";
 
@@ -33,10 +33,14 @@ export function OfficeLookup({ kind, dept, address, forProperty }: { kind: Offic
   const { pref, city } = cityOf(address);
   const key = `${actual}|${actual === "city" ? pref + city : areaOf(address)}|${dept ?? ""}`;
   const [office, setOffice] = useState<Office | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  // 調べている窓口・失敗した窓口を key で覚え、別の手続きに切り替えたあとに古い結果を表示しないようにする
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [err, setErr] = useState<{ key: string; text: string } | null>(null);
+  const current = useRef(key);
+  const busy = busyKey === key;
 
   useEffect(() => {
+    current.current = key;
     setOffice(readCache()[key] ?? null);
   }, [key]);
 
@@ -53,7 +57,8 @@ export function OfficeLookup({ kind, dept, address, forProperty }: { kind: Offic
     );
 
   async function lookup() {
-    setBusy(true);
+    const k = key;
+    setBusyKey(k);
     setErr(null);
     try {
       const res = await fetch("/api/offices", {
@@ -63,12 +68,13 @@ export function OfficeLookup({ kind, dept, address, forProperty }: { kind: Offic
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error ?? "調べられませんでした。");
-      setOffice(j);
-      kvSet(KEY, JSON.stringify({ ...readCache(), [key]: j }));
+      // 結果はその窓口の key で保存し、いま表示している窓口と同じときだけ画面に出す
+      kvSet(KEY, JSON.stringify({ ...readCache(), [k]: j }));
+      if (current.current === k) setOffice(j);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr({ key: k, text: e instanceof Error ? e.message : String(e) });
     } finally {
-      setBusy(false);
+      setBusyKey((b) => (b === k ? null : b));
     }
   }
 
@@ -113,7 +119,7 @@ export function OfficeLookup({ kind, dept, address, forProperty }: { kind: Offic
           {busy ? "コンパスくんが公式サイトを調べています…（30秒ほど）" : "住所・電話番号をコンパスくんに調べてもらう"}
         </button>
       )}
-      {err && <p className="mt-1 text-rose-700">{err}</p>}
+      {err && err.key === key && <p className="mt-1 text-rose-700">{err.text}</p>}
     </div>
   );
 }

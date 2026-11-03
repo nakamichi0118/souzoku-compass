@@ -5,7 +5,7 @@
  * 段階ごとに「済」を付けられ、納税まで済んだら、やることリストの「相続税の申告と納付」も完了にする。
  */
 import { Check } from "lucide-react";
-import { addMonths, jpDate, nextOpenDay } from "@/domain/procedures/dates";
+import { jpDate, monthsDeadline, nextOpenDay } from "@/domain/procedures/dates";
 import { usePlan } from "@/lib/planStore";
 import { useCase } from "@/lib/store";
 
@@ -13,7 +13,7 @@ export function FilingGuide({ missing }: { missing: { form: string; reason: stri
   const { data, result } = useCase();
   const plan = usePlan();
   if (!result || !result.needsFiling) return null;
-  const deadline = data.decedent.deathDate ? nextOpenDay(addMonths(data.decedent.deathDate, 10)) : null;
+  const deadline = data.decedent.deathDate ? nextOpenDay(monthsDeadline(data.decedent.deathDate, 10)) : null;
   const t = data.filing?.taxOffice?.trim();
   const office = t ? (t.endsWith("税務署") ? t : `${t}税務署`) : "亡くなった方の住所地の税務署";
   const small = result.assets.some((l) => l.reduction > 0);

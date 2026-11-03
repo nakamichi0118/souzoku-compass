@@ -6,38 +6,13 @@ import { AskCompass, useAsk } from "@/components/compass/AskCompass";
 import { Bubble, CompassAvatar } from "@/components/compass/CompassKun";
 import { MonthCalendar } from "@/components/plan/MonthCalendar";
 import { AppShell, PageHead } from "@/components/shell/AppShell";
+import { Panel } from "@/components/ui/Panel";
 import { daysBetween, jpDate } from "@/domain/procedures/dates";
-import type { Task } from "@/domain/procedures/rules";
 import { useOverall } from "@/lib/overall";
-import type { ItemStatus } from "@/lib/planStore";
+import { daysLeftLabel, taskStatus } from "@/lib/taskStatus";
 import { CatIcon } from "./icons";
 
 const man = (n: number) => `約${Math.round(n / 10_000).toLocaleString("ja-JP")}万円`;
-
-export function Panel({ title, more, children, className = "" }: { title: string; more?: { href: string; label?: string }; children: React.ReactNode; className?: string }) {
-  return (
-    <section className={`rounded-2xl border border-sky-100 bg-white p-5 shadow-sm ${className}`}>
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="font-bold text-sky-950">{title}</h2>
-        {more && (
-          <Link href={more.href} className="text-sm text-sky-700 hover:underline">
-            {more.label ?? "詳しく見る"} ›
-          </Link>
-        )}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-export function taskStatus(t: Task, st: ItemStatus, now: string) {
-  if (st === "na") return { label: "不要", cls: "bg-stone-200 text-stone-600" };
-  if (st === "done") return { label: "✓ 完了", cls: "bg-emerald-100 text-emerald-800" };
-  const left = daysBetween(now, t.date);
-  if (left < 0) return { label: `${-left}日超過`, cls: "bg-rose-100 text-rose-800" };
-  if (t.hard) return { label: "期限あり", cls: "bg-orange-100 text-orange-800" };
-  return { label: "未着手", cls: "bg-stone-100 text-stone-600" };
-}
 
 export function Home() {
   const o = useOverall();
@@ -82,8 +57,8 @@ export function Home() {
             <p className="text-sm font-semibold text-brand">次にすること</p>
             <p className="mt-1 text-xl font-bold text-stone-900">{o.next.title}</p>
             <p className="mt-1 text-sm text-stone-600">
-              {o.next.hard ? "期限" : "目安"} {jpDate(o.next.date)}（{daysBetween(o.now, o.next.date) >= 0 ? `あと${daysBetween(o.now, o.next.date)}日` : "過ぎています"}）
-              {o.next.office ? `・${o.next.dept ?? ""}` : ""}
+              {o.next.hard ? "期限" : "目安"} {jpDate(o.next.date)}（{daysLeftLabel(o.now, o.next.date)}）
+              {o.next.office && o.next.dept ? `・${o.next.dept}` : ""}
             </p>
           </div>
           <Link href={o.next.id === "inheritance-tax" && nextStep ? `/case/${nextStep.slug}` : `/my/tasks?id=${o.next.id}`} className="rounded-full bg-brand px-7 py-3 font-bold text-white shadow hover:brightness-95">
@@ -98,14 +73,13 @@ export function Home() {
             <p className="-mt-2 mb-3 text-sm text-stone-500">期限の近いものから進めましょう。</p>
             <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {upcoming.map((t) => {
-                const d = false;
                 const st = taskStatus(t, o.statusOf(t.id), o.now);
                 return (
                   <li key={t.id}>
-                    <Link href={`/my/tasks?id=${t.id}`} className={`flex h-full flex-col rounded-xl border p-3 hover:border-sky-400 ${d ? "border-emerald-200 bg-emerald-50/50" : "border-stone-200 bg-white"}`}>
+                    <Link href={`/my/tasks?id=${t.id}`} className="flex h-full flex-col rounded-xl border border-stone-200 bg-white p-3 hover:border-sky-400">
                       <span className={`self-start rounded-full px-2 py-0.5 text-[11px] font-bold ${st.cls}`}>{st.label}</span>
-                      <span className={`mt-2 line-clamp-2 text-sm font-bold ${d ? "text-stone-500" : "text-stone-900"}`}>{t.title}</span>
-                      <span className="mt-auto pt-2 text-xs text-stone-500">{t.hard ? "期限" : "目安"} {jpDate(t.date)}（{daysBetween(o.now, t.date) >= 0 ? `あと${daysBetween(o.now, t.date)}日` : "過ぎています"}）</span>
+                      <span className="mt-2 line-clamp-2 text-sm font-bold text-stone-900">{t.title}</span>
+                      <span className="mt-auto pt-2 text-xs text-stone-500">{t.hard ? "期限" : "目安"} {jpDate(t.date)}（{daysLeftLabel(o.now, t.date)}）</span>
                     </Link>
                   </li>
                 );

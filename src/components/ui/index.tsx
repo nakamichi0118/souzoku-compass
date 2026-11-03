@@ -71,7 +71,8 @@ export function YenInput({ value, onChange, unit = "円" }: { value: number | un
         // 0 のときは、入力を始めると 0 が消えるようにする
         onFocus={(e) => e.target.select()}
         onChange={(e) => {
-          const digits = e.target.value.replace(/[^\d]/g, "");
+          // 全角の数字（１２３）も半角にしてから読む
+          const digits = e.target.value.normalize("NFKC").replace(/[^\d]/g, "");
           setText(digits ? Number(digits).toLocaleString("ja-JP") : "");
           onChange(digits ? Number(digits) : 0);
         }}
@@ -80,12 +81,20 @@ export function YenInput({ value, onChange, unit = "円" }: { value: number | un
   );
 }
 
+/** 入力された文字を、小数の数字だけの文字にする（全角は半角に、小数点は1つまで、先頭の余分な 0 は取る） */
+function cleanDecimal(raw: string) {
+  let t = raw.normalize("NFKC").replace(/[^\d.]/g, "");
+  const dot = t.indexOf(".");
+  if (dot >= 0) t = t.slice(0, dot + 1) + t.slice(dot + 1).replace(/\./g, "");
+  return t.replace(/^0+(?=\d)/, "");
+}
+const showNum = (v: number | undefined) => (v == null ? "" : String(v));
+
 /** 小数も入る数値入力（地積・奥行など）。先頭の 0 は自動で取る */
 export function NumInput({ value, onChange, unit }: { value: number | undefined; onChange: (v: number) => void; step?: string; unit?: string }) {
-  const show = (v: number | undefined) => (v == null ? "" : String(v));
-  const [text, setText] = useState(show(value));
+  const [text, setText] = useState(showNum(value));
   useEffect(() => {
-    setText((t) => (Number(t) === value ? t : show(value)));
+    setText((t) => (Number(t) === value ? t : showNum(value)));
   }, [value]);
   return (
     <UnitBox unit={unit}>
@@ -95,15 +104,61 @@ export function NumInput({ value, onChange, unit }: { value: number | undefined;
         value={text}
         onFocus={(e) => e.target.select()}
         onChange={(e) => {
-          let t = e.target.value.normalize("NFKC").replace(/[^\d.]/g, "");
-          const dot = t.indexOf(".");
-          if (dot >= 0) t = t.slice(0, dot + 1) + t.slice(dot + 1).replace(/\./g, "");
-          t = t.replace(/^0+(?=\d)/, "");
+          const t = cleanDecimal(e.target.value);
           setText(t);
           onChange(t === "" || t === "." ? 0 : Number(t));
         }}
       />
     </UnitBox>
+  );
+}
+
+/**
+ * 入れなくてもよい小数の入力（補正率など）。空欄・0・accept に合わない値は undefined として渡す。
+ * 合わない値を入れたときも入力中の文字は消さず、invalidMessage を下に出す。
+ */
+export function OptionalNumInput({
+  value,
+  onChange,
+  accept,
+  unit,
+  invalidMessage,
+}: {
+  value: number | undefined;
+  onChange: (v: number | undefined) => void;
+  accept: (v: number) => boolean;
+  unit?: string;
+  invalidMessage?: string;
+}) {
+  const toValue = (t: string) => {
+    const n = Number(t);
+    return t === "" || t === "." || n === 0 || !accept(n) ? undefined : n;
+  };
+  const [text, setText] = useState(showNum(value));
+  useEffect(() => {
+    // 外から値が変わったときだけ表示を合わせる（自分の入力で undefined になったときは、入れた文字を残す）
+    setText((t) => (toValue(t) === value ? t : showNum(value)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- accept が変わっても表示は合わせ直さない
+  }, [value]);
+  const bad = text !== "" && text !== "." && Number(text) !== 0 && toValue(text) === undefined;
+  return (
+    <>
+      <UnitBox unit={unit}>
+        <input
+          inputMode="decimal"
+          className={boxInputCls}
+          value={text}
+          aria-invalid={bad || undefined}
+          onFocus={(e) => e.target.select()}
+          onChange={(e) => {
+            const t = cleanDecimal(e.target.value);
+            setText(t);
+            onChange(toValue(t));
+          }}
+        />
+      </UnitBox>
+      {bad && invalidMessage && <span className="mt-1 block text-xs font-medium text-red-700">{invalidMessage}</span>}
+    </>
   );
 }
 

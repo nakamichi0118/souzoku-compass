@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
 import { buildDivisionDoc } from "@/documents/division";
 import { renderDivision } from "@/documents/renderDivision";
-import type { Case } from "@/domain/types";
+import { failureMessage, readCaseRequest } from "@/server/caseRequest";
 
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
-  const c = (await req.json()) as Case;
+  const r0 = await readCaseRequest(req, "division");
+  if ("res" in r0) return r0.res;
   try {
-    const pdf = await renderDivision(buildDivisionDoc(c));
+    const pdf = await renderDivision(buildDivisionDoc(r0.case));
     return new NextResponse(Buffer.from(pdf), {
       headers: {
         "content-type": "application/pdf",
@@ -16,6 +17,6 @@ export async function POST(req: Request) {
       },
     });
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
+    return NextResponse.json({ error: failureMessage(e, "遺産分割協議書を作れませんでした。入力内容を確かめてください。") }, { status: 400 });
   }
 }

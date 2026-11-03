@@ -5,6 +5,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/server/auth/db";
 import { currentUser, sameOrigin } from "@/server/auth/http";
+import { readText } from "@/server/requestBody";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,8 +25,9 @@ async function write(req: Request) {
   if (!(await sameOrigin())) return NextResponse.json({ error: "不正なリクエストです。" }, { status: 403 });
   const user = await currentUser();
   if (!user) return NextResponse.json({ error: "ログインしてください。" }, { status: 401 });
-  const raw = await req.text();
-  if (raw.length > MAX_BYTES) return NextResponse.json({ error: "保存するデータが大きすぎます。" }, { status: 413 });
+  // 大きすぎる本文は最後まで読まずに断る（日本語は1文字3バイトなので、文字数の上限の3倍まで読む）
+  const raw = await readText(req, MAX_BYTES * 3);
+  if (raw === null || raw.length > MAX_BYTES) return NextResponse.json({ error: "保存するデータが大きすぎます。" }, { status: 413 });
   let body: { set?: Record<string, unknown>; del?: unknown[] };
   try {
     body = JSON.parse(raw);

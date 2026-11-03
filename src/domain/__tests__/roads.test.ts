@@ -58,4 +58,28 @@ describe("2つ以上の道路に面する宅地（財産評価基本通達16〜1
     expect(v.unitPrice).toBe(306_000);
     expect(v.value).toBe(306_000 * 200);
   });
+
+  it("路線価か奥行が入っていない道路があれば、その道路を外して計算せず確定しない", () => {
+    const base: LandAsset = { id: "l", kind: "land", label: "自宅", location: "x", areaSqm: 200, landUse: "宅地", method: { type: "rosenka", routePrice: 300_000, depthCorrection: 1 } };
+    for (const second of [
+      { edge: 1 as const, price: 200_000, depth: 0 },
+      { edge: 1 as const, price: 0, depth: 10 },
+      { edge: 1 as const, price: 0, depth: 0 },
+    ]) {
+      const v = valueLand({ ...base, method: { type: "rosenka", routePrice: 300_000, depthCorrection: 1, roads: [{ edge: 0, price: 300_000, depth: 20 }, second] } });
+      expect(v.value).toBe(0);
+      expect(v.needsConsultation).toContain("道路");
+    }
+  });
+
+  it("同じ路線価・奥行の側方路線が2本あっても、計算過程の文は重ならない", () => {
+    const r = evaluateRoads("普通住宅地区", [
+      { edge: 0, price: 300_000, depth: 20 },
+      { edge: 1, price: 200_000, depth: 20 },
+      { edge: 3, price: 200_000, depth: 20 },
+    ])!;
+    expect(new Set(r.steps).size).toBe(r.steps.length);
+    expect(r.steps.some((s) => s.startsWith("側方路線（1本目）"))).toBe(true);
+    expect(r.steps.some((s) => s.startsWith("側方路線（2本目）"))).toBe(true);
+  });
 });

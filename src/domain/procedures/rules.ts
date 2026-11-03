@@ -5,7 +5,7 @@
  *
  * 期限の起算日は、簡単のため「亡くなった日（＝亡くなったことを知った日）」とする。
  */
-import { addDays, addMonths, addYears, nextOpenDay, withinDays, yearOf, monthOf, type ISODate } from "./dates";
+import { addDays, addYears, earlier, jpDate, monthsDeadline, nextOpenDay, withinDays, yearOf, yearsDeadline, monthOf, type ISODate } from "./dates";
 import type { OfficeKind } from "./offices";
 import { estimate, needsFinalReturn, type Estimate, type Interview, type Verdict } from "./interview";
 
@@ -24,6 +24,11 @@ export interface Rule {
   due: (death: ISODate, x: Ctx) => ISODate;
   /** true なら法律上の期限、false なら目安 */
   hard: boolean;
+  /**
+   * false なら、期限が土日祝日・年末年始でも次の平日にずらさない。
+   * 「この日までに売る」のように、役所への提出ではない期限に使う（休日でずれるのは提出や納付の期限だけ）
+   */
+  shiftHoliday?: false;
   /** 並べる順の基準日（期限より前に済ませる手続き。例：火葬許可は火葬の前） */
   sortDue?: (death: ISODate) => ISODate;
   /** 目安の手続きに、別に法律上の期限がある場合 */
@@ -47,24 +52,58 @@ export interface Rule {
 }
 
 const d = (n: number) => (death: ISODate) => withinDays(death, n);
-const m = (n: number) => (death: ISODate) => addMonths(death, n);
-const y = (n: number) => (death: ISODate) => addYears(death, n);
+/** 「〇か月以内」「〇年以内」（目安の日も同じ数え方にそろえる） */
+const m = (n: number) => (death: ISODate) => monthsDeadline(death, n);
+const y = (n: number) => (death: ISODate) => yearsDeadline(death, n);
+/** 法要の日（亡くなった日と同じ月日） */
+const anniversary = (n: number) => (death: ISODate) => addYears(death, n);
 const always = () => true;
 const hasWill = ({ iv }: Ctx) => iv.will === "notarized" || iv.will === "handwritten" || iv.will === "handwrittenStored";
 const hasRealEstate = ({ iv }: Ctx) => iv.homeValue > 0 || iv.otherRealEstate > 0;
+const securitiesDocs = ({ iv }: Ctx) => (iv.securities > 0 ? ["securitiesCert"] : []);
+const realEstateDocs = (x: Ctx, docs: string[]) => (hasRealEstate(x) ? docs : []);
 const taxFiling = ({ est }: Ctx) => est.verdict === "likely" || est.verdict === "relief";
 
-/** 青色申告の承認申請の期限（所得税法144条・147条、相続により事業を引き継ぐ場合） */
-export function blueReturnDue(death: ISODate): ISODate {
+/**
+ * 亡くなった方が青色申告の承認を受けていた場合の、事業を引き継ぐ相続人の青色申告の承認申請の期限
+ * （所得税基本通達144-1）：亡くなった月が1〜8月なら4か月以内、9〜10月ならその年の12月31日、11〜12月なら翌年2月15日
+ */
+export function blueFilerDue(death: ISODate): ISODate {
   const mo = monthOf(death);
   const yr = yearOf(death);
-  if (mo <= 8) return addMonths(death, 4);
+  if (mo <= 8) return monthsDeadline(death, 4);
   if (mo <= 10) return `${yr}-12-31`;
   return `${yr + 1}-02-15`;
 }
 
-/** 空き家の譲渡所得の3,000万円特別控除の期限：相続開始日から3年を経過する日の属する年の12月31日 */
-export const vacantHomeDue = (death: ISODate) => `${yearOf(addYears(death, 3))}-12-31`;
+/**
+ * 亡くなった方が青色申告ではなかった場合の期限（所得税法144条）：引き継いだ日（亡くなった日）から2か月以内。
+ * 1月1日〜15日に引き継いだ場合は、その年の3月15日
+ */
+export function newBusinessBlueDue(death: ISODate): ISODate {
+  return death.slice(5) <= "01-15" ? `${yearOf(death)}-03-15` : monthsDeadline(death, 2);
+}
+
+/**
+ * 事業を引き継ぐ場合の青色申告の承認申請の期限。
+ * 聞き取りでは亡くなった方が青色申告をしていたかを聞いていないので、間に合わなくならないよう早いほうの日を使う。
+ */
+export const blueReturnDue = (death: ISODate): ISODate => earlier(blueFilerDue(death), newBusinessBlueDue(death));
+
+/**
+ * 空き家の譲渡所得の特別控除で、売る期限（租税特別措置法35条3項）：
+ * 相続開始の日から同日以後3年を経過する日（3年後の同じ日の前日）の属する年の12月31日
+ */
+export const vacantHomeDue = (death: ISODate) => `${yearOf(addDays(addYears(death, 3), -1))}-12-31`;
+
+/** 今の法律で、空き家の特別控除の対象になる売却の最後の日（令和9年12月31日。延長されることがある） */
+export const VACANT_HOME_LAST_SALE = "2027-12-31";
+
+/**
+ * 相続税の取得費加算で、売る期限（租税特別措置法39条）：相続税の申告期限の翌日以後3年を経過する日。
+ * 申告期限は休日なら次の平日にずれるので、ずれた後の申告期限から数える
+ */
+export const saleCostDue = (death: ISODate) => yearsDeadline(nextOpenDay(monthsDeadline(death, 10)), 3);
 
 export const RULES: Rule[] = [
   // ---------------------------------------------------------------- 亡くなってすぐ
@@ -216,7 +255,7 @@ export const RULES: Rule[] = [
     due: m(2),
     hard: false,
     optional: true,
-    applies: ({ iv }) => iv.deposits > 0 || iv.securities > 0 || iv.homeValue > 0 || iv.otherRealEstate > 0,
+    applies: (x) => x.iv.deposits > 0 || x.iv.securities > 0 || hasRealEstate(x),
     what: "集めた戸籍と相続関係の一覧図を法務局に出すと、無料で証明書（写し）を何枚でも出してもらえます。銀行・証券会社・法務局（登記）・税務署で戸籍の束の代わりに使えるので、手続き先が多い場合に便利です。",
     where: "法務局",
     bring: ["戸籍謄本一式", "法定相続情報一覧図（自分で作成）", "申出人の本人確認書類"],
@@ -224,7 +263,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "estate-survey",
-    docs: ({ iv }) => [...(iv.homeValue > 0 || iv.otherRealEstate > 0 ? ["nayose", "touki"] : []), "credit"],
+    docs: (x) => [...realEstateDocs(x, ["nayose", "touki"]), "credit"],
     title: "財産と借金を調べる",
     category: "調べる・決める",
     due: m(2),
@@ -249,7 +288,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "bank-notice",
-    docs: ({ iv }) => ["balanceCert", ...(iv.securities > 0 ? ["securitiesCert"] : [])],
+    docs: (x) => ["balanceCert", ...securitiesDocs(x)],
     title: "銀行・証券会社への連絡と残高証明書の取得",
     category: "調べる・決める",
     due: m(1),
@@ -363,7 +402,7 @@ export const RULES: Rule[] = [
     docs: ["withholding"],
     title: ({ iv }) => (needsFinalReturn(iv) === "required" ? "準確定申告（亡くなった年の所得税）" : "準確定申告（還付を受けられる場合）"),
     category: "税金",
-    due: (death) => addMonths(death, 4),
+    due: m(4),
     hard: true,
     applies: ({ iv }) => needsFinalReturn(iv) !== "notNeeded",
     optional: ({ iv }) => needsFinalReturn(iv) !== "required",
@@ -398,9 +437,9 @@ export const RULES: Rule[] = [
     hard: true,
     optional: true,
     applies: ({ iv }) => iv.work === "selfEmployed",
-    what: "相続人が事業を引き継いで青色申告をする場合は、承認申請書を出します。期限は亡くなった月で変わります（1〜8月なら4か月以内、9〜10月なら12月31日、11〜12月なら翌年2月15日）。",
+    what: "相続人が事業を引き継いで青色申告をする場合は、承認申請書を出します。亡くなった方が青色申告をしていた場合の期限は、亡くなった月で変わります（1〜8月なら4か月以内、9〜10月なら12月31日、11〜12月なら翌年2月15日）。青色申告ではなかった場合は、亡くなった日から2か月以内（1月1日〜15日に亡くなった場合は3月15日）です。ここでは、間に合わなくならないよう早いほうの日を期限にしています。引き継ぐ人がすでに自分の事業で申告している場合は期限が違うことがあるので、税務署に確認してください。",
     where: "引き継ぐ人の住所地の税務署",
-    law: "所得税法144条・147条",
+    law: "所得税法144条・147条、所得税基本通達144-1",
   },
   // ---------------------------------------------------------------- 10か月
   {
@@ -408,7 +447,7 @@ export const RULES: Rule[] = [
     docs: ["inkan"],
     title: "遺産分割協議と協議書の作成",
     category: "調べる・決める",
-    due: (death, x) => addMonths(death, taxFiling(x) ? 8 : 10),
+    due: (death, x) => monthsDeadline(death, taxFiling(x) ? 8 : 10),
     hard: false,
     applies: ({ iv, est }) => est.heirCount > 1 && iv.will !== "notarized",
     what: ({ est }) =>
@@ -423,7 +462,7 @@ export const RULES: Rule[] = [
   {
     id: "inheritance-tax",
     office: "taxOffice",
-    docs: ({ iv }) => ["kosekiDecedent", "kosekiHeirs", "inkan", "balanceCert", ...(iv.securities > 0 ? ["securitiesCert"] : []), ...(iv.homeValue > 0 || iv.otherRealEstate > 0 ? ["touki", "hyokaCert"] : []), ...(iv.insurance > 0 ? ["insurancePay"] : []), "funeralReceipt"],
+    docs: (x) => ["kosekiDecedent", "kosekiHeirs", "inkan", "balanceCert", ...securitiesDocs(x), ...realEstateDocs(x, ["touki", "hyokaCert"]), ...(x.iv.insurance > 0 ? ["insurancePay"] : []), "funeralReceipt"],
     title: ({ est }) =>
       est.verdict === "likely"
         ? "相続税の申告と納付"
@@ -531,7 +570,7 @@ export const RULES: Rule[] = [
     id: "isshuki",
     title: "一周忌法要",
     category: "葬儀・法要",
-    due: y(1),
+    due: anniversary(1),
     hard: false,
     applies: always,
     what: "亡くなった日から満1年の命日に行う法要です。命日より前の休日に行うのが一般的です。",
@@ -551,7 +590,7 @@ export const RULES: Rule[] = [
     id: "sankaiki",
     title: "三回忌法要",
     category: "葬儀・法要",
-    due: y(2),
+    due: anniversary(2),
     hard: false,
     applies: always,
     what: "亡くなってから満2年の命日に行う法要です。",
@@ -591,11 +630,12 @@ export const RULES: Rule[] = [
     office: "taxOffice",
     title: "相続した不動産・株を売る場合の相続税の取得費加算",
     category: "税金",
-    due: (death) => addYears(addMonths(death, 10), 3),
+    due: (death) => saleCostDue(death),
     hard: true,
+    shiftHoliday: false,
     optional: true,
     applies: (x) => x.est.verdict === "likely" && (hasRealEstate(x) || x.iv.securities > 0),
-    what: "相続税を払った人が、相続した財産を申告期限から3年以内に売ると、払った相続税の一部を取得費に加えて譲渡所得税を減らせます。",
+    what: "相続税を払った人が、相続した財産を相続税の申告期限の翌日から3年以内（この日まで）に売ると、払った相続税の一部を取得費に加えて譲渡所得税を減らせます。この日は売る期限なので、休日でもずれません。手続きは売った年の確定申告でします。",
     where: "売った年の確定申告（税務署）",
     law: "租税特別措置法39条",
     source: { label: "国税庁 タックスアンサー No.3267", url: "https://www.nta.go.jp/taxes/shiraberu/taxanswer/joto/3267.htm" },
@@ -605,11 +645,20 @@ export const RULES: Rule[] = [
     office: "taxOffice",
     title: "空き家になった実家を売る場合の3,000万円特別控除",
     category: "税金",
-    due: (death) => vacantHomeDue(death),
+    due: (death) => earlier(vacantHomeDue(death), VACANT_HOME_LAST_SALE),
     hard: true,
+    shiftHoliday: false,
     optional: true,
     applies: ({ iv }) => iv.homeValue > 0,
-    what: "亡くなった方が一人で住んでいた家（昭和56年5月31日以前の建築など条件あり）を相続し、耐震改修や取り壊しのうえ売った場合は、譲渡所得から最大3,000万円を差し引けます。期限は相続開始から3年を経過する日の属する年の12月31日までです。",
+    what: ({ iv }) => {
+      const legal = vacantHomeDue(iv.deathDate);
+      return (
+        "亡くなった方が一人で住んでいた家（昭和56年5月31日以前の建築など条件あり）を相続し、耐震改修や取り壊しのうえ売った場合は、譲渡所得から最大3,000万円（家を受け継いだ相続人が3人以上なら1人2,000万円）を差し引けます。売る期限は、亡くなった日から3年を経過する日の属する年の12月31日です。" +
+        (legal > VACANT_HOME_LAST_SALE
+          ? `ただし、今の法律ではこの特例は2027年（令和9年）12月31日までに売った場合だけが対象なので、ここではその日を期限にしています（法律が延長されれば${jpDate(legal)}まで）。売る前に、延長されたかどうかを税務署で確認してください。`
+          : "")
+      );
+    },
     where: "売った年の確定申告（税務署）",
     law: "租税特別措置法35条3項",
     source: { label: "国税庁 タックスアンサー No.3306", url: "https://www.nta.go.jp/taxes/shiraberu/taxanswer/joto/3306.htm" },
@@ -649,7 +698,7 @@ export function buildTasks(iv: Interview, opts: { verdict?: Verdict } = {}): { t
   const death = iv.deathDate;
   const tasks = RULES.filter((r) => r.applies(x)).map((r): Task => {
     const raw = r.due(death, x);
-    const date = r.hard ? nextOpenDay(raw) : raw;
+    const date = r.hard && r.shiftHoliday !== false ? nextOpenDay(raw) : raw;
     return {
       id: r.id,
       title: val(r.title, x),

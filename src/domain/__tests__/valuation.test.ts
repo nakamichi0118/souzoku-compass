@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { condoCorrection, smallResidentialReduction, valueAsset } from "../valuation";
+import { condoCorrection, perSqmTimesArea, smallResidentialReduction, valueAsset, valueLand } from "../valuation";
 import { depthCorrection } from "../valuation/depth";
 import { parseRouteNotation } from "../valuation/rosenka";
-import type { CondoAsset } from "../types";
+import type { CondoAsset, LandAsset, ListedStockAsset } from "../types";
 
 describe("区分所有補正率（国税庁タックスアンサーNo.4667の計算例）", () => {
   const base: CondoAsset = {
@@ -34,6 +34,39 @@ describe("区分所有補正率（国税庁タックスアンサーNo.4667の計
     expect(c.ratio).toBe(1521);
     expect(c.ratio).toBeLessThanOrEqual(1666);
     expect(c.correction).toBe(10000);
+  });
+  it("地階を除く階数が2以下の建物は区分所有補正をしない", () => {
+    const v = valueAsset({ ...base, totalFloors: 2 });
+    expect(v.needsConsultation).toBeUndefined();
+    expect(v.value).toBe(10_500_000 + 4_000_000);
+    expect(v.steps[0]).toContain("地階を除く階数が2以下");
+  });
+  it("住まい用の部屋が3室以下で、すべて持ち主・親族の住まいなら区分所有補正をしない", () => {
+    const v = valueAsset({ ...base, fewUnitsFamily: true });
+    expect(v.value).toBe(10_500_000 + 4_000_000);
+    expect(v.steps[0]).toContain("3室以下");
+  });
+  it("補正の対象外でも、敷地利用権の評価額と面積は必要", () => {
+    expect(valueAsset({ ...base, totalFloors: 2, landShareSqm: 0 }).needsConsultation).toContain("敷地利用権の面積");
+  });
+  it("専有面積・総階数・所在階が未入力（0）なら確定しない", () => {
+    for (const p of [{ exclusiveAreaSqm: 0 }, { totalFloors: 0 }, { floor: 0 }]) {
+      const v = valueAsset({ ...base, ...p });
+      expect(v.value).toBe(0);
+      expect(v.needsConsultation).toBeTruthy();
+    }
+    expect(valueAsset({ ...base, floor: 0 }).needsConsultation).toContain("所在階");
+  });
+  it("部屋（家屋）の固定資産税評価額が0なら確定しない（敷地利用権の部分の金額は返す）", () => {
+    const v = valueAsset({ ...base, buildingFixedAssetValue: 0 });
+    expect(v.needsConsultation).toContain("固定資産税評価額");
+    expect(v.value).toBe(12_870_900);
+  });
+  it("評価乖離率が0以下なら0円にせず、税理士への相談にする", () => {
+    // 築60年・敷地持分狭小度3 → 乖離率がマイナス
+    const v = valueAsset({ ...base, builtYearsMonths: { years: 60, months: 0 }, landShareSqm: 180 });
+    expect(condoCorrection({ ...base, builtYearsMonths: { years: 60, months: 0 }, landShareSqm: 180 }).ratio).toBeLessThanOrEqual(0);
+    expect(v.needsConsultation).toContain("評価乖離率");
   });
 });
 
@@ -76,6 +109,58 @@ describe("土地の評価", () => {
       method: { type: "multiplier", fixedAssetValue: 123_456, multiplier: 1.1 },
     });
     expect(v.value).toBe(135_801);
+  });
+
+  const land = (method: LandAsset["method"], areaSqm = 165.5): LandAsset => ({ id: "l", kind: "land", label: "自宅", location: "x", areaSqm, landUse: "宅地", method });
+
+  it("1㎡当たりの価額×地積は浮動小数点の誤差なく計算する（291,000円×100.07㎡）", () => {
+    expect(perSqmTimesArea(291_000, 100.07)).toBe(29_120_370);
+    expect(valueLand(land({ type: "rosenka", routePrice: 300_000, depthCorrection: 0.97 }, 100.07)).value).toBe(29_120_370);
+    expect(valueLand(land({ type: "rosenka", routePrice: 0, depthCorrection: 1, roads: [{ edge: 0, price: 291_000, depth: 15 }] }, 100.07)).value).toBe(29_120_370);
+  });
+
+  it("税理士に確認した補正率が空欄・0のときは補正なし（0円にしない）", () => {
+    for (const otherCorrection of [undefined, 0, -1, Number.NaN]) {
+      expect(valueLand(land({ type: "rosenka", routePrice: 300_000, depthCorrection: 0.97, otherCorrection })).value).toBe(48_160_500);
+      expect(valueLand(land({ type: "rosenka", routePrice: 0, depthCorrection: 1, otherCorrection, roads: [{ edge: 0, price: 291_000, depth: 15 }] })).value).toBe(48_160_500);
+    }
+  });
+
+  it("補正率は0より大きく1以下のときだけ掛け、1を超えると確定しない", () => {
+    const v = valueLand(land({ type: "rosenka", routePrice: 300_000, depthCorrection: 0.97, otherCorrection: 0.9 }));
+    expect(v.unitPrice).toBe(261_900);
+    const r = valueLand(land({ type: "rosenka", routePrice: 0, depthCorrection: 1, otherCorrection: 0.9, roads: [{ edge: 0, price: 291_000, depth: 15 }] }));
+    expect(r.unitPrice).toBe(261_900);
+    const over = valueLand(land({ type: "rosenka", routePrice: 300_000, depthCorrection: 0.97, otherCorrection: 1.2 }));
+    expect(over.value).toBe(0);
+    expect(over.needsConsultation).toContain("1を超えて");
+  });
+
+  it("評価額を直接入力する方法で0円なら確定しない", () => {
+    const v = valueLand(land({ type: "manual", value: 0 }));
+    expect(v.value).toBe(0);
+    expect(v.needsConsultation).toContain("評価額が未入力");
+    expect(valueLand(land({ type: "manual", value: 12_345_678 })).value).toBe(12_345_678);
+  });
+});
+
+describe("家屋の評価", () => {
+  it("固定資産税評価額が0なら確定しない", () => {
+    const v = valueAsset({ id: "b", kind: "building", label: "家", location: "x", fixedAssetValue: 0 });
+    expect(v.value).toBe(0);
+    expect(v.needsConsultation).toContain("固定資産税評価額");
+  });
+});
+
+describe("上場株式の評価", () => {
+  const stock = (prices: ListedStockAsset["prices"], shares: number): ListedStockAsset => ({ id: "s", kind: "listedStock", label: "株", shares, prices });
+  it("1円未満の価格も使い、4つのうち最も低い価格×株数（1円未満切捨て）", () => {
+    const v = valueAsset(stock({ close: 1_600, monthAvg: 1_523.5, prevMonthAvg: 1_550.2, prev2MonthAvg: 1_580 }, 100));
+    expect(v.unitPrice).toBe(1_523.5);
+    expect(v.value).toBe(152_350);
+  });
+  it("浮動小数点の誤差で1円少なくならない（4.35円×100株＝435円）", () => {
+    expect(valueAsset(stock({ close: 4.35, monthAvg: 5, prevMonthAvg: 5, prev2MonthAvg: 5 }, 100)).value).toBe(435);
   });
 });
 

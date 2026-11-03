@@ -34,6 +34,41 @@ describe("相続登記", () => {
     expect(app.tax).toBe(0);
     expect(app.exemptLots).toHaveLength(1);
   });
+  it("数字で書いた丁目も所在に残す", () => {
+    const c = structuredClone(demoCase);
+    const land = c.assets.find((a) => a.id === "home-land")!;
+    if (land.kind === "land") {
+      land.location = "東京都港区六本木6丁目10番1";
+      land.registry = { assessedValue: 48_650_000 };
+    }
+    const p = buildRegistrations(c).flatMap((a) => a.properties).find((x) => x.assetId === "home-land")!;
+    expect(p.kind === "land" && [p.location, p.lot]).toEqual(["東京都港区六本木6丁目", "10番1"]);
+  });
+  it("不動産のある市区町村が違えば、同じ人が取得しても申請書を分ける", () => {
+    const c = structuredClone(demoCase);
+    const bldg = c.assets.find((a) => a.id === "home-bldg")!;
+    if (bldg.kind === "building") bldg.location = "大阪府大阪市北区梅田3丁目1番地 家屋番号1番";
+    const apps = buildRegistrations(c).filter((a) => a.applicants.length === 1 && a.applicants[0].personId === "hanako");
+    expect(apps).toHaveLength(2);
+    expect(apps.map((a) => a.area).sort()).toEqual(["大阪府大阪市北区", "東京都千代田区"]);
+    const tokyo = apps.find((a) => a.area === "東京都千代田区")!;
+    expect(tokyo.properties.map((p) => p.kind)).toEqual(["land"]);
+    expect(tokyo.taxBase).toBe(48_650_000);
+    expect(tokyo.tax).toBe(194_600);
+    const osaka = apps.find((a) => a.area === "大阪府大阪市北区")!;
+    expect(osaka.taxBase).toBe(6_800_000);
+    expect(osaka.tax).toBe(27_200);
+  });
+  it("地番が分からない土地は、足りない項目に挙げる", () => {
+    const c = structuredClone(demoCase);
+    const land = c.assets.find((a) => a.id === "home-land")!;
+    if (land.kind === "land") {
+      land.location = "東京都千代田区架空町";
+      land.registry = { assessedValue: 48_650_000 };
+    }
+    const app = buildRegistrations(c).find((a) => a.properties.some((p) => p.assetId === "home-land"))!;
+    expect(app.missing).toContain("「自宅敷地」の地番");
+  });
   it("PDFを作れる", async () => {
     const pdf = await renderRegistration(buildRegistrations(demoCase), { office: "東京" });
     expect(pdf.byteLength).toBeGreaterThan(1000);

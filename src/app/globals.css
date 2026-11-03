@@ -49,3 +49,60 @@ body {
   height: 20px;
   font-size: 12px;
 }
+
+/* 公図の基準点（路線価図の基準点と色を変える） */
+.kozu-pin {
+  background: #7c3aed;
+}
+
+/* 土地の形を直す印。指でもつかめるよう、見た目の丸より広い範囲で受け付ける */
+.shape-vertex,
+.shape-mid {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  cursor: grab;
+  touch-action: none;
+}
+/* 角 */
+.shape-vertex::after {
+  content: "";
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: #fff;
+  border: 3px solid #be123c;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.4);
+}
+.shape-vertex:hover::after {
+  background: #fecdd3;
+}
+/* 辺の中ほどの「＋」（角を増やす） */
+.shape-mid {
+  width: 24px;
+  height: 24px;
+  cursor: copy;
+}
+.shape-mid::after {
+  content: "+";
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: rgb(255 255 255 / 0.9);
+  border: 2px solid #be123c;
+  color: #be123c;
+  font: 700 14px/1 system-ui, sans-serif;
+  opacity: 0.85;
+}
+.shape-mid:hover::after {
+  opacity: 1;
+}
+/* 形ごと動かす中心の印（土地の枠の印と同じ見た目で、少し大きく） */
+.shape-move {
+  width: 28px;
+  height: 28px;
+  font-size: 15px;
+}

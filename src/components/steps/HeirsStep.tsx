@@ -44,6 +44,17 @@ export function HeirsStep() {
       ...c,
       persons: c.persons.filter((x) => x.id !== id).map((x) => (x.substituteOf === id ? { ...x, substituteOf: undefined } : x)),
       allocations: c.allocations.map((a) => ({ ...a, shares: a.shares.filter((s) => s.personId !== id) })),
+      // 削除した人を指したままにしない（贈与・債務の負担者・保険金の受取人・特例の取得者は「未選択」に戻し、選び直してもらう）
+      priorGifts: c.priorGifts.map((g) => (g.personId === id ? { ...g, personId: "" } : g)),
+      debts: c.debts.map((d) => (d.bearers.some((b) => b.personId === id) ? { ...d, bearers: d.bearers.map((b) => (b.personId === id ? { ...b, personId: "" } : b)) } : d)),
+      assets: c.assets.map((a) => {
+        if ((a.kind === "insurance" || a.kind === "retirement") && a.recipientId === id) return { ...a, recipientId: "" };
+        if ((a.kind === "land" || a.kind === "condo") && a.smallResidential?.acquirerId === id) {
+          const check = a.smallResidential.check;
+          return { ...a, smallResidential: { ...a.smallResidential, acquirerId: undefined, check: check ? { ownHome: check.ownHome, special: check.special } : undefined } };
+        }
+        return a;
+      }),
     }));
 
   let civil: HeirResult | undefined, tax: HeirResult | undefined;
@@ -72,7 +83,9 @@ export function HeirsStep() {
 
       {persons.map((p) => {
         const civilShare = civil?.byPerson.get(p.id);
-        const age = ageAt(p.birthDate, data.decedent.deathDate);
+        const rawAge = ageAt(p.birthDate, data.decedent.deathDate);
+        // 亡くなった後に生まれた子は0歳（相続税の計算と同じ扱い）
+        const age = rawAge == null ? undefined : Math.max(0, rawAge);
         return (
           <Card
             key={p.id}
@@ -83,7 +96,7 @@ export function HeirsStep() {
                 {p.predeceased && <span className="rounded bg-stone-200 px-2 py-0.5 text-xs">先に死亡</span>}
                 {p.renounced && <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900">相続放棄</span>}
                 {civilShare && <span className="rounded bg-teal-100 px-2 py-0.5 text-xs text-teal-900">法定相続分 {fracText(civilShare)}</span>}
-                {!p.predeceased && p.relation !== "spouse" && isSurchargeTarget(p) && (
+                {civil && !p.predeceased && p.relation !== "spouse" && !(p.grandchildAdopted && p.alsoSubstituteHeir) && isSurchargeTarget(p, civil.substitutes) && (
                   <span className="rounded bg-rose-100 px-2 py-0.5 text-xs text-rose-900">2割加算の対象</span>
                 )}
               </span>
@@ -156,7 +169,14 @@ export function HeirsStep() {
               {p.relation === "sibling" && <Check checked={!!p.halfBlood} onChange={(v) => patch(p.id, { halfBlood: v })} label="父母の一方だけが同じ（半血）" />}
               {p.relation === "adoptedChild" && (
                 <>
-                  <Check checked={!!p.grandchildAdopted} onChange={(v) => patch(p.id, { grandchildAdopted: v })} label="孫を養子にした" />
+                  <Check checked={!!p.grandchildAdopted} onChange={(v) => patch(p.id, { grandchildAdopted: v, ...(v ? {} : { alsoSubstituteHeir: undefined }) })} label="孫を養子にした" />
+                  {p.grandchildAdopted && (
+                    <Check
+                      checked={!!p.alsoSubstituteHeir}
+                      onChange={(v) => patch(p.id, { alsoSubstituteHeir: v || undefined })}
+                      label="先に亡くなった子の代わりに相続する人（代襲相続人）でもある"
+                    />
+                  )}
                   <Check
                     checked={!!p.adoptedCountsAsBiological}
                     onChange={(v) => patch(p.id, { adoptedCountsAsBiological: v })}
@@ -166,6 +186,16 @@ export function HeirsStep() {
               )}
               {!p.predeceased && <Check checked={!!p.nonResident} onChange={(v) => patch(p.id, { nonResident: v })} label="海外に住んでいる" />}
             </div>
+            {p.relation === "adoptedChild" && p.grandchildAdopted && p.alsoSubstituteHeir && !p.predeceased && (
+              <div className="mt-3">
+                <Note tone="stop">
+                  養子としての立場と、先に亡くなった子の代わりに相続する立場の両方がある場合（二重の資格）は、相続分や相続税の計算が特殊になるため、相続コンパスでは計算できません。税理士にご相談ください。
+                  <span className="mt-2 block">
+                    <ConsultLink topic="二重の資格" />
+                  </span>
+                </Note>
+              </div>
+            )}
             {p.predeceased && <Deceased p={p} decedentDeath={data.decedent.deathDate} persons={persons} patch={patch} onAddChild={() => addChildOf(p)} />}
           </Card>
         );

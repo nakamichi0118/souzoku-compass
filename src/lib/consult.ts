@@ -24,10 +24,18 @@ export function consultPoints(c: Case, r: TaxResult | null): string[] {
     if (a.foreign) out.push(`国外の財産「${a.label}」がある。`);
   }
   if (c.decedent.priorInheritanceTax) out.push("亡くなった方が10年以内の相続で相続税を納めている（相次相続控除を計算してほしい）。");
+  if (c.decedent.settlementGift) out.push("亡くなった方から「相続時精算課税」を選んで贈与を受けた人がいる（贈与の加算と贈与税の差し引きを計算してほしい）。");
   for (const p of c.persons) {
     if (p.predeceased && p.deathDate && c.decedent.deathDate && p.deathDate > c.decedent.deathDate)
       out.push(`${p.name || "相続人"}さんが亡くなった方より後に亡くなっている（数次相続）。`);
     if (p.nonResident) out.push(`${p.name || "相続人"}さんが海外に住んでいる。`);
+    if (!p.predeceased && p.relation === "adoptedChild" && p.grandchildAdopted && p.alsoSubstituteHeir)
+      out.push(`${p.name || "養子"}さんは孫を養子にした人で、先に亡くなった子の代わりに相続する人（代襲相続人）でもある（二重の資格）。`);
+  }
+  for (const p of r?.persons ?? []) {
+    const name = p.person.name || "相続人";
+    if (p.minorExcess > 0) out.push(`${name}さんの未成年者控除のうち${yen(p.minorExcess)}が本人の相続税から引ききれない（扶養義務者の相続税から差し引く計算をしてほしい）。`);
+    if (p.disabilityExcess > 0) out.push(`${name}さんの障害者控除のうち${yen(p.disabilityExcess)}が本人の相続税から引ききれない（扶養義務者の相続税から差し引く計算をしてほしい）。`);
   }
   return out;
 }

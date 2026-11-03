@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { createSession, endSession, hashPassword, login, passwordProblem, signup, userFromToken, verifyPassword } from "../auth/auth";
+import { createSession, endSession, hashPassword, login, loginKey, passwordProblem, plausibleEmail, signup, userFromToken, validEmail, verifyPassword } from "../auth/auth";
 import { memoryDb, setDb } from "../auth/db";
 
 beforeEach(() => setDb(memoryDb()));
@@ -30,5 +30,34 @@ describe("ログイン", () => {
     expect(await userFromToken(t + "x")).toBeNull();
     await endSession(t);
     expect(await userFromToken(t)).toBeNull();
+  });
+});
+
+describe("メールアドレスの形の確認", () => {
+  it("ふつうのアドレスは通し、形の違うものは断る", () => {
+    expect(validEmail("ichiro@example.co.jp")).toBe(true);
+    expect(validEmail("a.b+c@example.com")).toBe(true);
+    for (const bad of ["", "ichiro", "ichiro@", "@example.com", "ichiro@example", "ichiro@example..com", "ichiro@example.com.", "a b@example.com"]) expect(validEmail(bad)).toBe(false);
+  });
+
+  it("長すぎる入力は、正規表現を動かす前に断る（大きな入力でも一瞬で終わる）", () => {
+    const huge = "a@" + "b".repeat(1_000_000) + "!";
+    const t = performance.now();
+    expect(validEmail(huge)).toBe(false);
+    expect(validEmail("a@" + ".".repeat(300))).toBe(false);
+    expect(plausibleEmail(huge)).toBe(false);
+    expect(performance.now() - t).toBeLessThan(50);
+  });
+
+  it("ログインでは、以前の確認で登録できたアドレスも通す（長さと「@」だけを見る）", () => {
+    expect(plausibleEmail("ichiro@example..com")).toBe(true);
+    expect(plausibleEmail("ichiro@example.com")).toBe(true);
+    for (const bad of ["", "ichiro", "a@b@c", "a b@c.d", "x".repeat(250) + "@example.com"]) expect(plausibleEmail(bad)).toBe(false);
+  });
+
+  it("ログインの失敗を数えるキーは、メールアドレスが長くても短い", () => {
+    const k = loginKey("1.2.3.4", "x".repeat(250) + "@example.com");
+    expect(k.length).toBeLessThan(50);
+    expect(loginKey("1.2.3.4", "Ichiro@Example.com")).toBe(loginKey("1.2.3.4", "ichiro@example.com"));
   });
 });

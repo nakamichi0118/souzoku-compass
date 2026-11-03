@@ -5,22 +5,31 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AskCompass, useAsk } from "@/components/compass/AskCompass";
+import { Reader } from "@/components/extract/Reader";
 import { OfficeLookup } from "@/components/plan/OfficeLookup";
 import { AppShell, PageHead } from "@/components/shell/AppShell";
-import { googleEventUrl, toICS } from "@/domain/procedures/calendar";
+import { googleEventUrl, icsStamp, toICS } from "@/domain/procedures/calendar";
 import { daysBetween, jpDate } from "@/domain/procedures/dates";
 import { DOCS } from "@/domain/procedures/documents";
 import { OFFICE_LABEL, cityOf } from "@/domain/procedures/offices";
 import type { Category, Task } from "@/domain/procedures/rules";
-import { useOverall } from "@/lib/overall";
-import { taskStatus } from "./Home";
+import { isRealEstate } from "@/domain/realEstate";
 import type { Asset } from "@/domain/types";
-import { Reader } from "./DocsPage";
+import { saveBlob } from "@/lib/download";
+import { useOverall, useRequireHearing } from "@/lib/overall";
+import type { ItemStatus } from "@/lib/planStore";
+import { daysLeftLabel, taskStatus } from "@/lib/taskStatus";
 import { DetailStatus, RowStatus } from "./StatusButtons";
 
 /** 不動産の登記は、亡くなった方の住所ではなく不動産のある場所の法務局が窓口 */
 const realEstateLocation = (assets: Asset[]) =>
-  assets.map((a) => (a.kind === "land" || a.kind === "building" || a.kind === "condo" ? a.location : "")).find((l) => l.trim()) || undefined;
+  assets
+    .filter(isRealEstate)
+    .map((a) => a.location)
+    .find((l) => l.trim()) || undefined;
+
+/** 相続税申告の画面の進み具合で自動的に完了になった項目に出す説明 */
+const AUTO_DONE_NOTE = "相続税申告の画面でこの段階を終えたので、自動で完了にしています。";
 
 const CATS: (Category | "すべて")[] = ["すべて", "届出", "葬儀・法要", "調べる・決める", "お金の受け取り", "税金", "名義変更・解約", "不動産"];
 type StatusFilter = "open" | "done" | "all";
@@ -44,16 +53,48 @@ function script(t: Task, rel: string, name: string) {
 }
 
 function downloadOne(t: Task) {
-  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
-  const ics = toICS([t], { name: t.title, stamp, appUrl: `${window.location.origin}/my/tasks?id=${t.id}` });
-  const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${t.id}.ics`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const ics = toICS([t], { name: t.title, stamp: icsStamp(), appUrl: `${window.location.origin}/my/tasks?id=${t.id}` });
+  saveBlob(new Blob([ics], { type: "text/calendar" }), `${t.id}.ics`);
+}
+
+/** やることリストの1行 */
+function TaskRow({
+  task,
+  status,
+  selected,
+  hasMemo,
+  now,
+  showDept,
+  locked,
+  onMark,
+  onSelect,
+}: {
+  task: Task;
+  status: ItemStatus;
+  selected: boolean;
+  hasMemo: boolean;
+  now: string;
+  showDept?: boolean;
+  locked?: string;
+  onMark: (id: string, v: ItemStatus) => void;
+  onSelect: (id: string) => void;
+}) {
+  const closed = status !== "open";
+  const badge = taskStatus(task, status, now);
+  return (
+    <li className={`flex items-center gap-3 rounded-xl border bg-white p-3 ${selected ? "border-sky-500 ring-2 ring-sky-100" : "border-stone-200"}`}>
+      <RowStatus status={status} onChange={(v) => onMark(task.id, v)} label={task.title} locked={locked} />
+      <button type="button" onClick={() => onSelect(task.id)} className="min-w-0 flex-1 text-left">
+        <p className={`truncate font-semibold ${closed ? "text-stone-400 line-through" : "text-stone-900"}`}>{task.title}</p>
+        <p className="truncate text-xs text-stone-500">
+          {showDept && task.dept ? `${task.dept}・` : `${task.category}・`}
+          {task.hard ? "期限" : "目安"} {jpDate(task.date)}
+          {hasMemo ? "・メモあり" : ""}
+        </p>
+      </button>
+      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${badge.cls}`}>{badge.label}</span>
+    </li>
+  );
 }
 
 export function TasksPage() {
@@ -111,38 +152,32 @@ export function TasksPage() {
     [o.iv.deathDate, o.main, o.done, t],
   );
   const ask = useAsk("tasks", context);
+  // 聞き取りが済んでいなければトップへ戻す（移動は描画のあとに行う）
+  const ready = useRequireHearing(o);
 
-  if (!o.loaded) return <AppShell>{null}</AppShell>;
-  if (!o.heard || !o.valid) {
-    router.replace("/my");
-    return <AppShell>{null}</AppShell>;
-  }
+  if (!ready) return <AppShell>{null}</AppShell>;
   const select = (id: string) => router.replace(`/my/tasks?id=${id}`, { scroll: false });
+  const lockedNote = (id: string) => (o.autoDone.includes(id) ? AUTO_DONE_NOTE : undefined);
   const left = t ? daysBetween(o.now, t.date) : 0;
   const st = t ? o.statusOf(t.id) : "open";
   const isDone = st !== "open";
   const nextStep = o.steps.find((s) => !s.done);
   const { pref, city } = cityOf(o.iv.address);
 
-  const Row = ({ x, showDept }: { x: Task; showDept?: boolean }) => {
-    const xs = o.statusOf(x.id);
-    const d = xs !== "open";
-    const badge = taskStatus(x, xs, o.now);
-    return (
-      <li className={`flex items-center gap-3 rounded-xl border bg-white p-3 ${x.id === selId ? "border-sky-500 ring-2 ring-sky-100" : "border-stone-200"}`}>
-        <RowStatus status={xs} onChange={(v) => mark(x.id, v)} label={x.title} />
-        <button type="button" onClick={() => select(x.id)} className="min-w-0 flex-1 text-left">
-          <p className={`truncate font-semibold ${d ? "text-stone-400 line-through" : "text-stone-900"}`}>{x.title}</p>
-          <p className="truncate text-xs text-stone-500">
-            {showDept && x.dept ? `${x.dept}・` : `${x.category}・`}
-            {x.hard ? "期限" : "目安"} {jpDate(x.date)}
-            {o.memos[x.id] ? "・メモあり" : ""}
-          </p>
-        </button>
-        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${badge.cls}`}>{badge.label}</span>
-      </li>
-    );
-  };
+  const row = (x: Task, showDept?: boolean) => (
+    <TaskRow
+      key={x.id}
+      task={x}
+      status={o.statusOf(x.id)}
+      selected={x.id === selId}
+      hasMemo={!!o.memos[x.id]}
+      now={o.now}
+      showDept={showDept}
+      locked={lockedNote(x.id)}
+      onMark={mark}
+      onSelect={select}
+    />
+  );
 
   return (
     <AppShell wide>
@@ -188,7 +223,7 @@ export function TasksPage() {
           <ul ref={listRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 max-lg:max-h-[60vh]">
             {list.length === 0 && <li className="rounded-xl bg-white p-6 text-center text-sm text-stone-500">該当する手続きはありません。</li>}
             {view === "date"
-              ? list.map((x) => <Row key={x.id} x={x} />)
+              ? list.map((x) => row(x))
               : groups.map(([g, xs]) => (
                   <li key={g}>
                     <p className="sticky top-0 z-10 flex items-center justify-between bg-sky-50 px-1 py-1.5 text-sm font-bold text-sky-950">
@@ -196,7 +231,7 @@ export function TasksPage() {
                       <span className="text-xs font-normal text-stone-500">あと{xs.filter((x) => !closed(x.id)).length}件</span>
                     </p>
                     <ul className="space-y-2">
-                      {xs.map((x) => <Row key={x.id} x={x} showDept />)}
+                      {xs.map((x) => row(x, true))}
                     </ul>
                   </li>
                 ))}
@@ -210,13 +245,13 @@ export function TasksPage() {
                 <p className="text-xs text-stone-500">{t.category}</p>
                 <h2 className="text-xl font-bold text-sky-950">{t.title}</h2>
               </div>
-              <DetailStatus status={st} onChange={(v) => mark(t.id, v)} />
+              <DetailStatus status={st} onChange={(v) => mark(t.id, v)} locked={lockedNote(t.id)} />
             </div>
 
             <div className={`rounded-xl px-4 py-3 ${isDone ? "bg-emerald-50" : t.hard ? "bg-orange-50" : "bg-sky-50"}`}>
               <p className="text-sm font-bold">
                 {t.hard ? "期限" : "目安"}：{jpDate(t.date)}
-                {!isDone && <span className={`ml-2 ${left < 0 ? "text-rose-700" : left <= 7 ? "text-orange-700" : "text-stone-600"}`}>{left < 0 ? `${-left}日過ぎています` : left === 0 ? "今日です" : `あと${left}日`}</span>}
+                {!isDone && <span className={`ml-2 ${left < 0 ? "text-rose-700" : left <= 7 ? "text-orange-700" : "text-stone-600"}`}>{daysLeftLabel(o.now, t.date)}</span>}
               </p>
               {t.limit && <p className="mt-1 text-sm text-rose-800">注意：{t.limit.text}（{jpDate(t.limit.date)}まで）</p>}
             </div>
@@ -242,7 +277,7 @@ export function TasksPage() {
               <h3 className="mb-2 flex items-center gap-1.5 font-bold text-stone-700"><Building2 className="h-4 w-4 text-brand" aria-hidden />提出先・連絡先</h3>
               {t.office ? (
                 <div className="space-y-2">
-                  <OfficeLookup kind={t.office} dept={t.dept} address={t.office === "legalAffairs" ? (realEstateLocation(o.case.assets) ?? o.iv.address) : o.iv.address} />
+                  <OfficeLookup key={`${t.id}|${t.office}`} kind={t.office} dept={t.dept} address={t.office === "legalAffairs" ? (realEstateLocation(o.case.assets) ?? o.iv.address) : o.iv.address} />
                   <p className="text-xs text-stone-500">窓口の決まり：{t.where}</p>
                   {city && (
                     <a
@@ -359,15 +394,22 @@ export function TasksPage() {
 function MemoBox({ value, onSave }: { value: string; onSave: (v: string) => void }) {
   const [v, setV] = useState(value);
   const [saved, setSaved] = useState(false);
+  // 親の描画のたびに変わる関数を effect の依存に入れないよう、最新の関数を ref に持つ
+  const save = useRef(onSave);
   useEffect(() => {
-    if (v === value) return;
+    save.current = onSave;
+  }, [onSave]);
+  useEffect(() => {
+    // 空白だけのメモは保存されない（空として扱われる）ので、前後の空白を除いて比べる。
+    // そのまま比べると、空白だけを入力したときに保存がくり返し続く
+    if (v.trim() === value.trim()) return;
     const id = setTimeout(() => {
-      onSave(v);
+      save.current(v);
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
     }, 600);
     return () => clearTimeout(id);
-  }, [v, value, onSave]);
+  }, [v, value]);
   return (
     <div>
       <textarea

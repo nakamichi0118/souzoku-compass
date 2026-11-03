@@ -1,6 +1,6 @@
 "use client";
 
-import { kvGet, kvSet, useSession } from "./cloud";
+import { isUnsaved, kvGet, kvSet, useSession } from "./cloud";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { demoCase } from "@/data/demo";
 import { calculate, type TaxResult } from "@/domain/tax/engine";
@@ -47,6 +47,25 @@ export function CaseProvider({ children }: { children: React.ReactNode }) {
     setLoaded(true);
   }, [ready, mode]);
 
+  // 別のタブで書き換えられたら読み直す（古い画面のまま入力して、別のタブの入力を上書きしないため）。
+  // このタブにまだ送っていない入力があるときは、そちらを優先する
+  const fromOtherTab = useRef<string | null>(null);
+  useEffect(() => {
+    if (!loaded) return;
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== KEY || e.newValue === null || isUnsaved(KEY)) return;
+      try {
+        const next = JSON.parse(e.newValue) as Case;
+        fromOtherTab.current = e.newValue;
+        setData(next);
+      } catch {
+        // 壊れた値は読み込まない
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [loaded]);
+
   // 読み込んだ直後の1回は書き戻さない（変わっていないものを送らない）
   const first = useRef(true);
   useEffect(() => {
@@ -55,7 +74,14 @@ export function CaseProvider({ children }: { children: React.ReactNode }) {
       first.current = false;
       return;
     }
-    kvSet(KEY, JSON.stringify(data));
+    const raw = JSON.stringify(data);
+    // 別のタブから読み直しただけなら書き戻さない（そのタブがもう保存している）
+    if (raw === fromOtherTab.current) {
+      fromOtherTab.current = null;
+      return;
+    }
+    fromOtherTab.current = null;
+    kvSet(KEY, raw);
   }, [data, loaded]);
 
   const update = useCallback((fn: (c: Case) => Case) => setData((c) => fn(structuredClone(c))), []);

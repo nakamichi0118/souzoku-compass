@@ -8,6 +8,7 @@ import { useCase } from "@/lib/store";
 import { markCompleted } from "@/lib/progress";
 import { usePlan } from "@/lib/planStore";
 import { FilingGuide } from "./FilingGuide";
+import { saveBlob } from "@/lib/download";
 
 async function download(url: string, body: unknown, filename: string) {
   const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -15,14 +16,7 @@ async function download(url: string, body: unknown, filename: string) {
     const j = await res.json().catch(() => ({}));
     throw new Error([j.error, ...(j.blockers ?? [])].filter(Boolean).join("\n") || "作成に失敗しました");
   }
-  const blob = await res.blob();
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+  saveBlob(await res.blob(), filename);
 }
 
 export function DocumentsStep() {
@@ -67,8 +61,8 @@ export function DocumentsStep() {
           <div className="mb-3 rounded-lg border border-orange-300 bg-orange-50 p-3 text-sm text-orange-950">
             <p className="font-bold">このPDFだけでは申告書一式になりません。次の表は自動で作らないため、別に用意してください。</p>
             <ul className="mt-1 list-disc space-y-0.5 pl-5">
-              {missing.map((m) => (
-                <li key={m.form}>
+              {missing.map((m, i) => (
+                <li key={`${i}-${m.form}`}>
                   {m.form}（{m.reason}）
                 </li>
               ))}
@@ -89,8 +83,8 @@ export function DocumentsStep() {
         <p className="mb-3 text-sm text-stone-600">
           「遺産の分け方」で決めた内容から、遺産分割協議書の文案を作ります。日付・本籍を記入し、相続人全員が署名して実印を押してください（印鑑証明書を添付します）。
         </p>
-        {division.warnings.map((w) => (
-          <div key={w} className="mb-2">
+        {division.warnings.map((w, i) => (
+          <div key={`${i}-${w}`} className="mb-2">
             <Note tone="warn">{w}</Note>
           </div>
         ))}

@@ -5,7 +5,7 @@
 import { frac, mul, toString as fracText } from "@/domain/fraction";
 import { floorTo } from "@/domain/rounding";
 import type { PersonTax, TaxResult } from "@/domain/tax/engine";
-import type { Case } from "@/domain/types";
+import type { Case, Debt } from "@/domain/types";
 import { yen, yenOrBlank } from "./format";
 import type { PageFill } from "./render";
 import { scheduleTotals } from "./schedule11";
@@ -88,6 +88,53 @@ export function build15(c: Case, r: TaxResult): PageFill[] {
 
 // ---------------------------------------------------------------- 第13表
 
+/** 公租公課（税金・保険料）の名前。「所得税」より「復興特別所得税」を先に見つけるよう、長い名前を先に置く */
+const PUBLIC_DUES = [
+  "復興特別所得税",
+  "所得税",
+  "住民税",
+  "市民税",
+  "区民税",
+  "町民税",
+  "村民税",
+  "都民税",
+  "道民税",
+  "府民税",
+  "県民税",
+  "固定資産税",
+  "都市計画税",
+  "個人事業税",
+  "事業税",
+  "地方消費税",
+  "消費税",
+  "軽自動車税",
+  "自動車税",
+  "国民健康保険税",
+  "国民健康保険料",
+  "後期高齢者医療保険料",
+  "介護保険料",
+  "相続税",
+  "贈与税",
+];
+
+/** 「令和8年度 」「令和7年分」などの年の書き出し */
+const YEAR_PREFIX = /^(?:令和|平成)?[0-9０-９元]+年(?:度|分)?\s*/;
+
+/**
+ * 第13表の「種類」と「細目」。
+ * 種類を選んでいればそれに従う。選んでいないときは、名前が税金・保険料の名前で始まるものだけを公租公課とし、
+ * それ以外は「その他」にする（名前に「税」の字が入っているだけでは公租公課にしない）。
+ */
+export function debtKind(d: Pick<Debt, "label" | "debtType">): { kind: string; detail: string } {
+  const label = d.label.trim();
+  const body = label.replace(YEAR_PREFIX, "");
+  const leading = PUBLIC_DUES.find((t) => body.startsWith(t));
+  if (d.debtType === "公租公課") return { kind: "公租公課", detail: leading ?? (PUBLIC_DUES.find((t) => label.includes(t)) || label) };
+  if (d.debtType) return { kind: d.debtType, detail: label };
+  if (leading) return { kind: "公租公課", detail: leading };
+  return { kind: "その他", detail: label };
+}
+
 export function build13(c: Case, r: TaxResult): PageFill[] {
   const name = new Map(c.persons.map((p) => [p.id, p.name]));
   type Row = Record<string, string | number | undefined>;
@@ -100,7 +147,7 @@ export function build13(c: Case, r: TaxResult): PageFill[] {
         i > 0
           ? {}
           : d.kind === "debt"
-            ? { kind: /税/.test(d.label) ? "公租公課" : "その他", detail: d.label.match(/[^\s（(]*税/)?.[0] ?? d.label, creditor: d.creditor, address: d.creditorAddress, amount: yen(d.amount) }
+            ? { ...debtKind(d), creditor: d.creditor, address: d.creditorAddress, amount: yen(d.amount) }
             : { payee: d.creditor ?? d.label, address: d.creditorAddress, amount: yen(d.amount) };
       (d.kind === "debt" ? debtRows : funeralRows).push({ ...head, bearer: name.get(b.personId), bearerAmount: b.amount ? yen(b.amount) : "" });
     });

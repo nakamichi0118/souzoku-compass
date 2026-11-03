@@ -12,6 +12,8 @@ const LIMITS = {
   extract: 30,
   rosenkaRead: 40,
   offices: 40,
+  ratio: 20,
+  locate: 30,
 } as const;
 
 /** 問題があれば返すべき応答、なければ null */

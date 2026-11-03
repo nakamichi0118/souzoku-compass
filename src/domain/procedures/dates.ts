@@ -2,8 +2,9 @@
  * 手続きの期限日の計算。日付は "YYYY-MM-DD" の文字列で扱い、タイムゾーンの影響を受けないよう UTC で計算する。
  *
  * - 「〇日以内」（戸籍法の死亡届など）は、届出の起算日を1日目として数える（戸籍法43条1項）。
- * - 「〇か月以内」「〇年以内」は、起算日の翌日から数え、期間の末日は応当日（民法140条・143条）。
- *   応当日がない月（例：1月31日の1か月後）は、その月の末日。
+ * - 「〇か月以内」「〇年以内」は、起算日の翌日から数え、期間の末日はその応当日の前日（民法140条・143条）。
+ *   応当日がない月（例：1月30日の1か月後）は、その月の末日。月末に亡くなった場合は、n か月後の月の末日
+ *   （monthsDeadline）。
  * - 期限が土曜・日曜・国民の祝日・年末年始（12月29日〜1月3日）にあたる場合は、その翌日（休日が続けば
  *   その次の平日）にずらす（民法142条、国税通則法10条2項・同施行令2条2項）。
  *   祝日は「国民の祝日に関する法律」の定め（固定日・ハッピーマンデー・春分/秋分の日・振替休日・国民の休日）から計算する。
@@ -32,7 +33,7 @@ export function addDays(start: ISODate, n: number): ISODate {
   return fmt(d);
 }
 
-/** n か月後の応当日（応当日がなければ月末） */
+/** n か月後の同じ日（その日がなければ月末）。法要の日（一周忌など）に使う。法律上の期限には monthsDeadline を使う */
 export function addMonths(start: ISODate, n: number): ISODate {
   const d = parse(start);
   const y = d.getUTCFullYear();
@@ -42,6 +43,33 @@ export function addMonths(start: ISODate, n: number): ISODate {
 }
 
 export const addYears = (start: ISODate, n: number) => addMonths(start, n * 12);
+
+/**
+ * 「〇か月以内」の期限の日（民法140条・143条）。起算日の翌日から数えて n か月目の応当日の前日で、
+ * 応当日がなければその月の末日。
+ * 月末に亡くなった場合は、翌日が翌月1日になるので、期限は n か月後の月の末日になる
+ * （例：2月28日に亡くなった場合の10か月は12月28日ではなく12月31日）。それ以外は addMonths と同じ日になる。
+ */
+export function monthsDeadline(start: ISODate, n: number): ISODate {
+  const d = parse(start);
+  const y = d.getUTCFullYear();
+  const m = d.getUTCMonth();
+  const monthEnd = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  if (d.getUTCDate() === monthEnd) return fmt(new Date(Date.UTC(y, m + n + 1, 0)));
+  return addMonths(start, n);
+}
+
+/** 「〇年以内」の期限の日（monthsDeadline と同じ数え方） */
+export const yearsDeadline = (start: ISODate, n: number) => monthsDeadline(start, n * 12);
+
+/** 早いほうの日付 */
+export const earlier = (a: ISODate, b: ISODate): ISODate => (a <= b ? a : b);
+
+/** この端末の今日の日付（"YYYY-MM-DD"、端末の時刻で数える） */
+export function todayISO(): ISODate {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 /** 春分日・秋分日（1980〜2099年に使われる計算式） */
 const equinox = (y: number, base: number) => Math.floor(base + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4));

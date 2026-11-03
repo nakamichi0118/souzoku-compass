@@ -12,6 +12,7 @@
 import { splitLocation } from "@/forms/schedule11";
 import { wareki } from "@/forms/format";
 import type { Asset, Case, Person } from "@/domain/types";
+import { floor100, floor1000 } from "@/domain/rounding";
 
 export const REG_RATE_PER_MILLE = 4;
 export const SMALL_LAND_EXEMPT = 1_000_000;
@@ -44,8 +45,10 @@ export interface RegApplicant {
 }
 
 export interface RegApplication {
-  /** 取得する人の組み合わせ（同じ組み合わせ・持分の不動産は1件の申請にまとめる） */
+  /** 不動産のある市区町村と取得する人の組み合わせ（同じ市区町村で、同じ組み合わせ・持分の不動産は1件の申請にまとめる） */
   key: string;
+  /** 不動産のある都道府県・市区町村（提出先の法務局を探す目安） */
+  area: string;
   applicants: RegApplicant[];
   properties: RegProperty[];
   /** 課税価格（1,000円未満切捨て） */
@@ -58,8 +61,6 @@ export interface RegApplication {
   missing: string[];
 }
 
-const floor1000 = (n: number) => Math.floor(n / 1000) * 1000;
-const floor100 = (n: number) => Math.floor(n / 100) * 100;
 const kanjiShare = (n: number, d: number) => (n === d ? "" : `${d}分の${n}`);
 
 /** 登録免許税（相続による所有権移転） */
@@ -68,7 +69,11 @@ export function registrationTax(taxBase: number): number {
   return Math.max(1000, floor100((taxBase * REG_RATE_PER_MILLE) / 1000));
 }
 
-function property(a: Asset, missing: string[]): RegProperty | null {
+/**
+ * 登記簿に合わせた不動産の表示。登記申請書と遺産分割協議書の両方で使い、記載が食い違わないようにする。
+ * missing を渡すと、足りない項目を書き足す。
+ */
+export function regProperty(a: Asset, missing: string[] = []): RegProperty | null {
   const r = a.kind === "land" || a.kind === "building" || a.kind === "condo" ? (a.registry ?? {}) : null;
   if (!r) return null;
   const need = (v: string | number | undefined, what: string) => {
@@ -77,13 +82,15 @@ function property(a: Asset, missing: string[]): RegProperty | null {
   if (a.kind === "land") {
     const loc = splitLocation(a.location);
     const value = r.assessedValue ?? 0;
+    const lot = r.lotNumber || loc.lot || "";
     need(r.assessedValue, "固定資産評価額");
+    need(lot, "地番");
     return {
       kind: "land",
       assetId: a.id,
       label: a.label,
       location: `${loc.pref}${loc.city}${loc.town}`,
-      lot: r.lotNumber || loc.lot || "",
+      lot,
       landUse: a.landUse,
       area: `${a.areaSqm.toFixed(2)}㎡`,
       value,
@@ -129,7 +136,17 @@ function property(a: Asset, missing: string[]): RegProperty | null {
   return null;
 }
 
-/** 遺産分割で決まった取得者ごとに、相続登記の申請をまとめる */
+/**
+ * 提出先の法務局を分ける目安。法務局はおおむね市区町村ごとに受け持つので、都道府県・市区町村で分ける。
+ * 市区町村を読み取れない所在は、ほかの不動産とまとめずに所在ごとに分ける。
+ */
+export function registrationArea(location: string): string {
+  const base = location.replace(/\s*家屋番号.*$/, "").trim();
+  const loc = splitLocation(base);
+  return loc.city ? `${loc.pref}${loc.city}` : base;
+}
+
+/** 遺産分割で決まった取得者ごとに、相続登記の申請をまとめる（不動産のある市区町村が違えば別の申請にする） */
 export function buildRegistrations(c: Case): RegApplication[] {
   const persons = new Map<string, Person>(c.persons.map((p) => [p.id, p]));
   const allocs = new Map(c.allocations.map((a) => [a.assetId, a]));
@@ -137,15 +154,17 @@ export function buildRegistrations(c: Case): RegApplication[] {
   const death = wareki(c.decedent.deathDate);
   for (const a of c.assets) {
     const missing: string[] = [];
-    const prop = property(a, missing);
+    const prop = regProperty(a, missing);
     if (!prop) continue;
     const al = allocs.get(a.id);
     if (!al || al.shares.length === 0) continue;
-    const key = al.shares.map((s) => `${s.personId}:${s.numerator}/${s.denominator}`).join(",");
+    const area = registrationArea(prop.location);
+    const key = `${area}|${al.shares.map((s) => `${s.personId}:${s.numerator}/${s.denominator}`).join(",")}`;
     let app = apps.get(key);
     if (!app) {
       app = {
         key,
+        area,
         applicants: al.shares.map((s) => {
           const p = persons.get(s.personId);
           return { personId: s.personId, name: p?.name ?? "", address: p?.address ?? "", phone: p?.phone ?? "", share: kanjiShare(s.numerator, s.denominator) };
@@ -165,7 +184,8 @@ export function buildRegistrations(c: Case): RegApplication[] {
   }
   for (const app of apps.values()) {
     const taxable = app.properties.filter((p) => !(p.kind === "land" && p.exempt)).reduce((s, p) => s + p.value, 0);
-    app.taxBase = floor1000(taxable);
+    // 課税標準は1,000円未満切捨て。1,000円に満たないときは1,000円（登録免許税法15条）
+    app.taxBase = taxable > 0 ? Math.max(1000, floor1000(taxable)) : 0;
     app.tax = registrationTax(app.taxBase);
     app.exemptLots = app.properties.filter((p): p is Extract<RegProperty, { kind: "land" }> => p.kind === "land" && p.exempt).map((p) => `${p.location}${p.lot}`);
     for (const ap of app.applicants) {

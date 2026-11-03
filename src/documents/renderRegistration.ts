@@ -2,31 +2,11 @@
 import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument } from "pdf-lib";
 import { loadFont } from "@/forms/render";
-import type { RegApplication, RegProperty } from "@/domain/registration";
+import type { RegApplication } from "@/domain/registration";
+import { propertyLines } from "./propertyLines";
 import { Writer } from "./renderDivision";
 
 const yen = (n: number) => `金${n.toLocaleString("ja-JP")}円`;
-
-function propertyLines(p: RegProperty): string[] {
-  if (p.kind === "land")
-    return [`所　　在　${p.location}`, `地　　番　${p.lot || "（登記事項証明書のとおり）"}`, `地　　目　${p.landUse}`, `地　　積　${p.area}`];
-  if (p.kind === "building")
-    return [`所　　在　${p.location}`, `家屋番号　${p.houseNumber}`, `種　　類　${p.type}`, `構　　造　${p.structure}`, `床 面 積　${p.floorArea}`];
-  return [
-    "一棟の建物の表示",
-    `　所　　在　${p.location}`,
-    ...(p.buildingName ? [`　建物の名称　${p.buildingName}`] : []),
-    "専有部分の建物の表示",
-    `　家屋番号　${p.houseNumber}`,
-    `　種　　類　${p.type}`,
-    `　構　　造　${p.structure}`,
-    `　床 面 積　${p.floorArea}`,
-    "敷地権の目的である土地の表示",
-    `　${p.siteLand}`,
-    "敷地権の表示",
-    `　${p.siteRight}`,
-  ];
-}
 
 export async function renderRegistration(apps: RegApplication[], opts: { office?: string } = {}): Promise<Uint8Array> {
   const doc = await PDFDocument.create();

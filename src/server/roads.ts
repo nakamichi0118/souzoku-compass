@@ -2,7 +2,7 @@
  * 国土地理院の道路中心線（ベクトルタイル experimental_rdcl、ズーム16）から、地点の周りの道路を取り出す。
  * https://github.com/gsi-cyberjapan/experimental_rdcl
  */
-import type { Road } from "@/domain/geo/lot";
+import { type Road, metersPerDegree } from "@/domain/geo/lot";
 
 const Z = 16;
 const tileOf = (lat: number, lng: number) => {
@@ -56,8 +56,9 @@ async function tile(x: number, y: number): Promise<Road[]> {
 
 /** 地点から半径 radius m の範囲にかかるタイルの道路をまとめて返す */
 export async function roadsAround(lat: number, lng: number, radius = 80): Promise<Road[]> {
-  const dLat = radius / 110_950;
-  const dLng = radius / (110_950 * Math.cos((lat * Math.PI) / 180));
+  const k = metersPerDegree(lat);
+  const dLat = radius / k.lat;
+  const dLng = radius / k.lng;
   const a = tileOf(lat + dLat, lng - dLng);
   const b = tileOf(lat - dLat, lng + dLng);
   const jobs: Promise<Road[]>[] = [];

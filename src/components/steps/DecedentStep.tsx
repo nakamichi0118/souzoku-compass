@@ -1,7 +1,7 @@
 "use client";
 
 import { Card, Field, Note, TextInput } from "@/components/ui";
-import { addMonths, isValidDate, nextOpenDay } from "@/domain/procedures/dates";
+import { isValidDate, monthsDeadline, nextOpenDay } from "@/domain/procedures/dates";
 import { useCase } from "@/lib/store";
 import { Choice } from "@/components/plan/inputs";
 import { ConsultLink } from "@/components/compass/ConsultLink";
@@ -12,7 +12,7 @@ export function DecedentStep() {
   const d = data.decedent;
   const set = (k: keyof typeof d, v: string) => update((c) => ({ ...c, decedent: { ...c.decedent, [k]: v } }));
   // やることリスト・カレンダーと同じ計算（応当日がなければ月末、休みの日なら次の開いている日）
-  const deadline = d.deathDate && isValidDate(d.deathDate) ? nextOpenDay(addMonths(d.deathDate, 10)) : null;
+  const deadline = d.deathDate && isValidDate(d.deathDate) ? nextOpenDay(monthsDeadline(d.deathDate, 10)) : null;
   const outOfScope = d.deathDate && !d.deathDate.startsWith("2026");
 
   return (
@@ -66,6 +66,32 @@ export function DecedentStep() {
               相続コンパスでは、相次相続控除の計算と申告書（第7表）の作成はできません。前回の相続の申告書の控えを用意して、税理士にご相談ください。
               <span className="mt-2 block">
                 <ConsultLink topic="相次相続控除" />
+              </span>
+            </Note>
+          </div>
+        )}
+      </Card>
+      <Card title="相続時精算課税を選んだ贈与">
+        <p className="text-sm text-stone-700">亡くなった方から生前に贈与を受けた人の中に、贈与税の申告で「相続時精算課税」を選んだ人はいますか？</p>
+        <p className="mt-1 text-xs text-stone-500">
+          税務署に「相続時精算課税選択届出書」を出して贈与を受けた場合です。選んだ後に受けた贈与は、何年前のものでも相続税の計算に足すことになります（令和6年以降の贈与は、毎年110万円までの部分を除きます）。
+        </p>
+        <div className="mt-3">
+          <Choice
+            value={d.settlementGift ?? false}
+            onChange={(v) => update((c) => ({ ...c, decedent: { ...c.decedent, settlementGift: v } }))}
+            options={[
+              { value: false, label: "いいえ・分からない" },
+              { value: true, label: "はい" },
+            ]}
+          />
+        </div>
+        {d.settlementGift && (
+          <div className="mt-3">
+            <Note tone="stop">
+              相続コンパスでは、相続時精算課税を選んだ贈与がある場合の計算と申告書（第11の2表）の作成はできません。贈与税の申告書の控えを用意して、税理士にご相談ください。
+              <span className="mt-2 block">
+                <ConsultLink topic="相続時精算課税" />
               </span>
             </Note>
           </div>

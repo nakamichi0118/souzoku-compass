@@ -23,15 +23,23 @@ export interface Road {
   width?: number;
 }
 
-const M_PER_DEG_LAT = 110_950;
 const rad = (d: number) => (d * Math.PI) / 180;
+
+/** 緯度1度・経度1度あたりの地上の長さ（m）。GRS80（世界測地系）の楕円体での近似式 */
+export function metersPerDegree(lat: number): { lat: number; lng: number } {
+  const p = rad(lat);
+  return {
+    lat: 111_132.954 - 559.822 * Math.cos(2 * p) + 1.175 * Math.cos(4 * p),
+    lng: 111_412.84 * Math.cos(p) - 93.5 * Math.cos(3 * p) + 0.118 * Math.cos(5 * p),
+  };
+}
 
 /** 基準点のまわりの平面座標（東がx、北がy、単位m） */
 export function projector(origin: LatLng) {
-  const kx = M_PER_DEG_LAT * Math.cos(rad(origin[0]));
+  const k = metersPerDegree(origin[0]);
   return {
-    to: (p: LatLng): [number, number] => [(p[1] - origin[1]) * kx, (p[0] - origin[0]) * M_PER_DEG_LAT],
-    from: (x: number, y: number): LatLng => [origin[0] + y / M_PER_DEG_LAT, origin[1] + x / kx],
+    to: (p: LatLng): [number, number] => [(p[1] - origin[1]) * k.lng, (p[0] - origin[0]) * k.lat],
+    from: (x: number, y: number): LatLng => [origin[0] + y / k.lat, origin[1] + x / k.lng],
   };
 }
 

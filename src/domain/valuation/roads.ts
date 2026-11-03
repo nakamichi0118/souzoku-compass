@@ -91,14 +91,16 @@ export function evaluateRoads(district: District, roads: RoadInput[]): MultiRoad
   const perSqm = lines.reduce((s, l) => s + (l.role === "front" ? l.corrected : l.addition), 0);
   const yen = (n: number) => n.toLocaleString("ja-JP");
   const name = { front: "正面", side: "側方", back: "裏面" } as const;
+  lines.sort((a, b) => ["front", "side", "back"].indexOf(a.role) - ["front", "side", "back"].indexOf(b.role));
+  // 側方路線は2本ありうる。同じ路線価・奥行でも説明の文が同じにならないよう「1本目」「2本目」と付ける
+  const sides = lines.filter((l) => l.role === "side");
+  const label = (l: RoadLine) => (l.role === "side" && sides.length > 1 ? `側方路線（${sides.indexOf(l) + 1}本目）` : `${name[l.role]}路線`);
   const steps = [
-    ...lines
-      .sort((a, b) => ["front", "side", "back"].indexOf(a.role) - ["front", "side", "back"].indexOf(b.role))
-      .map((l) =>
-        l.role === "front"
-          ? `正面路線 ${yen(l.price)}円 × 奥行価格補正率 ${l.depthRate}（奥行${l.depth}m） = ${yen(l.corrected)}円`
-          : `${name[l.role]}路線 ${yen(l.price)}円 × 奥行価格補正率 ${l.depthRate} × ${l.role === "side" ? "側方路線影響加算率" : "二方路線影響加算率"} ${l.addRate} = ${yen(l.addition)}円`,
-      ),
+    ...lines.map((l) =>
+      l.role === "front"
+        ? `正面路線 ${yen(l.price)}円 × 奥行価格補正率 ${l.depthRate}（奥行${l.depth}m） = ${yen(l.corrected)}円`
+        : `${label(l)} ${yen(l.price)}円 × 奥行価格補正率 ${l.depthRate} × ${l.role === "side" ? "側方路線影響加算率" : "二方路線影響加算率"} ${l.addRate} = ${yen(l.addition)}円`,
+    ),
     ...(lines.length > 1 ? [`1㎡当たり ${yen(perSqm)}円`] : []),
   ];
   return { lines, perSqm, front: lines.find((l) => l.role === "front")!, steps };

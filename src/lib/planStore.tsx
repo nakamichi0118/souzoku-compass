@@ -1,9 +1,10 @@
 "use client";
 
-import { kvGet, kvSet, useSession } from "./cloud";
+import { isUnsaved, kvGet, kvSet, useSession } from "./cloud";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { blankInterview, demoInterview, type Interview } from "@/domain/procedures/interview";
 import { buildTasks } from "@/domain/procedures/rules";
+import { todayISO } from "@/domain/procedures/dates";
 import type { Account } from "./account";
 
 const IV_KEY = "souzoku-compass:interview:v1";
@@ -11,11 +12,6 @@ const DONE_KEY = "souzoku-compass:done:v1";
 const ACC_KEY = "souzoku-compass:account:v1";
 const HEARD_KEY = "souzoku-compass:heard:v1";
 const MEMO_KEY = "souzoku-compass:memo:v1";
-
-const todayISO = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
 
 /** デモでは、今日より前が期限の手続きと主な書類は済んだ状態から始める */
 const demoDone = () => [
@@ -49,7 +45,6 @@ interface PlanCtx {
   heard: boolean;
   setHeard: (v: boolean) => void;
   done: string[];
-  toggle: (id: string) => void;
   setDoneIds: (ids: string[], on: boolean) => void;
   /** 手続き・書類の状態：未・完了・不要 */
   statusOf: (id: string) => ItemStatus;
@@ -87,6 +82,22 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
     setLoaded(true);
   }, [session.ready, session.mode]);
 
+  // 別のタブで書き換えられたら、その項目を読み直す（古い画面のまま操作して、別のタブの記録を上書きしないため）。
+  // このタブにまだ送っていない記録があるときは、そちらを優先する
+  useEffect(() => {
+    if (!loaded) return;
+    const onStorage = (e: StorageEvent) => {
+      if (!e.key || e.newValue === null || isUnsaved(e.key)) return;
+      if (e.key === IV_KEY) setIv({ ...blankInterview(), ...read<Partial<Interview>>(IV_KEY, {}) });
+      else if (e.key === DONE_KEY) setDone(read<string[]>(DONE_KEY, []));
+      else if (e.key === ACC_KEY) setAccount(read<Account | null>(ACC_KEY, null));
+      else if (e.key === HEARD_KEY) setHeardState(read<boolean>(HEARD_KEY, false));
+      else if (e.key === MEMO_KEY) setMemos(read<Record<string, string>>(MEMO_KEY, {}));
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [loaded]);
+
   const saveIv = useCallback((next: Interview) => {
     setIv(next);
     write(IV_KEY, next);
@@ -94,13 +105,6 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
   const setHeard = useCallback((v: boolean) => {
     setHeardState(v);
     write(HEARD_KEY, v);
-  }, []);
-  const toggle = useCallback((id: string) => {
-    setDone((cur) => {
-      const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur.filter((x) => x !== naId(id)), id];
-      write(DONE_KEY, next);
-      return next;
-    });
   }, []);
   const setDoneIds = useCallback((ids: string[], on: boolean) => {
     setDone((cur) => {
@@ -155,7 +159,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
   }, [endSession]);
 
   return (
-    <Ctx.Provider value={{ iv, saveIv, heard, setHeard, done, toggle, setDoneIds, statusOf, setStatus, memos, setMemo, account, startDemo, signOut, loaded }}>{children}</Ctx.Provider>
+    <Ctx.Provider value={{ iv, saveIv, heard, setHeard, done, setDoneIds, statusOf, setStatus, memos, setMemo, account, startDemo, signOut, loaded }}>{children}</Ctx.Provider>
   );
 }
 

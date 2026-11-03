@@ -10,15 +10,17 @@ export function PapersPage() {
   if (!o.loaded) return <AppShell>{null}</AppShell>;
   const c = o.case;
   const hasRealEstate = c.assets.some((a) => a.kind === "land" || a.kind === "building" || a.kind === "condo");
+  // 申告書のPDFは、計算を止める問題が1つでもあると作れない
+  const blockers = o.result?.blockers ?? [];
   const papers = [
     {
       Icon: Calculator,
       title: "相続税の申告書",
       text: "国税庁の令和8年分の正式な様式（第1表〜第15表など）に記入したPDFを作ります。",
       href: "/case/documents",
-      ready: !!o.result && c.assets.length > 0,
+      ready: !!o.result && c.assets.length > 0 && blockers.length === 0,
       need: o.filing ? "相続税の申告が必要です（10か月以内）" : "申告が不要な見込みでも、内容の確認に使えます",
-      todo: "財産と相続人を入力すると作れます",
+      todo: blockers.length > 0 ? `${blockers[0]}${blockers.length > 1 ? `（ほかに${blockers.length - 1}件あります）` : ""}` : "財産と相続人を入力すると作れます",
     },
     {
       Icon: Scale,

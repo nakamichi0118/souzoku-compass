@@ -35,6 +35,9 @@ export function splitLocation(loc: string) {
   rest = rest.slice(pref.length);
   const city = rest.match(/^([^\s]+?市[^\s]+?区|[^\s]+?郡[^\s]+?[町村]|[^\s]+?[市区町村])/)?.[1] ?? "";
   rest = rest.slice(city.length);
+  // 「梅田3丁目1番」のように丁目を数字で書いたときも、丁目までを大字・丁目に含める
+  const chome = rest.match(/^(.*?[0-9０-９]+丁目)(.*)$/);
+  if (chome) return { pref, city, town: chome[1], lot: chome[2].trim() };
   const m = rest.match(/^(.*?)([0-9０-９].*)$/);
   return { pref, city, town: m ? m[1] : rest, lot: m ? m[2] : "" };
 }
@@ -88,6 +91,16 @@ function landItems(line: AssetLine): ScheduleItem[] {
       const landGross = total ? Math.floor((gross * land) / total) : 0;
       landBy.push({ personId: b.personId, amount: landGross - cut });
       bldgBy.push({ personId: b.personId, amount: gross - landGross });
+    }
+    // 按分の端数（1円未満の切捨て）で、各行の価額と取得者ごとの金額の合計がずれないように、
+    // ずれた分を1人の土地と家屋の間で付け替える（その人の合計額は変わらない）
+    const diff = land - line.reduction - landBy.reduce((s, b) => s + b.amount, 0);
+    if (diff !== 0) {
+      const i = bldgBy.findIndex((b, k) => b.amount - diff >= 0 && landBy[k].amount + diff >= 0);
+      if (i >= 0) {
+        landBy[i].amount += diff;
+        bldgBy[i].amount -= diff;
+      }
     }
     return [
       {

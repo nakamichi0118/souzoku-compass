@@ -6,8 +6,9 @@
  */
 import { civilHeirIds } from "@/domain/heirs";
 import type { Asset, Case } from "@/domain/types";
+import { regProperty } from "@/domain/registration";
 import { ageAt, wareki } from "@/forms/format";
-import { splitLocation } from "@/forms/schedule11";
+import { propertyLines } from "./propertyLines";
 
 export interface DivisionDoc {
   title: string;
@@ -26,25 +27,14 @@ const yen = (n: number) => `金${n.toLocaleString("ja-JP")}円`;
 /** 財産を特定する記載 */
 export function describeAsset(a: Asset): string[] {
   switch (a.kind) {
-    case "land": {
-      const l = splitLocation(a.location);
-      return [
-        `土地`,
-        `　所在　${l.pref}${l.city}${l.town}`,
-        `　地番　${l.lot || "（登記事項証明書のとおり）"}`,
-        `　地目　${a.landUse}`,
-        `　地積　${a.areaSqm.toFixed(2)}平方メートル`,
-      ];
-    }
+    case "land":
     case "building":
-      return [`建物`, `　所在　${a.location}`, `　（${a.label}）`];
-    case "condo":
-      return [
-        `区分所有建物（${a.label}）及びその敷地権`,
-        `　所在　${a.location}`,
-        `　専有部分の床面積　${a.exclusiveAreaSqm.toFixed(2)}平方メートル`,
-        `　敷地権の面積（持分相当）　${a.landShareSqm.toFixed(2)}平方メートル`,
-      ];
+    case "condo": {
+      // 登記申請書と同じ部品で、登記簿どおりの不動産の表示（地番・家屋番号など）を書く
+      const p = regProperty(a);
+      const head = a.kind === "land" ? "土地" : a.kind === "building" ? "建物" : `区分所有建物（${a.label}）及びその敷地権`;
+      return [head, ...(p ? propertyLines(p, "（登記事項証明書のとおり）") : [`所在　${a.location}`]).map((l) => `　${l}`)];
+    }
     case "deposit":
       return [`預貯金　${[a.institution ?? a.label, a.branch, a.accountType].filter(Boolean).join("　")}`, `　（相続開始日の残高及び既経過利息を含む全額）`];
     case "cash":
@@ -72,6 +62,8 @@ export function buildDivisionDoc(c: Case): DivisionDoc {
 
   // 取得者ごとに財産をまとめる（保険金・退職金は受取人固有の財産なので分割の対象外）
   const take = new Map<string, string[][]>();
+  // 相続人でない人への割り当ては、財産がいくつあっても1人につき1回だけ知らせる
+  const nonHeirs = new Set<string>();
   for (const a of c.assets) {
     if (a.kind === "insurance" || a.kind === "retirement") continue;
     const al = allocs.get(a.id);
@@ -81,7 +73,7 @@ export function buildDivisionDoc(c: Case): DivisionDoc {
     }
     for (const s of al.shares) {
       if (!civil.has(s.personId)) {
-        warnings.push(`「${byId.get(s.personId)?.name ?? "不明"}」さんは相続人ではないため、遺産分割協議では財産を取得できません（遺言による場合は遺言書に従います）。`);
+        nonHeirs.add(s.personId);
         continue;
       }
       const lines = describeAsset(a);
@@ -90,6 +82,9 @@ export function buildDivisionDoc(c: Case): DivisionDoc {
       else if (part) lines[0] = `${lines[0]}のうち${part}${a.kind === "land" || a.kind === "building" || a.kind === "condo" ? "の持分" : ""}`;
       take.set(s.personId, [...(take.get(s.personId) ?? []), lines]);
     }
+  }
+  for (const id of nonHeirs) {
+    warnings.push(`「${byId.get(id)?.name || "不明"}」さんは相続人ではないため、遺産分割協議では財産を取得できません（遺言による場合は遺言書に従います）。`);
   }
   const bear = new Map<string, string[]>();
   for (const d of c.debts) {
@@ -147,7 +142,8 @@ export function buildDivisionDoc(c: Case): DivisionDoc {
     articles,
     closing: "以上のとおり相続人全員による遺産分割協議が成立したので、これを証するため本協議書を作成し、相続人全員が署名押印のうえ各自1通を保有する。",
     signers,
-    warnings,
+    // 同じ文が重なると画面に同じ注意が並ぶので、1つにまとめる
+    warnings: [...new Set(warnings)],
   };
 }
 

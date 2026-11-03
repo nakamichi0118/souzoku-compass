@@ -48,7 +48,13 @@ export function personalNotices(o: ReturnType<typeof useOverall>): Notice[] {
     if (left > 14 && left <= 90)
       out.push({ id: `tax:${tax.date}:${Math.floor(left / 30)}`, kind: "personal", level: "warn", date: tax.date, title: `相続税の申告期限まであと${left}日です`, body: `期限は${jpDate(tax.date)}です。申告書づくりの進み具合を確認しましょう。`, href: "/case/assets" });
   }
-  return out.sort((a, b) => (a.level === "danger" ? -1 : b.level === "danger" ? 1 : a.date < b.date ? -1 : 1));
+  return out.sort(compareNotices);
+}
+
+/** 並び順：期限を過ぎたものを先に。それぞれの中では日付の早い順 */
+export function compareNotices(a: Notice, b: Notice): number {
+  const rank = (n: Notice) => (n.level === "danger" ? 0 : 1);
+  return rank(a) - rank(b) || a.date.localeCompare(b.date);
 }
 
 export function useNotices(o: ReturnType<typeof useOverall>) {
