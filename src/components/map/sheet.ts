@@ -62,3 +62,24 @@ export async function cropAround(sheet: Sheet, at: [number, number], w = 900, h 
   ctx.stroke();
   return new Promise((ok) => canvas.toBlob((b) => ok(b!), "image/png"));
 }
+
+/** 路線価図を縮小し、線や文字の暗い画素からの距離の表を作る（自動位置合わせ用） */
+export async function sheetField(sheet: Sheet, width = 1000) {
+  const { distanceField } = await import("@/domain/geo/autoAlign");
+  const img = new Image();
+  img.src = sheet.src;
+  await img.decode();
+  const w = width;
+  const h = Math.round((sheet.height * w) / sheet.width);
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+  const px = ctx.getImageData(0, 0, w, h).data;
+  const dark = new Uint8Array(w * h);
+  for (let i = 0; i < dark.length; i++) dark[i] = px[i * 4] * 0.3 + px[i * 4 + 1] * 0.59 + px[i * 4 + 2] * 0.11 < 150 ? 1 : 0;
+  return { d: distanceField(dark, w, h), w, h };
+}

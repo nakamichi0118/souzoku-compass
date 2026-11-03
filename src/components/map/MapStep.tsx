@@ -25,7 +25,8 @@ import { DEFAULT_PAPER, type Frame, frameCorners, framePairs } from "@/domain/ge
 import { useCase } from "@/lib/store";
 import type { GeoPair, MapApi, Sheet } from "./MapView";
 import type { FindResult } from "@/server/rosenkaIndex";
-import { cropAround, loadImage, renderPdfPage } from "./sheet";
+import { cropAround, loadImage, renderPdfPage, sheetField } from "./sheet";
+import { autoAlign } from "@/domain/geo/autoAlign";
 
 const MapView = dynamic(() => import("./MapView"), { ssr: false, loading: () => <div className="h-[520px] animate-pulse rounded-xl bg-stone-100" /> });
 
@@ -289,6 +290,29 @@ function MapWorkspace() {
   const evaluation = evaluateRoads(district, roadInputs);
   const canRead = !!sheet && !!lot && effectivePairs.length >= 2;
 
+  const [alignMsg, setAlignMsg] = useState<string | null>(null);
+  /** 路線価図の道路の線が、国土地理院の道路の両端に重なるように枠を自動で合わせる（試験的） */
+  async function alignAuto() {
+    if (!sheet || !property) return;
+    setAlignMsg(null);
+    await run("路線価図を道路に合わせています", async () => {
+      const res = await fetch(`/api/geo/roads?lat=${property[0]}&lng=${property[1]}&radius=400`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "道路の情報を取得できませんでした。");
+      const field = await sheetField(sheet);
+      await new Promise((ok) => setTimeout(ok, 30)); // 「合わせています」を先に表示する
+      const start = frame ?? { center: property, scale: DEFAULT_SCALE, rotation: 0 };
+      const r = autoAlign(field, paper, json.roads, property, start);
+      if (!r || !(r.score < r.before * 0.9)) {
+        setAlignMsg("自動ではうまく合わせられませんでした。枠を道路の近くまで動かしてからもう一度試すか、手で合わせてください。");
+        return;
+      }
+      setPairs([]);
+      setFrame(r.frame);
+      setAlignMsg("道路の線に合わせました。地図の道路と路線価図の道路が重なっているか確かめてください。ずれていれば手で微調整できます。");
+    });
+  }
+
   /** 枠の各辺の外側（道路の上）の点を路線価図の上の点に直し、そこに付いた路線価をコンパスくんが読む */
   async function readRoads() {
     if (!sheet || !lot) return;
@@ -526,6 +550,12 @@ function MapWorkspace() {
               <div className="mb-2">
                 <Check checked={showRoads} onChange={setShowRoads} label="道路の中心線（青い点線）を表示" />
               </div>
+              <div className="mb-3 space-y-1">
+                <Button onClick={alignAuto} disabled={!sheet || !property || !!busy}>
+                  道路に合わせて自動で位置合わせ（試験中）
+                </Button>
+                {alignMsg && <p className="text-xs text-stone-700">{alignMsg}</p>}
+              </div>
               <div className="space-y-2">
                 <label className="flex items-center gap-2 text-sm text-stone-700">
                   縮尺
@@ -657,9 +687,15 @@ function MapWorkspace() {
                 <section className="space-y-2">
                   <h3 className="font-bold text-stone-800">2. 道路ごとの路線価</h3>
                   {canRead ? (
-                    <Button onClick={readRoads} disabled={!!busy}>
-                      路線価図から読み取る
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button onClick={readRoads} disabled={!!busy}>
+                        路線価図から読み取る
+                      </Button>
+                      <Button variant="secondary" onClick={alignAuto} disabled={!!busy}>
+                        重ね合わせを自動で合わせる
+                      </Button>
+                      {alignMsg && <p className="w-full text-xs text-stone-700">{alignMsg}</p>}
+                    </div>
                   ) : (
                     <p className="rounded-lg bg-stone-50 p-2 text-xs text-stone-600">
                       {sheet ? "路線価図の位置が合っていません。上の「位置合わせ」で道路を重ねてください。" : "路線価図が見つかると、道路ごとの路線価を読み取れます。路線価図を見て入力することもできます。"}

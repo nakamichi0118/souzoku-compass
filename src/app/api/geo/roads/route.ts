@@ -12,7 +12,8 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "日本国内の地点を指定してください。" }, { status: 400 });
   }
   try {
-    return NextResponse.json({ roads: await roadsAround(lat, lng) });
+    const radius = Math.min(400, Math.max(20, Number(sp.get("radius")) || 80));
+    return NextResponse.json({ roads: await roadsAround(lat, lng, radius) });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "道路の情報を取得できませんでした。" }, { status: 502 });
   }
