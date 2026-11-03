@@ -577,6 +577,9 @@ function compute(
       } else {
         blockers.push(`${label}を受け継ぐ人が決まっていません。遺産の分け方で取得者を決めてください。${allocateHint}`);
       }
+    } else if (shares.some((s) => s.numerator > 0 && !living.has(s.personId))) {
+      // 割合は1でも、取得者に先に亡くなった人や一覧にいない人が入っている
+      blockers.push(`${label}を受け継ぐ人に、亡くなった方より先に亡くなった人か、家族の一覧にいない人が選ばれています。遺産の分け方で受け継ぐ人を選び直してください。`);
     } else if (valid.length !== shares.length || over > 0n) {
       const shareSum = shares.reduce((acc, s) => acc + s.numerator / Math.max(1, s.denominator), 0);
       blockers.push(`${label}の取得割合の合計が1になっていません（いま ${Math.round(shareSum * 10000) / 100}%）。遺産の分け方を確認してください。`);
