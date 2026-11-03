@@ -73,6 +73,11 @@ export interface PriorCredit {
   date?: ISODate;
   /** これまでに控除を受けた金額の合計（本人と扶養義務者の分の合計） */
   amount?: number;
+  /**
+   * 障害者控除のときだけ：最初に控除を受けた相続のときの区分が特別障害者だったか（true＝特別、false＝一般、未設定＝今と同じ区分）。
+   * 区分が変わったときの計算は相基通19の4-4
+   */
+  special?: boolean;
 }
 
 export interface Decedent {

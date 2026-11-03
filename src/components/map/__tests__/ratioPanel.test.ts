@@ -42,9 +42,17 @@ describe("倍率方式「3.」の評価と反映 ui-3", () => {
     const big = ratioStep3(land(), { fav: 30_000_000, multiplier: 1.1, area: 1_200 });
     expect(big.valuation.needsConsultation).toContain("地積規模の大きな宅地");
     expect(big.canApply).toBe(true);
-    const irregular = ratioStep3(land({ condition: "irregular" }), { fav: 10_000_000, multiplier: 1.1, area: 200 });
+    // 形がいびつな雑種地は、近くの宅地と比べて形の補正をすることがあるので相談
+    const irregular = ratioStep3(land({ condition: "irregular", landUse: "雑種地" }), { fav: 10_000_000, multiplier: 1.1, area: 200 });
     expect(irregular.valuation.needsConsultation).toBeTruthy();
     expect(irregular.canApply).toBe(true);
+  });
+
+  it("倍率方式の宅地は、形がいびつでも固定資産税評価額 × 倍率で評価する（形は固定資産税評価額に反映されている。通達21-2・valuation-2）", () => {
+    const r = ratioStep3(land({ condition: "irregular" }), { fav: 10_000_000, multiplier: 1.1, area: 200 });
+    expect(r.valuation.needsConsultation).toBeUndefined();
+    expect(r.valuation.value).toBe(11_000_000);
+    expect(r.canApply).toBe(true);
   });
 
   it("倍率・地積・固定資産税評価額のどれかがなければ反映できない", () => {

@@ -217,7 +217,11 @@ export function toCase(s: Scenario): ToCaseResult {
     if (m.nonResident) p.nonResident = true;
     // 前の相続でも未成年者控除・障害者控除を受けた：最初の相続の日と、これまでに控除を受けた額の合計（扶養義務者から引いた分を含む）
     if (m.priorMinorCredit) p.priorMinorCredit = { date: m.priorMinorCredit.date, amount: m.priorMinorCredit.amount };
-    if (m.priorDisabilityCredit) p.priorDisabilityCredit = { date: m.priorDisabilityCredit.date, amount: m.priorDisabilityCredit.amount };
+    // 障害者控除は、最初の相続のときの区分（一般・特別）が今と違えば「前の相続のときは区分が違った」として入れる（special：true＝特別、false＝一般）
+    if (m.priorDisabilityCredit) {
+      const pd = m.priorDisabilityCredit;
+      p.priorDisabilityCredit = { date: pd.date, amount: pd.amount, ...(pd.special !== undefined ? { special: pd.special } : {}) };
+    }
     return p;
   });
   const living = new Set(persons.filter((p) => !p.predeceased).map((p) => p.id));

@@ -9,6 +9,8 @@
  *
  * 付表1の「特例」欄には、小規模宅地等の特例で減額した土地（マンションは敷地利用権の行）に特例番号「1」
  * （租税特別措置法第69条の4）を書く。マンションの「備考」欄には敷地権の割合（例：10000分の169）を書く。
+ * 一部の部屋が空いている貸家建付地などに貸付事業用宅地等の特例を使ったときは、貸している部分（特例の対象）と
+ * 空いている部分（自用地として評価・特例の対象外）を別の行にする（splitVacant）。
  *
  * 分け方が決まっていない（未分割の）部分は、付表の「分割が確定した財産」には書かず、
  * 第11表の合計表の「② 未分割財産の価額」に法定相続分で取得したものとした額を書く。
@@ -104,24 +106,89 @@ export function siteRightRatio(siteRight: string | undefined): string {
 /** 整数 a × b ÷ d（1円未満切捨て）。桁あふれしないよう BigInt で計算する */
 const mulDiv = (a: number, b: number, d: number) => (d > 0 ? Number((BigInt(a) * BigInt(b)) / BigInt(d)) : 0);
 
-function landItems(line: AssetLine): ScheduleItem[] {
+/** 面積（㎡）の表示。0.01㎡単位で持った値を「120」「16.8」のように書く */
+const areaText = (sqm: number) => sqm.toLocaleString("ja-JP", { maximumFractionDigits: 2 });
+
+/** 特例を使う人の、分け方で決まった持分（エンジンと同じく、最後の分け方の、その人の最初の正しい割合） */
+function srShare(c: Case, assetId: string, personId: string) {
+  let shares: Case["allocations"][number]["shares"] = [];
+  for (const al of c.allocations) if (al.assetId === assetId) shares = al.shares;
+  return shares.find((s) => s.personId === personId && Number.isInteger(s.numerator) && Number.isInteger(s.denominator) && s.numerator > 0 && s.denominator > 0);
+}
+
+/**
+ * 一部の部屋が空いている貸家建付地・貸家建付借地権（マンションの人に貸している部屋の敷地を含む）に貸付事業用宅地等の
+ * 特例を使ったときは、特例を使う人の分を次の2行に分ける（ほかの人が取得した分は、もとの利用区分のまま3行目にまとめる）。
+ *   1行目 貸している部分：特例の対象。価額は付表1の⑧（④ − 減額）。付表1の注4「⑧欄の金額を第11表の付表1の価額欄に転記」
+ *   2行目 空いている部分：特例の対象外。自用地（貸家建付借地権は借地権）として評価した額。別表1の「3 特例の対象とならない宅地等」
+ * 各行の価額の合計（＝第11表・第15表に入る額）と、取得者ごとの金額の合計は、1行で書いたときと変わらない。
+ * 分けられないとき（空いている部分の価額が出ないなど）は undefined（これまでどおり1行で書く）
+ */
+function splitVacant(
+  c: Case,
+  line: AssetLine,
+  base: { cat: number; value: number; parts: Part[]; values: ScheduleItem["values"]; lotArea: number; vacantUse: Usage; vacantNote?: string },
+): ScheduleItem[] | undefined {
+  const a = line.asset;
+  const s = line.small;
+  const rentedLand = line.valuation.rentedLandPart;
+  const partlyRented =
+    a.kind === "land" ? (a.use === "rentedHouse" || a.use === "rentedLeasehold") && (a.rentRatio ?? 1) < 1 : a.kind === "condo" && !!a.rented && (a.rentRatio ?? 1) < 1;
+  if (!s || s.kind !== "rental" || !(line.reduction > 0) || rentedLand === undefined || !partlyRented) return undefined;
+  const sr = base.parts.find((p) => p.personId === s.acquirerId && !p.undivided);
+  if (!sr) return undefined;
+  const others = base.parts.filter((p) => p !== sr);
+  // 特例を使う人の持分に応じた面積（エンジンと同じく 0.01㎡ 単位）。持分が分からず、ほかに取得した人もいなければ全部
+  const share = srShare(c, a.id, s.acquirerId) ?? (others.length === 0 ? { numerator: 1, denominator: 1 } : undefined);
+  if (!share) return undefined;
+  const lot100 = Math.round(base.lotArea * 100);
+  const share100 = Math.round(((base.lotArea * share.numerator) / share.denominator) * 100);
+  const rented100 = Math.round(s.area * 100);
+  const rentedValue = s.value - line.reduction; // 付表1の⑧
+  const vacantValue = sr.amount + line.reduction - s.value; // 持分の価額 − 貸している部分の価額（④）
+  if (!(rentedValue >= 0) || !(vacantValue > 0) || !(share100 > rented100)) return undefined;
+  const pick = (ps: Part[]) => ({
+    acquirers: ps.filter((p) => !p.undivided).map(({ personId, amount }) => ({ personId, amount })),
+    undivided: ps.filter((p) => p.undivided).map(({ personId, amount }) => ({ personId, amount })),
+  });
+  const one = (amount: number): Part[] => [{ personId: sr.personId, amount, undivided: false }];
+  const out: ScheduleItem[] = [
+    { cat: base.cat, value: rentedValue, values: { ...base.values, area: areaText(rented100 / 100), special: SMALL_LAND_SPECIAL_NO }, ...pick(one(rentedValue)) },
+    {
+      cat: base.cat,
+      value: vacantValue,
+      values: { ...base.values, use: base.vacantUse, area: areaText((share100 - rented100) / 100), fixed: "", special: "", ...(base.vacantNote ? { note: base.vacantNote } : {}) },
+      ...pick(one(vacantValue)),
+    },
+  ];
+  const othersValue = base.value - rentedValue - vacantValue;
+  if (others.length || othersValue !== 0)
+    out.push({ cat: base.cat, value: othersValue, values: { ...base.values, area: areaText(Math.max(0, lot100 - share100) / 100), fixed: "", special: "" }, ...pick(others) });
+  return out;
+}
+
+function landItems(c: Case, line: AssetLine): ScheduleItem[] {
   const a = line.asset;
   const parts = partsOf(line);
   if (a.kind === "land") {
     const loc = splitLocation(a.location);
     const m = a.method;
-    return [
-      item(LAND_CAT[a.landUse], line.valuation.value - line.reduction, parts, {
-        kind: a.landUse,
-        // 利用区分：自用地・貸家建付地・貸宅地・借地権（評価の計算で決まったもの。なければ土地の使い方から）
-        use: line.valuation.usage ?? LAND_USAGE[a.use ?? "self"],
-        ...loc,
-        area: a.areaSqm.toLocaleString("ja-JP", { maximumFractionDigits: 2 }),
-        unit: m.type === "rosenka" ? yen(line.valuation.unitPrice) : m.type === "multiplier" ? `${m.multiplier}倍` : "",
-        fixed: m.type === "multiplier" ? yen(m.fixedAssetValue) : "",
-        special: line.reduction > 0 ? SMALL_LAND_SPECIAL_NO : "",
-      }),
-    ];
+    const cat = LAND_CAT[a.landUse];
+    const value = line.valuation.value - line.reduction;
+    // 利用区分：自用地・貸家建付地・貸宅地・借地権（評価の計算で決まったもの。なければ土地の使い方から）
+    const use = line.valuation.usage ?? LAND_USAGE[a.use ?? "self"];
+    const values: ScheduleItem["values"] = {
+      kind: a.landUse,
+      use,
+      ...loc,
+      area: areaText(a.areaSqm),
+      unit: m.type === "rosenka" ? yen(line.valuation.unitPrice) : m.type === "multiplier" ? `${m.multiplier}倍` : "",
+      fixed: m.type === "multiplier" ? yen(m.fixedAssetValue) : "",
+      special: line.reduction > 0 ? SMALL_LAND_SPECIAL_NO : "",
+    };
+    // 空いている部分は自用地として評価する（貸家建付借地権の土地なら、自分で使っている借地権）
+    const vacantUse: Usage = a.use === "rentedLeasehold" ? "借地権" : "自用地";
+    return splitVacant(c, line, { cat, value, parts, values, lotArea: a.areaSqm, vacantUse, vacantNote: "空室部分" }) ?? [item(cat, value, parts, values)];
   }
   if (a.kind === "building") {
     const loc = splitLocation(a.location);
@@ -161,26 +228,28 @@ function landItems(line: AssetLine): ScheduleItem[] {
         bldgParts[i].amount -= diff;
       }
     }
+    const siteValues: ScheduleItem["values"] = {
+      kind: "宅地",
+      // 人に貸している部屋の敷地利用権は貸家建付地、部屋は貸家
+      use: a.rented ? "貸家建付地" : "自用地",
+      ...loc,
+      area: areaText(a.landShareSqm),
+      special: line.reduction > 0 ? SMALL_LAND_SPECIAL_NO : "",
+      // 区分所有の財産は、備考に敷地利用権（敷地権）の割合を書く。登記簿の割合が入っていなければ空欄（手書きで記入する）
+      note: siteRightRatio(a.registry?.siteRight),
+    };
+    // 一部の部屋が空いていて貸付事業用宅地等の特例を使うときは、敷地利用権の行を貸している部分と空いている部分（自用地）に分ける
+    const sites = splitVacant(c, line, { cat: 3, value: land - line.reduction, parts: landParts, values: siteValues, lotArea: a.landShareSqm, vacantUse: "自用地" }) ?? [
+      item(3, land - line.reduction, landParts, siteValues),
+    ];
     return [
-      {
-        ...item(3, land - line.reduction, landParts, {
-          kind: "宅地",
-          // 人に貸している部屋の敷地利用権は貸家建付地、部屋は貸家
-          use: a.rented ? "貸家建付地" : "自用地",
-          ...loc,
-          area: a.landShareSqm.toLocaleString("ja-JP", { maximumFractionDigits: 2 }),
-          special: line.reduction > 0 ? SMALL_LAND_SPECIAL_NO : "",
-          // 区分所有の財産は、備考に敷地利用権（敷地権）の割合を書く。登記簿の割合が入っていなければ空欄（手書きで記入する）
-          note: siteRightRatio(a.registry?.siteRight),
-        }),
-        part: "site" as const,
-      },
+      ...sites.map((it) => ({ ...it, part: "site" as const })),
       {
         ...item(10, total - land, bldgParts, {
           kind: "家屋",
           use: a.rented ? "貸家" : "自用家屋",
           ...loc,
-          area: a.exclusiveAreaSqm.toLocaleString("ja-JP", { maximumFractionDigits: 2 }),
+          area: areaText(a.exclusiveAreaSqm),
           fixed: yen(a.buildingFixedAssetValue),
           note: "区分所有",
         }),
@@ -290,7 +359,7 @@ function compensationItems(c: Case, r: TaxResult): ScheduleItem[] {
 function allItems(c: Case, r: TaxResult) {
   const lines = r.assets;
   return {
-    land: lines.flatMap(landItems),
+    land: lines.flatMap((l) => landItems(c, l)),
     stock: lines.flatMap(stockItems),
     money: lines.flatMap(moneyItems),
     other: [...lines.flatMap(otherItems), ...deemedItems(r.persons), ...compensationItems(c, r)],

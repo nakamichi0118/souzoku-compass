@@ -508,6 +508,30 @@ describe("前の相続でも受けた未成年者控除・障害者控除（19�
     const e = expected(two(mem("m", "child", "1975-08-01", { disability: "general", priorDisabilityCredit: { date: "2020-03-01", amount: 2_000_000 } })));
     expect(pay(e, "m")).toBe(1_750_000);
   });
+  // 1960-05-01 生まれ：前の相続 2021-04-10 に60歳（X）、今回 2026-04-10 に65歳（Y）。今回の特別障害者の控除額は 20万×20 = 400万
+  it("前の相続のときは一般障害者で今は特別障害者：{20万×(85−Y)＋10万×(Y−X)} − A（相基通19の4-4）", () => {
+    const m = mem("m", "child", "1960-05-01", { disability: "special", priorDisabilityCredit: { date: "2021-04-10", amount: 2_500_000, special: false } });
+    // 20万×20 + 10万×5 = 450万 − 250万 = 200万（今回の400万より少ない）。算出税額385万 − 200万
+    expect(pay(expected(two(m)), "m")).toBe(1_850_000);
+    // 区分を書かなければ今と同じ（特別）だったものとして 20万×25 − 250万 = 250万
+    const same = mem("m", "child", "1960-05-01", { disability: "special", priorDisabilityCredit: { date: "2021-04-10", amount: 2_500_000 } });
+    expect(pay(expected(two(same)), "m")).toBe(1_350_000);
+  });
+  it("前の相続のときは特別障害者で今は一般障害者：限度は最初の相続のときの 20万×(85−X)", () => {
+    // 20万×25 = 500万 − 300万 = 200万。今回の一般障害者の控除額 10万×20 = 200万 → 200万
+    const m = mem("m", "child", "1960-05-01", { disability: "general", priorDisabilityCredit: { date: "2021-04-10", amount: 3_000_000, special: true } });
+    expect(pay(expected(two(m)), "m")).toBe(1_850_000);
+    // 400万控除済みなら 100万まで
+    const m2 = mem("m", "child", "1960-05-01", { disability: "general", priorDisabilityCredit: { date: "2021-04-10", amount: 4_000_000, special: true } });
+    expect(pay(expected(two(m2)), "m")).toBe(2_850_000);
+  });
+  it("控除済みの額がそのときの区分で受けられる額を超える（入力の矛盾）→ 計算の対象外", () => {
+    // 今と同じ一般障害者なら最初の相続のときの額は 10万×25 = 250万。300万は受けられない
+    const m = mem("m", "child", "1960-05-01", { disability: "general", priorDisabilityCredit: { date: "2021-04-10", amount: 3_000_000 } });
+    const e = expected(two(m));
+    expect(e.computable).toBe(false);
+    expect(e.outOfScope).toContain("障害者控除");
+  });
 });
 
 describe("一部が空室の貸付事業用宅地等（貸している部分だけ）", () => {
@@ -576,6 +600,81 @@ describe("一部未分割（穴埋め方式）", () => {
     expect(tp(e, "a")).toBe(26_470_000);
     expect(tp(e, "b")).toBe(30_000_000);
     expect(tp(e, "c")).toBe(23_529_000);
+  });
+  it("一部分割で代償金を払った：代償金は払った人の取得額から引き、受け取った人の取得額に足して不足額を出す（相基通11の2-9）", () => {
+    // 家6,000万を a が取得し b に代償金3,000万。預金6,000万は未分割。分割で得たもの a 3,000万・b 3,000万 → 未分割は半分ずつ
+    const sc = scen([mem("a", "child", "1975-01-01"), mem("b", "child", "1978-01-01")], [cash("h", 60_000_000), cash("d", 60_000_000)], { h: [["a", 1, 1]] });
+    if (sc.division.kind === "agreed") {
+      sc.division.partlyUndivided = true;
+      sc.division.compensation = [{ from: "a", to: "b", amount: 30_000_000 }];
+    }
+    const e = expected(sc);
+    expect(tp(e, "a")).toBe(60_000_000);
+    expect(tp(e, "b")).toBe(60_000_000);
+  });
+  it("代償金を時価をもとに決めたときは、評価額に直した額（代償金×評価額÷時価）で取得額を直す", () => {
+    // 土地（評価2,000万、時価3,000万）を a が取得し b に1,500万（評価額に直して1,000万）。預金4,000万は未分割。
+    // T=6,000万：a 3,000万 −（2,000万−1,000万）= 2,000万、b 3,000万 − 1,000万 = 2,000万 → 未分割は半分ずつ
+    const land: EstateItem = { id: "l", type: "land", label: "土地", areaSqm: 200, landUse: "宅地", valuation: { kind: "multiplier", fixedAssetValue: 20_000_000, rate: 1 }, use: "self" };
+    const sc = scen([mem("a", "child", "1975-01-01"), mem("b", "child", "1978-01-01")], [land, cash("d", 40_000_000)], { l: [["a", 1, 1]] });
+    if (sc.division.kind === "agreed") {
+      sc.division.partlyUndivided = true;
+      sc.division.compensation = [{ from: "a", to: "b", amount: 15_000_000, basis: { item: "l", marketValue: 30_000_000 } }];
+    }
+    const e = expected(sc);
+    expect(tp(e, "a")).toBe(30_000_000);
+    expect(tp(e, "b")).toBe(30_000_000);
+  });
+  it("配偶者と兄弟（2割加算）：代償金を入れた不足額で分けると各人の課税価格と配偶者の軽減が変わる", () => {
+    // 配偶者3/4・兄1/4。家4,000万を兄が取得し配偶者に代償金2,000万。預金8,000万は未分割。
+    // 分割で得たもの 配偶者2,000万・兄2,000万、T=1.2億：不足 7,000万・1,000万 → 未分割8,000万を 7:1
+    const sc = scen([mem("s", "spouse"), mem("x", "sibling", "1950-01-01")], [cash("h", 40_000_000), cash("d", 80_000_000)], { h: [["x", 1, 1]] });
+    if (sc.division.kind === "agreed") {
+      sc.division.partlyUndivided = true;
+      sc.division.compensation = [{ from: "x", to: "s", amount: 20_000_000 }];
+    }
+    const e = expected(sc);
+    expect(tp(e, "s")).toBe(90_000_000);
+    expect(tp(e, "x")).toBe(30_000_000);
+    expect(pay(e, "s") + pay(e, "x")).toBe(11_461_200);
+  });
+});
+
+describe("未分割の財産と相続時精算課税の贈与（相続税法55条・民法903条）", () => {
+  it("国税庁の質疑応答事例：遺産10億円、A・Bが生計の資本として精算課税で1億円ずつ → 各人の課税価格3億円", () => {
+    // （10億＋1億×2）×1/4 − 1億 = 2億（A・B）＋精算課税の1億 = 3億。C・D は（10億＋2億）×1/4 = 3億
+    const ms = [mem("A", "child", "1960-01-01"), mem("B", "child", "1962-01-01"), mem("C", "child", "1964-01-01"), mem("D", "child", "1966-01-01")];
+    const gifts = ["A", "B"].map((to) => ({ to, date: "2020-06-01", amount: 100_000_000, giftTaxPaid: 15_000_000, settlement: true }));
+    const e = expected(scen(ms, [cash("d", 1_000_000_000)], null, { gifts }));
+    expect(e.computable).toBe(true);
+    for (const id of ["A", "B", "C", "D"]) expect(tp(e, id)).toBe(300_000_000);
+    expect(e.totalTaxablePrice).toBe(1_200_000_000);
+  });
+  it("一部だけ分けたときも、精算課税の贈与を足した合計で穴埋めする。暦年課税の贈与は足さない", () => {
+    // 子2人。預金A 4,000万を a が取得、預金B 6,000万は未分割。a が精算課税で2,000万（令和5年）。
+    // T'=1.2億：a 6,000万 −（4,000万＋2,000万）= 0、b 6,000万 → 未分割は全部 b
+    const ms = [mem("a", "child", "1975-01-01"), mem("b", "child", "1978-01-01")];
+    const gifts = [{ to: "a", date: "2023-05-01", amount: 20_000_000, giftTaxPaid: 0, settlement: true }];
+    const sc = scen(ms, [cash("d1", 40_000_000), cash("d2", 60_000_000)], { d1: [["a", 1, 1]] }, { gifts });
+    if (sc.division.kind === "agreed") sc.division.partlyUndivided = true;
+    const e = expected(sc);
+    expect(tp(e, "a")).toBe(60_000_000);
+    expect(tp(e, "b")).toBe(60_000_000);
+    // 暦年課税の贈与（3年以内で加算される）なら未分割の分け方は変わらない：T=1億、a 5,000万−4,000万=1,000万、b 5,000万 → 1:5
+    const cal = [{ to: "a", date: "2025-05-01", amount: 2_000_000, giftTaxPaid: 90_000 }];
+    const sc2 = scen(ms, [cash("d1", 40_000_000), cash("d2", 60_000_000)], { d1: [["a", 1, 1]] }, { gifts: cal });
+    if (sc2.division.kind === "agreed") sc2.division.partlyUndivided = true;
+    const e2 = expected(sc2);
+    expect(tp(e2, "a")).toBe(40_000_000 + 10_000_000 + 2_000_000);
+    expect(tp(e2, "b")).toBe(50_000_000);
+  });
+  it("令和6年以後の精算課税の贈与は、特別受益には贈与の額そのもの、課税価格には110万円を引いた額", () => {
+    // 子2人、遺産1億は全部未分割。a に2024年 1,000万 → T'=1.1億：a 5,500万−1,000万=4,500万、b 5,500万 → 9:11
+    const ms = [mem("a", "child", "1975-01-01"), mem("b", "child", "1978-01-01")];
+    const gifts = [{ to: "a", date: "2024-05-01", amount: 10_000_000, giftTaxPaid: 0, settlement: true }];
+    const e = expected(scen(ms, [cash("d", 100_000_000)], null, { gifts }));
+    expect(tp(e, "a")).toBe(45_000_000 + 8_900_000);
+    expect(tp(e, "b")).toBe(55_000_000);
   });
 });
 
@@ -665,10 +764,22 @@ describe("税理士に確かめた補正率", () => {
     expect(e.computable).toBe(true);
     expect(tp(e, "a")).toBe(23_085_000);
   });
-  it("不整形地で補正率1（減額なし）も確かめた答え", () => {
+  it("不整形地で補正率1（減額なし）は、間口狭小・奥行長大をふつうに掛ける（付表5（注）3：不整形地補正率は間口狭小×奥行長大を超えない）", () => {
+    // 200,000×0.95 = 190,000 → 間口狭小0.94×奥行長大0.90 = 160,740 × 150㎡。条件を付けないときと同じで、高くはならない
     const e = one(landR("l", narrow, 150, { needsReduction: "irregular", advisorRate: 1 }));
     expect(e.computable).toBe(true);
-    expect(tp(e, "a")).toBe(28_500_000);
+    expect(tp(e, "a")).toBe(24_111_000);
+    expect(tp(one(landR("l", narrow, 150)), "a")).toBe(24_111_000);
+  });
+  it("倍率方式の宅地は形がいびつでも 固定資産税評価額×倍率（評基通21-2）。雑種地は対象外のまま", () => {
+    const m = (landUse: LandItem["landUse"]): EstateItem =>
+      ({ id: "l", type: "land", label: "土地", areaSqm: 300, landUse, valuation: { kind: "multiplier", fixedAssetValue: 10_000_000, rate: 1.1 }, use: "self", needsReduction: "irregular" }) as EstateItem;
+    const e = one(m("宅地"));
+    expect(e.computable).toBe(true);
+    expect(tp(e, "a")).toBe(11_000_000);
+    expect(one(m("雑種地")).computable).toBe(false);
+    const sb = { ...(m("宅地") as LandItem), needsReduction: "setback" as const };
+    expect(one(sb).computable).toBe(false);
   });
   it("補正率がなければ計算の対象外のまま", () => {
     expect(one(landR("l", narrow, 150, { needsReduction: "irregular" })).computable).toBe(false);

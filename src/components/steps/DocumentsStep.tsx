@@ -7,7 +7,7 @@ import type { TaxResult } from "@/domain/tax/engine";
 import type { Case } from "@/domain/types";
 import { buildDivisionDoc } from "@/documents/division";
 import { formsNotGenerated } from "@/forms/filing";
-import { divisionStatus } from "@/forms/schedule11";
+import { divisionStatus, siteRightRatio } from "@/forms/schedule11";
 import { useCase } from "@/lib/store";
 import { markCompleted } from "@/lib/progress";
 import { usePlan } from "@/lib/planStore";
@@ -31,6 +31,10 @@ export function handFilledBlanks(result: TaxResult | null): string[] {
     ...(result?.assets.some((l) => l.small?.kind === "business" && l.reduction > 0) ? ["第11・11の2表の付表1の事業内容（お店や工場などの事業の種類）"] : []),
     // 全部または一部の分け方が決まっているときは、第11表に分割の日を書く
     ...(result && divisionStatus(result) !== "3" ? ["第11表の分割の日（遺産分割協議がまとまった日）"] : []),
+    // マンションの敷地利用権の備考には敷地権の割合を書く。登記申請の画面で割合を入れていなければ空欄になる
+    ...(result?.assets.some((l) => l.asset.kind === "condo" && !/分の/.test(siteRightRatio(l.asset.registry?.siteRight)))
+      ? ["第11表の付表1の備考（マンションの敷地権の割合。登記事項証明書の『敷地権の割合』、例：10000分の169）"]
+      : []),
   ];
 }
 

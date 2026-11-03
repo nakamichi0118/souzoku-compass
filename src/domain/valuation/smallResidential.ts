@@ -92,7 +92,27 @@ function judgeUse(c: SmallResidentialCheck, kind: "business" | "rental"): Judgem
   };
 }
 
-export function judgeSmallResidential(c: SmallResidentialCheck, acquirer: Person | undefined, kind: SmallLandKind = "residence"): Judgement {
+/**
+ * 自宅の敷地でも事業に使っていた土地（部屋）でもないときの説明。画面の入力に合わせて、土地とマンションの部屋で案内を変える：
+ * 土地は「土地の使い方」の選択肢、マンションの部屋は「家賃をもらって人に貸している」のチェック
+ */
+export const NOT_HOME_OR_BUSINESS_REASON: Record<"land" | "condo", string> = {
+  land: "自宅の敷地でも、事業に使っていた土地でもないため、特例は使えません。家賃・地代をもらって人に貸している土地（人の土地を借りて建てたアパート・貸家も）は、「土地の使い方」で貸している使い方を選んでください。家族が無料で住んでいた土地や、舗装して貸している月極駐車場は、使える場合があるので税理士にご相談ください。",
+  condo:
+    "自宅でも、事業に使っていた部屋でもないため、特例は使えません。家賃をもらって人に貸している部屋は、「家賃をもらって人に貸している」にチェックを入れてください。家族が無料で住んでいた部屋は、使える場合があるので税理士にご相談ください。",
+};
+
+export interface JudgeOptions {
+  /** 土地かマンションの部屋か（説明の文を画面の入力に合わせる）。渡さなければ土地 */
+  assetKind?: "land" | "condo";
+}
+
+export function judgeSmallResidential(
+  c: SmallResidentialCheck,
+  acquirer: Person | undefined,
+  kind: SmallLandKind = "residence",
+  opts: JudgeOptions = {},
+): Judgement {
   if (!acquirer) return { result: "incomplete", reason: "取得する人を選んでください。" };
   if (acquirer.relation === "other") return { result: "no", reason: "小規模宅地等の特例は、亡くなった方の親族が取得した土地だけに使えます。" };
   if (kind === "rental") return judgeUse(c, "rental");
@@ -100,12 +120,7 @@ export function judgeSmallResidential(c: SmallResidentialCheck, acquirer: Person
   if (c.ownHome === "unsure") return { result: "consult", reason: "自宅の敷地かどうかがはっきりしないため、税理士への確認をおすすめします。" };
   if (c.ownHome === "no") {
     if (!c.business) return ASK;
-    if (c.business === "no")
-      return {
-        result: "no",
-        reason:
-          "自宅の敷地でも、事業に使っていた土地でもないため、特例は使えません。家賃・地代をもらって人に貸している土地は、土地の使い方で貸していることを選んでください（借りた土地に建てたアパート・貸家を貸しているときは「人の土地を借りて建てたアパート・貸家を、家賃をもらって貸している」）。家族が無料で住んでいた土地や、アスファルト舗装などをして貸している月極駐車場は、使える場合があるので税理士にご相談ください。",
-      };
+    if (c.business === "no") return { result: "no", reason: NOT_HOME_OR_BUSINESS_REASON[opts.assetKind === "condo" ? "condo" : "land"] };
     if (c.business === "unsure") return { result: "consult", reason: "事業に使っていた土地かどうかがはっきりしないため、税理士への確認をおすすめします。" };
     return judgeUse(c, "business");
   }

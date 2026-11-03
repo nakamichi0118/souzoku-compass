@@ -85,7 +85,7 @@ export function DebtsStep() {
               )}
             </div>
             <h3 className="mb-2 mt-4 text-sm font-bold text-stone-700">誰が負担しますか</h3>
-            {data.undivided && <p className="mb-2 text-xs text-stone-500">負担する人が決まっていなければ、空欄のままにしてください（法定相続分で負担したものとして計算します）。</p>}
+            {data.undivided && <p className="mb-2 text-xs text-stone-500">負担する人が決まっていなければ、入っている人を×で外して空欄にしてください（法定相続分で計算します）。</p>}
             <div className="space-y-2">
               {d.bearers.map((b, i) => (
                 <div key={i}>
@@ -103,6 +103,7 @@ export function DebtsStep() {
                   {!isLiving(b.personId) && <p className="mt-1 text-xs font-medium text-amber-800">負担する人を選んでください。選ぶまで相続税の計算を確定できません。</p>}
                 </div>
               ))}
+              {byLegalShare && d.amount > 0 && <p className="text-xs text-stone-500">（法定相続分で負担したものとして計算します）</p>}
               <Button variant="ghost" onClick={() => patch(d.id, { bearers: [...d.bearers, { personId: living[0]?.id ?? "", amount: 0 }] })}>
                 ＋ 負担する人を追加
               </Button>
@@ -127,7 +128,7 @@ export function DebtsStep() {
         <details className="mb-3 text-xs text-stone-600">
           <summary className="cursor-pointer font-medium text-teal-800">Tips：入れない贈与</summary>
           <p className="mt-2 leading-relaxed">
-            贈与税の配偶者控除（2,000万円まで）を受けた分と、住宅取得等資金の非課税を受けた分は、相続財産に足さないので入れません。配偶者控除を受けた贈与は、控除を受けた額を引いた残りだけを入れてください。
+            贈与税の配偶者控除（2,000万円まで）を受けた分と、住宅取得等資金の非課税を受けた分は、相続財産に足さないので入れません。配偶者控除を受けた贈与は、配偶者控除の額（2,000万円まで）だけを引いた残りを入れてください（基礎控除の110万円は引きません）。
           </p>
         </details>
         <div className="space-y-2">

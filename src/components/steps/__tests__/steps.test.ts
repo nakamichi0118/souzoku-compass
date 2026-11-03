@@ -16,7 +16,7 @@ vi.mock("@/lib/planStore", () => ({ usePlan: () => ({ setStatus: () => {}, statu
 const { DivisionStep, legalShareDivision, CompensationBasis } = await import("../DivisionStep");
 const { DebtsStep, newDebt, withDebtAmount } = await import("../DebtsStep");
 const { HeirsStep, priorCreditKinds } = await import("../HeirsStep");
-const { TaxStep, filingMessage, filingNeeded, SUPPORTER_TIP } = await import("../TaxStep");
+const { TaxStep, filingMessage, filingNeeded, refundOnlyFiling, SUPPORTER_TIP } = await import("../TaxStep");
 const { DocumentsStep, handFilledBlanks, divisionDocUnavailable } = await import("../DocumentsStep");
 
 const render = (c: ComponentType, data: Case, withResult = true) => {
@@ -116,7 +116,7 @@ describe("債務・葬式費用：分け方が決まっていないとき（ui-8
   it("未分割のときだけ、空欄なら法定相続分で計算すると出し、負担額が合わないとは言わない", () => {
     const c = clone();
     c.debts = [{ id: "d", kind: "debt", label: "借入金", amount: 1_000_000, bearers: [] }];
-    const line = "負担する人が決まっていなければ、空欄のままにしてください（法定相続分で負担したものとして計算します）。";
+    const line = "負担する人が決まっていなければ、入っている人を×で外して空欄にしてください（法定相続分で計算します）。";
     const divided = render(DebtsStep, c);
     expect(divided).not.toContain(line);
     expect(divided).toContain("一致していません");
@@ -124,6 +124,22 @@ describe("債務・葬式費用：分け方が決まっていないとき（ui-8
     const html = render(DebtsStep, c);
     expect(html).toContain(line);
     expect(html).not.toContain("一致していません");
+  });
+
+  it("未分割で負担額が入っていない債務には、負担する人の下に法定相続分で計算すると出す（ui-1）", () => {
+    const note = "（法定相続分で負担したものとして計算します）";
+    const c = clone();
+    // 分け方が決まっていないにチェックする前に作った債務（最初の人が負担する人として入っている）で、金額は後から入れた
+    c.debts = [{ id: "d", kind: "debt", label: "借入金", amount: 1_000_000, bearers: [{ personId: "hanako", amount: 0 }] }];
+    expect(render(DebtsStep, c)).not.toContain(note);
+    c.undivided = true;
+    expect(render(DebtsStep, c)).toContain(note);
+    // 負担する人を空にしても同じ
+    expect(render(DebtsStep, { ...c, debts: [{ ...c.debts[0], bearers: [] }] })).toContain(note);
+    // 負担額を入れた債務は、入れた人が負担する（法定相続分とは言わない）
+    expect(render(DebtsStep, { ...c, debts: [{ ...c.debts[0], bearers: [{ personId: "hanako", amount: 1_000_000 }] }] })).not.toContain(note);
+    // 金額が0の債務には出さない
+    expect(render(DebtsStep, { ...c, debts: [{ ...c.debts[0], amount: 0 }] })).not.toContain(note);
   });
 });
 
@@ -133,6 +149,12 @@ describe("債務・葬式費用：足さない贈与（tax-5）", () => {
     expect(html).toContain("Tips：入れない贈与");
     expect(html).toContain("贈与税の配偶者控除（2,000万円まで）");
     expect(html).toContain("住宅取得等資金の非課税");
+  });
+
+  it("配偶者控除を受けた贈与は、配偶者控除の額だけを引き、基礎控除の110万円は引かないと言う（ui-5）", () => {
+    const html = render(DebtsStep, clone());
+    expect(html).toContain("配偶者控除を受けた贈与は、配偶者控除の額（2,000万円まで）だけを引いた残りを入れてください（基礎控除の110万円は引きません）。");
+    expect(html).not.toContain("控除を受けた額を引いた残りだけ");
   });
 });
 
@@ -180,6 +202,31 @@ describe("相続人：以前の相続で受けた未成年者控除・障害者�
     expect(html).toContain("以前の相続でも障害者控除を受けた");
     expect(html).not.toContain("以前の相続でも未成年者控除を受けた");
   });
+
+  it("以前の相続でも障害者控除を受けたときだけ、その相続のときの区分を聞く。選ぶまでは今と同じ区分（law-1）", () => {
+    const withDisability = (disability: Person["disability"], prior?: Person["priorDisabilityCredit"]) => {
+      const c = withMinor({ birthDate: "2000-01-01" });
+      c.persons = c.persons.map((p) => (p.id === "hanako" ? { ...p, disability, priorDisabilityCredit: prior } : p));
+      return render(HeirsStep, c);
+    };
+    const label = "その相続のときの区分";
+    expect(withDisability("special")).not.toContain(label);
+    const selected = (h: string) => h.slice(h.indexOf(label)).match(/<option value="(general|special)" selected="">/)?.[1];
+    // 今が特別障害者なら特別障害者、一般障害者なら一般障害者を選んでおく
+    const now = withDisability("special", { date: "2021-01-10", amount: 2_500_000 });
+    expect(now).toContain(label);
+    expect(now).toContain(">一般障害者</option>");
+    expect(now).toContain(">特別障害者</option>");
+    expect(selected(now)).toBe("special");
+    expect(selected(withDisability("general", {}))).toBe("general");
+    // 選んだ区分を見せる
+    expect(selected(withDisability("special", { special: false }))).toBe("general");
+    expect(selected(withDisability("general", { special: true }))).toBe("special");
+    // 未成年者控除には聞かない
+    const minor = render(HeirsStep, withMinor({ priorMinorCredit: { date: "2022-05-01", amount: 300_000 } }));
+    expect(minor).toContain("その相続が始まった日");
+    expect(minor).not.toContain(label);
+  });
 });
 
 describe("税額の確認：申告がいるか（tax-6）", () => {
@@ -195,7 +242,7 @@ describe("税額の確認：申告がいるか（tax-6）", () => {
     expect(filingMessage({ ...none, needsFiling: true, totalTax: 3_000_000, totalPayable: 1_000_000 })).toContain("申告期限までに納めます");
   });
 
-  it("基礎控除以下で還付があるときは、申告の期限も出す（納税の期限とは言わない）", () => {
+  it("基礎控除以下で還付だけを受ける申告は、10か月の期限ではなく、5年以内に出せると言う（ui-4）", () => {
     const c: Case = {
       ...clone(),
       persons: [{ id: "c1", name: "一郎", relation: "child", relationLabel: "長男", birthDate: "1980-01-01" }],
@@ -209,11 +256,24 @@ describe("税額の確認：申告がいるか（tax-6）", () => {
     const r = calculate(c);
     expect(r.totalRefund).toBeGreaterThan(0);
     expect(r.totalTaxable).toBeLessThanOrEqual(r.basicDeduction);
+    expect(refundOnlyFiling(r)).toBe(true);
     const html = render(TaxStep, c);
     expect(html).toContain("申告が必要です");
     expect(html).not.toContain("申告も原則いりません");
-    expect(html).toContain("申告の期限：");
+    // 国税庁 タックスアンサー No.4301：還付を受けるための申告書は、相続開始の日の翌日から5年を経過する日まで出せる
+    expect(html).toContain("還付を受ける申告は、亡くなった日の翌日から5年以内に出せます。");
+    expect(html).not.toContain("申告の期限：");
     expect(html).not.toContain("申告・納税の期限");
+  });
+
+  it("還付だけの申告かどうか：基礎控除を超える・特例を使って基礎控除以下にした・還付がないときは違う", () => {
+    const base = { totalTaxable: 40_000_000, basicDeduction: 48_000_000, totalRefund: 1_000_000, assets: [] as TaxResult["assets"] };
+    expect(refundOnlyFiling(base)).toBe(true);
+    expect(refundOnlyFiling({ ...base, totalRefund: 0 })).toBe(false);
+    expect(refundOnlyFiling({ ...base, totalTaxable: 50_000_000 })).toBe(false);
+    // 小規模宅地等の特例で基礎控除以下にしたときは、特例を受けるための申告（10か月の期限）になる
+    const reduced = [{ reduction: 10_000_000 }] as unknown as TaxResult["assets"];
+    expect(refundOnlyFiling({ ...base, assets: reduced })).toBe(false);
   });
 
   it("扶養義務者のTipsは、本人の配偶者・直系血族・兄弟姉妹と言い、おじ・おばなどは税理士に相談と言う（tax-1）", () => {
@@ -240,6 +300,29 @@ describe("書類の作成（forms-8・forms-10）", () => {
     expect(handFilledBlanks(calculate(c))).not.toContain(blank);
     expect(handFilledBlanks(null)).toEqual(["マイナンバー（個人番号）欄"]);
     expect(render(DocumentsStep, clone())).toContain(blank);
+  });
+
+  it("マンションの敷地権の割合が分からなければ、第11表の付表1の備考を手で書く欄に入れる（forms-3）", () => {
+    const blank = "第11表の付表1の備考（マンションの敷地権の割合。登記事項証明書の『敷地権の割合』、例：10000分の169）";
+    // デモのマンションは登記の敷地権の割合（所有権　10000分の169）が入っている
+    expect(handFilledBlanks(calculate(demoCase))).not.toContain(blank);
+    const withSiteRight = (siteRight: string | undefined) => {
+      const c = clone();
+      c.assets = c.assets.map((a) => (a.kind === "condo" ? { ...a, registry: { ...a.registry, siteRight } } : a));
+      return handFilledBlanks(calculate(c));
+    };
+    expect(withSiteRight(undefined)).toContain(blank);
+    expect(withSiteRight("所有権")).toContain(blank);
+    expect(withSiteRight("169/10000")).not.toContain(blank);
+    const noRegistry = clone();
+    noRegistry.assets = noRegistry.assets.map((a) => (a.kind === "condo" ? { ...a, registry: undefined } : a));
+    expect(handFilledBlanks(calculate(noRegistry))).toContain(blank);
+    expect(render(DocumentsStep, noRegistry)).toContain(blank);
+    // マンションがなければ出さない
+    const noCondo = clone();
+    noCondo.assets = noCondo.assets.filter((a) => a.kind !== "condo");
+    noCondo.allocations = noCondo.allocations.filter((x) => noCondo.assets.some((a) => a.id === x.assetId));
+    expect(handFilledBlanks(calculate(noCondo))).not.toContain(blank);
   });
 
   it("相続人がいなければ、遺産分割協議書のボタンを押せなくし、理由を1行で出す", () => {

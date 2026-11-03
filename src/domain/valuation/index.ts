@@ -7,6 +7,8 @@
  * 家屋・マンションの部屋は、人に貸していれば貸家として評価する（通達93）。
  * 形がいびつ・セットバックが必要・地積規模の大きな宅地（通達20-2）にあたる土地は、評価を下げる計算をしていないため、
  * 税理士への相談を案内する（税理士に確認した補正率・評価額を入れれば計算する）。配偶者居住権を設定した土地は、いつも税理士への相談を案内する。
+ * ただし倍率方式の宅地は、固定資産税評価額 × 倍率で評価し（通達21-2）、土地の形は固定資産税評価額に反映されているため、
+ * 形がいびつでも形による補正はせず、そのまま計算する（地積規模の大きな宅地は21-2のただし書で比べるため、相談を案内する）。
  */
 import type { Asset, CondoAsset, LandAsset, LandMethod, LandUse } from "../types";
 import type { District } from "./depth";
@@ -142,6 +144,25 @@ const advisorHint = (method: LandMethod["type"], use: LandUse | undefined) => (m
 
 type Condition = NonNullable<LandAsset["condition"]>;
 
+/**
+ * 倍率方式の宅地は、固定資産税評価額 × 倍率で評価する（財産評価基本通達21-2）。土地の形は固定資産税評価額に反映されているため、
+ * 形がいびつでも形による補正（不整形地の補正）はしない（評価の説明に出す文）
+ */
+export const MULTIPLIER_SHAPE_STEP = "倍率方式では、土地の形は固定資産税評価額に反映されているため、形による補正はしません";
+
+/** 倍率方式の宅地で「形がいびつ」を選んだときの案内（補正しないので、「特になし」と同じ評価額になる） */
+const MULTIPLIER_SHAPE_NOTE = `${MULTIPLIER_SHAPE_STEP}（「特になし」と同じ評価額です）。`;
+
+/**
+ * 倍率方式の宅地以外の土地（田・畑・山林・雑種地など）で形がいびつなとき。近くの宅地と比べて評価する土地（市街地の農地・雑種地など）では、
+ * 形に合わせた補正をすることがあるため、相談を案内する
+ */
+const MULTIPLIER_OTHER_SHAPE_TEXT =
+  "宅地以外の土地（田・畑・山林・雑種地など）は、近くの宅地と比べて評価する場合などに、形に合わせて評価を下げられることがあります（不整形地の補正）。";
+
+/** 形がいびつでも形による補正をしない土地か：倍率方式の宅地（形は固定資産税評価額に反映されている。通達21-2） */
+const shapeInFixedAssetValue = (method: LandMethod["type"], landUse: LandAsset["landUse"] | undefined) => method === "multiplier" && (landUse ?? "宅地") === "宅地";
+
 /** 補正率（評価額）を入れれば計算する事情 */
 const CONDITION_BODY: Record<Exclude<Condition, "spouseResidence">, { text: string; what: string }> = {
   irregular: {
@@ -169,12 +190,21 @@ const isCondition = (c: unknown): c is Condition => c === "irregular" || c === "
 /**
  * 評価に影響する土地の事情ごとの案内（相続コンパスでは評価しない）。
  * 税理士に確認した値の入れ方は評価方法で変える：路線価方式は「税理士に確認した補正率」、倍率方式・直接入力は評価額の直接入力。
- * largeLotArea を渡すと（地積規模の大きな宅地にもあたりうるとき）、その案内と、補正率（評価額）に両方の補正を含めることも書く
+ * largeLotArea を渡すと（地積規模の大きな宅地にもあたりうるとき）、その案内と、補正率（評価額）に両方の補正を含めることも書く。
+ * 倍率方式で形がいびつなとき：宅地（landUse を渡さなければ宅地とみなす）は形による補正をしないことを、宅地以外は補正できる場合があることを書く
  */
-export function conditionMessage(condition: Condition, method: LandMethod["type"], opts: { use?: LandUse; largeLotArea?: 500 | 1000 } = {}): string {
+export function conditionMessage(
+  condition: Condition,
+  method: LandMethod["type"],
+  opts: { use?: LandUse; largeLotArea?: 500 | 1000; landUse?: LandAsset["landUse"] } = {},
+): string {
   if (condition === "spouseResidence") return SPOUSE_RESIDENCE_MESSAGE;
-  const { text, what } = CONDITION_BODY[condition];
   const t = opts.largeLotArea;
+  if (condition === "irregular" && method === "multiplier") {
+    if (shapeInFixedAssetValue(method, opts.landUse)) return MULTIPLIER_SHAPE_NOTE + (t == null ? "" : largeLotMessage(t, method, opts.use));
+    return MULTIPLIER_OTHER_SHAPE_TEXT + NOT_CALCULATED + advisorHint(method, opts.use);
+  }
+  const { text, what } = CONDITION_BODY[condition];
   if (t == null) return text + NOT_CALCULATED + advisorHint(method, opts.use);
   return (
     text +
@@ -278,10 +308,12 @@ export function valueLand(a: LandAsset): Valuation {
   const quantity = `${a.areaSqm}㎡`;
   const consult = (needsConsultation: string): Valuation => ({ value: 0, quantity, steps: [], needsConsultation });
   const use = a.use ?? "self";
-  // 評価を下げる事情がある土地は、下げない評価額で確定させない。広い宅地にもあたりうるなら、その案内もいっしょに出す
+  // 評価を下げる事情がある土地は、下げない評価額で確定させない。広い宅地にもあたりうるなら、その案内もいっしょに出す。
+  // 倍率方式の宅地は、形が固定資産税評価額に反映されているので、形がいびつでも止めない（広い宅地なら次で案内する）
   const big = largeLotArea(a);
-  if (isCondition(a.condition) && !advisorValued(a, a.condition))
-    return consult(conditionMessage(a.condition, a.method.type, { use, largeLotArea: big ?? undefined }));
+  const shapeInFav = a.condition === "irregular" && shapeInFixedAssetValue(a.method.type, a.landUse);
+  if (isCondition(a.condition) && !shapeInFav && !advisorValued(a, a.condition))
+    return consult(conditionMessage(a.condition, a.method.type, { use, largeLotArea: big ?? undefined, landUse: a.landUse }));
   if (big != null && !advisorValued(a, "largeLot")) return consult(largeLotMessage(big, a.method.type, use));
   const { valuation: self, notation } = selfUseLand(a);
   if (self.needsConsultation || (a.method.type === "manual" && a.method.publicPrivateRoad)) return self;
@@ -345,9 +377,16 @@ export function valueLand(a: LandAsset): Valuation {
   };
 }
 
-/** 不整形地で税理士に確認した補正率を使うときの説明（通達20-4は不整形地を除く。付表5（注）3） */
+/** 不整形地で税理士に確認した補正率（1未満）を使うときの説明（通達20-4は不整形地を除く。付表5（注）3） */
 const IRREGULAR_RATE_STEP =
   "形がいびつな土地（不整形地）なので、間口が狭い・奥行が長い補正はせず、税理士に確認した補正率（不整形地補正率。間口が狭い分を含む）を使います（財産評価基本通達20-4・付表5（注）3）";
+
+/**
+ * 不整形地で税理士に確認した補正率が 1（減額なし）のときの説明。不整形地補正率は間口狭小補正率を超えない（付表5（注）3）ので、
+ * 1 なら間口狭小補正率も1で、間口が狭い・奥行が長い補正（通達20-4）はふつうどおりする
+ */
+const IRREGULAR_NO_REDUCTION_STEP =
+  "形がいびつな土地ですが、税理士に確認した補正率が 1（減額なし）なので、間口が狭い・奥行が長い補正はふつうどおりします（財産評価基本通達20-4）";
 
 /** 自用地としての評価額（路線価方式・倍率方式・直接入力）。notation は借地権割合の記号を読む路線価の表記 */
 function selfUseLand(a: LandAsset): { valuation: Valuation; notation?: string } {
@@ -374,9 +413,13 @@ function selfUseLand(a: LandAsset): { valuation: Valuation; notation?: string } 
         ? [`税理士に確認した補正率 ${oc} は、地積規模の大きな宅地の補正（規模格差補正率。財産評価基本通達20-2）も含めた率として使います`]
         : [];
     if (m.roads?.length) {
-      // 不整形地は間口狭小・奥行長大の補正（通達20-4）をせず、税理士に確認した不整形地補正率だけを掛ける（二重に下げない）
-      const irregular = a.condition === "irregular" && advisorRate(m) != null;
+      // 不整形地で税理士に確認した補正率が1未満なら、それは間口狭小補正率を含む不整形地補正率なので、
+      // 間口狭小・奥行長大の補正（通達20-4）をせず、その率だけを掛ける（二重に下げない）。
+      // 1（減額なし）なら間口狭小補正率も1のはずなので（付表5（注）3）、20-4はふつうどおりする（形がいびつと選ばない土地より高くしない）
+      const rate = advisorRate(m);
+      const irregular = a.condition === "irregular" && rate != null && rate < 1;
       const r = evaluateRoads(m.district ?? "普通住宅地区", m.roads, { irregular })!;
+      const irregularNoReduction = a.condition === "irregular" && rate === 1 && r.frontageRate != null;
       const per = Math.floor((r.perSqm * thou(oc)) / 1000);
       const value = perSqmTimesArea(per, a.areaSqm);
       return {
@@ -386,7 +429,7 @@ function selfUseLand(a: LandAsset): { valuation: Valuation; notation?: string } 
           quantity,
           steps: [
             ...r.steps,
-            ...(irregular ? [IRREGULAR_RATE_STEP] : []),
+            ...(irregular ? [IRREGULAR_RATE_STEP] : irregularNoReduction ? [IRREGULAR_NO_REDUCTION_STEP] : []),
             ...bigStep,
             ...(ocStep ? [`${r.perSqm.toLocaleString()}円/㎡${ocStep} = ${per.toLocaleString()}円/㎡`] : []),
             `${per.toLocaleString()}円/㎡ × ${a.areaSqm}㎡ = ${value.toLocaleString()}円`,
@@ -422,7 +465,11 @@ function selfUseLand(a: LandAsset): { valuation: Valuation; notation?: string } 
         value,
         multiplier: m.multiplier,
         quantity,
-        steps: [`固定資産税評価額 ${m.fixedAssetValue.toLocaleString()}円 × 倍率 ${m.multiplier} = ${value.toLocaleString()}円`],
+        steps: [
+          `固定資産税評価額 ${m.fixedAssetValue.toLocaleString()}円 × 倍率 ${m.multiplier} = ${value.toLocaleString()}円`,
+          // 形がいびつでも、形は固定資産税評価額に反映されているので補正しない（通達21-2）
+          ...(a.condition === "irregular" && shapeInFixedAssetValue(m.type, a.landUse) ? [`${MULTIPLIER_SHAPE_STEP}（財産評価基本通達21-2）`] : []),
+        ],
       },
     };
   }

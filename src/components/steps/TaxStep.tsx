@@ -42,6 +42,14 @@ export function filingMessage(r: Pick<TaxResult, "needsFiling" | "totalRefund" |
   return "特例を使うので納める税金は0円ですが、申告は必要です。";
 }
 
+/**
+ * 相続時精算課税で納めた贈与税を返してもらうためだけの申告か（課税価格の合計が基礎控除以下で、特例を使わなくても基礎控除以下）。
+ * この申告は、亡くなった日の翌日から5年以内に出せる（10か月の申告期限ではない。国税庁 タックスアンサー No.4301）。
+ * 小規模宅地等の特例で基礎控除以下にしたときは、特例を受けるための申告なので10か月の期限のまま
+ */
+export const refundOnlyFiling = (r: Pick<TaxResult, "totalTaxable" | "basicDeduction" | "totalRefund" | "assets">) =>
+  r.totalTaxable <= r.basicDeduction && r.totalRefund > 0 && r.totalTaxable + r.assets.reduce((s, l) => s + l.reduction, 0) <= r.basicDeduction;
+
 const EXPLAIN_QUESTION = "この計算結果を、相続税に詳しくない家族にも分かるように説明してください。なぜこの税額になるのか、配偶者の税額軽減などの効果も含めて。";
 
 export function TaxStep() {
@@ -105,10 +113,15 @@ export function TaxStep() {
         </p>
         <p className="mt-2 text-sm text-stone-700">
           {filingMessage(r)}
-          {filingNeeded(r) && deadline && (
-            <span className="ml-1 font-semibold">
-              申告{r.totalPayable > 0 ? "・納税" : ""}の期限：{jpDate(deadline)}
-            </span>
+          {refundOnlyFiling(r) ? (
+            <span className="ml-1 font-semibold">還付を受ける申告は、亡くなった日の翌日から5年以内に出せます。</span>
+          ) : (
+            filingNeeded(r) &&
+            deadline && (
+              <span className="ml-1 font-semibold">
+                申告{r.totalPayable > 0 ? "・納税" : ""}の期限：{jpDate(deadline)}
+              </span>
+            )
           )}
         </p>
         {r.totalRefund > 0 && (

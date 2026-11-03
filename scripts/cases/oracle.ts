@@ -759,20 +759,26 @@ export function expected(s: Scenario): Expected {
         const adv = it.advisorRate;
         const advisorOk =
           adv !== undefined && adv > 0 && adv <= 1 && vv.kind === "rosenka" && (it.needsReduction === "irregular" || it.needsReduction === "largeLot");
-        if (it.needsReduction && !advisorOk) addOos("地積規模の大きな宅地・不整形地・セットバック等の補正が必要な土地");
+        // 倍率方式の宅地は 固定資産税評価額 × 倍率（評基通21-2）。形（不整形・間口狭小など）は固定資産税評価額に入っているので、
+        // 不整形地でも重ねて補正しない（ふつうに計算できる）。セットバック・地積規模の大きな宅地（21-2 ただし書）・宅地以外は従来どおり
+        const shapeInFav = it.needsReduction === "irregular" && vv.kind === "multiplier" && it.landUse === "宅地";
+        if (it.needsReduction && !advisorOk && !shapeInFav) addOos("地積規模の大きな宅地・不整形地・セットバック等の補正が必要な土地");
+        if (shapeInFav) notes.push(`${it.label}：倍率方式の宅地なので、形がいびつでも 固定資産税評価額×倍率 のまま（評基通21-2）`);
         let selfUse = 0;
         let lease: Q | null = null;
         const area = decQ(it.areaSqm);
         if (vv.kind === "rosenka") {
           if (it.landUse === "田" || it.landUse === "畑" || it.landUse === "山林")
             addOos("市街地農地・山林等（宅地比準方式・造成費の控除が必要）");
-          const irregular = advisorOk && it.needsReduction === "irregular";
+          // 付表5（注）3：不整形地補正率（間口狭小補正率を掛けた後の率）は間口狭小×奥行長大を超えない。税理士の率が 1（減額なし）なら
+          // かげ地が小さく表の率が 1.00 か不整形地に当たらないということなので、間口狭小・奥行長大（20-4）はふつうに掛ける。1 未満のときだけ 20-4 を重ねない
+          const irregular = advisorOk && adv! < 1 && it.needsReduction === "irregular";
           const r = rosenkaUnitPrice(vv.district, vv.roads, { skipFrontage: irregular });
           let unit = r.unit;
           if (advisorOk) {
             // F 欄（不整形地：D 欄 × 不整形地補正率）・G 欄（地積規模：A〜F 欄 × 規模格差補正率）。円未満切捨て
             unit = yenFloor(r.unit, decQ(adv!));
-            r.steps.push(`${irregular ? "不整形地補正率" : "規模格差補正率"} ${adv}（税理士に確認）：${fmt(r.unit)}→${fmt(unit)}`);
+            r.steps.push(`${it.needsReduction === "irregular" ? "不整形地補正率" : "規模格差補正率"} ${adv}（税理士に確認）：${fmt(r.unit)}→${fmt(unit)}`);
           }
           selfUse = Number(qfloor(qmul(Qn(unit), area)));
           lease = Qn(LEASE_BY_LETTER[r.front.leaseLetter], 100);
@@ -945,25 +951,70 @@ export function expected(s: Scenario): Expected {
     } else if (agreed) notes.push(`${it.label}：分け方の記載がない（未分割）`);
     plans.push({ v, decided, rest });
   }
-  // 未分割の部分の分け方（相続税法55条）。一部だけ分けたときは 穴埋め方式：
-  //   T = 分割の対象になる財産（小規模宅地等の前の価額）の合計、D = 各人が分割で取得した価額、L = 民法の法定相続分、
-  //   不足額 = T × L − D（0未満は0）。未分割の部分は不足額の割合で分ける。何も分けていなければ法定相続分
+  // 代償金（相基通11の2-9・11の2-10）。課税価格に入れる額を先に決める（穴埋め方式の「分割で取得した額」にも入れるため）
+  const comps: { from: string; to: string; amt: number }[] = [];
+  if (agreed?.compensation) {
+    for (const c of agreed.compensation) {
+      if (!validPerson(c.from) || !validPerson(c.to)) {
+        notes.push(`代償金 ${c.from}→${c.to}：当事者が見つからない（無視）`);
+        continue;
+      }
+      // 代償金を払う人が分割で遺産を何も取得していなければ、代償分割として扱えない（贈与などの検討が要る）
+      const payerGot = [...itemShare.values()].some((m) => (m.get(c.from)?.n ?? 0n) > 0n);
+      if (!payerGot) addOos("代償金を払う人が分割で遺産を取得していない");
+      let amt = Math.trunc(c.amount);
+      if (c.basis) {
+        // 相基通11の2-10(2)：代償金の額を特定の財産の時価をもとに決めたとき、代償金 × その財産の相続税評価額 ÷ 時価（円未満切捨て）
+        const bv = vals.find((x) => x.item.id === c.basis!.item);
+        if (bv && c.basis.marketValue > 0) {
+          amt = yenFloor(c.amount, Qn(bv.value, Math.trunc(c.basis.marketValue)));
+          notes.push(`代償金 ${fmt(c.amount)}：${bv.item.label}の時価 ${fmt(c.basis.marketValue)} をもとに決めたので × 評価額 ${fmt(bv.value)} ÷ 時価 = ${fmt(amt)}`);
+        } else notes.push(`代償金 ${c.from}→${c.to}：もとにした財産 ${c.basis.item} が見つからない（額面で計算）`);
+      }
+      comps.push({ from: c.from, to: c.to, amt });
+    }
+  }
+  // 未分割の部分の分け方（相続税法55条：民法の相続分。寄与分を除き、特別受益（民法903条）は入れる）。
+  //   T = 分割の対象になる財産（小規模宅地等の前の価額）の合計、L = 民法の法定相続分、
+  //   G = 相続人が亡くなった方から受けた相続時精算課税の贈与（婚姻・養子縁組・生計の資本の贈与＝特別受益とする。贈与の額そのもの。
+  //       質疑応答事例「未分割の場合の課税価格（相続時精算課税適用財産がある場合）」）。暦年課税の贈与は入れない、
+  //   D = 各人が分割で取得した価額（代償金は払った人から引き、受け取った人に足す：相基通11の2-9）＋ G。
+  //   不足額 = (T + ΣG) × L − D（0未満は0）。未分割の部分は不足額の割合で分ける（一部だけ分けたときは穴埋め方式）。
+  //   何も分けておらず贈与もなければ法定相続分と同じ
   const memberIdx = new Map(ms.map((m, i) => [m.id, i]));
   const heirOrder = [...civilShares].filter(([, q]) => q.n > 0n).sort((a, b) => memberIdx.get(a[0])! - memberIdx.get(b[0])!);
+  const civilHeir = new Set(heirOrder.map(([who]) => who));
   let undivWeights: { who: string; w: Q }[] = heirOrder.map(([who, q]) => ({ who, w: q }));
-  if (plans.some((p) => qcmp(p.rest, ZERO) > 0) && plans.some((p) => p.decided.length > 0)) {
+  const special903 = new Map<string, number>();
+  for (const g of s.gifts) {
+    if (!g.settlement || !civilHeir.has(g.to) || !validPerson(g.to) || g.date > death) continue;
+    special903.set(g.to, (special903.get(g.to) ?? 0) + Math.trunc(g.amount));
+  }
+  const anyDecided = plans.some((p) => p.decided.length > 0);
+  if (plans.some((p) => qcmp(p.rest, ZERO) > 0) && (anyDecided || special903.size > 0)) {
     const T = plans.reduce((x, p) => x + p.v.value, 0);
+    const G = [...special903.values()].reduce((x, g) => x + g, 0);
     const D = new Map<string, Q>();
-    for (const p of plans) for (const d of p.decided) D.set(d.who, qadd(D.get(d.who) ?? ZERO, qmul(Qn(p.v.value), d.f)));
+    const addD = (who: string, q: Q): void => {
+      D.set(who, qadd(D.get(who) ?? ZERO, q));
+    };
+    for (const p of plans) for (const d of p.decided) addD(d.who, qmul(Qn(p.v.value), d.f));
+    for (const c of comps) {
+      addD(c.from, Qn(-c.amt));
+      addD(c.to, Qn(c.amt));
+    }
+    for (const [who, g] of special903) addD(who, Qn(g));
     const ws = heirOrder.map(([who, q]) => {
-      const e = qsub(qmul(Qn(T), q), D.get(who) ?? ZERO);
+      const e = qsub(qmul(Qn(T + G), q), D.get(who) ?? ZERO);
       return { who, w: qcmp(e, ZERO) > 0 ? e : ZERO };
     });
     const sw = ws.reduce((x, w) => qadd(x, w.w), ZERO);
     if (sw.n > 0n) {
       undivWeights = ws.filter((w) => w.w.n > 0n).map((w) => ({ who: w.who, w: qdiv(w.w, sw) }));
+      const giftNote = G > 0 ? `、特別受益（精算課税の贈与）${[...special903].map(([who, g]) => `${nameOf(who)} ${fmt(g)}`).join("・")}を足した ${fmt(T + G)} で計算` : "";
+      const compNote = comps.length > 0 && anyDecided ? "、代償金は分割で取得した額に含めた" : "";
       notes.push(
-        `一部未分割（穴埋め方式）：分割対象の合計 ${fmt(T)}、未分割の部分の割合 ${undivWeights.map((w) => `${nameOf(w.who)} ${qstr(w.w)}`).join("、")}`,
+        `${anyDecided ? "一部未分割（穴埋め方式）" : "未分割"}：分割対象の合計 ${fmt(T)}${giftNote}${compNote}、未分割の部分の割合 ${undivWeights.map((w) => `${nameOf(w.who)} ${qstr(w.w)}`).join("、")}`,
       );
     }
   }
@@ -1021,30 +1072,14 @@ export function expected(s: Scenario): Expected {
     }
   }
 
-  /* ---------- 6. 代償分割（相基通11の2-9・11の2-10） ---------- */
-  if (agreed?.compensation) {
-    for (const c of agreed.compensation) {
-      if (!validPerson(c.from) || !validPerson(c.to)) {
-        notes.push(`代償金 ${c.from}→${c.to}：当事者が見つからない（無視）`);
-        continue;
-      }
-      // 代償金を払う人が分割で遺産を何も取得していなければ、代償分割として扱えない（贈与などの検討が要る）
-      const payerGot = [...itemShare.values()].some((m) => (m.get(c.from)?.n ?? 0n) > 0n);
-      if (!payerGot) addOos("代償金を払う人が分割で遺産を取得していない");
-      let amt = Math.trunc(c.amount);
-      if (c.basis) {
-        // 相基通11の2-10(2)：代償金の額を特定の財産の時価をもとに決めたとき、代償金 × その財産の相続税評価額 ÷ 時価（円未満切捨て）
-        const bv = vals.find((x) => x.item.id === c.basis!.item);
-        if (bv && c.basis.marketValue > 0) {
-          amt = yenFloor(c.amount, Qn(bv.value, Math.trunc(c.basis.marketValue)));
-          notes.push(`代償金 ${fmt(c.amount)}：${bv.item.label}の時価 ${fmt(c.basis.marketValue)} をもとに決めたので × 評価額 ${fmt(bv.value)} ÷ 時価 = ${fmt(amt)}`);
-        } else notes.push(`代償金 ${c.from}→${c.to}：もとにした財産 ${c.basis.item} が見つからない（額面で計算）`);
-      }
-      acc(c.from).compPaid += amt;
+  /* ---------- 6. 代償分割（相基通11の2-9・11の2-10。額は 4. で決めた） ---------- */
+  if (comps.length > 0) {
+    for (const c of comps) {
+      acc(c.from).compPaid += c.amt;
       const r = acc(c.to);
-      r.compRecv += amt;
+      r.compRecv += c.amt;
       r.acquired = true;
-      notes.push(`代償金：${nameOf(c.from)}→${nameOf(c.to)} ${fmt(amt)}`);
+      notes.push(`代償金：${nameOf(c.from)}→${nameOf(c.to)} ${fmt(c.amt)}`);
     }
     for (const a of accs.values()) a.divided += a.compRecv - a.compPaid;
   }
@@ -1308,12 +1343,33 @@ export function expected(s: Scenario): Expected {
         if (field === "disabled" && m.disability && age < 85) {
           const per = m.disability === "special" ? 200_000 : 100_000;
           amt = per * (85 - age);
-          // 19条の4第3項（19条の3第3項の準用）：前の相続のときも同じ区分だったものとして、最初の相続のときの年齢から85歳までの年数で計算
+          // 19条の4第3項（19条の3第3項の準用）：今回の控除額は 限度額 F − すでに控除を受けた額 A を超えない。
+          //   X＝最初の相続のときの年齢、Y＝今回の相続のときの年齢。F は最初の相続のときの区分で決まる：
+          //   ・一般障害者だった人が今は特別障害者：F = 20万×(85−Y) + 10万×(Y−X)（相基通19の4-4）
+          //   ・特別障害者だった：F = 20万×(85−X)（最初の相続のときに受けられた額）
+          //   ・今と同じ区分（special の記載なしを含む）：F = 今の区分の額×(85−X)
+          //   A > F は入力の矛盾（前の相続の区分か控除額が違う）なので計算しない
           const pc = m.priorDisabilityCredit;
           if (pc) {
-            const first = per * Math.max(0, 85 - ageAt(m.birthDate, pc.date));
-            const cap = Math.max(0, first - Math.trunc(pc.amount));
-            if (cap < amt) noteOnce(`${m.name}：前の相続でも障害者控除を受けた（最初 ${fmt(first)} − 控除済み ${fmt(pc.amount)}）→ ${fmt(cap)} まで`);
+            const X = ageAt(m.birthDate, pc.date);
+            const Y = age;
+            const wasSpecial = pc.special ?? m.disability === "special";
+            let F: number;
+            let how: string;
+            if (!wasSpecial && m.disability === "special") {
+              F = 200_000 * Math.max(0, 85 - Y) + 100_000 * Math.max(0, Math.min(Y, 85) - X);
+              how = `一般→特別：20万×(85−${Y})＋10万×(${Y}−${X})`;
+            } else if (wasSpecial) {
+              F = 200_000 * Math.max(0, 85 - X);
+              how = `前の相続は特別：20万×(85−${X})`;
+            } else {
+              F = 100_000 * Math.max(0, 85 - X);
+              how = `一般：10万×(85−${X})`;
+            }
+            const A = Math.trunc(pc.amount);
+            if (A > F) addOos("前の相続で受けた障害者控除の額が、そのときの区分で受けられる額を超えている（入力の矛盾）");
+            const cap = Math.max(0, F - A);
+            if (cap < amt) noteOnce(`${m.name}：前の相続でも障害者控除を受けた（限度額 ${fmt(F)}［${how}］ − 控除済み ${fmt(A)}）→ ${fmt(cap)} まで`);
             amt = Math.min(amt, cap);
           }
         }

@@ -193,6 +193,14 @@ describe("路線価方式の Tips と補正率の欄 ui-15", () => {
     expect(rosenka({ condition: "irregular" })).toContain("1㎡あたり 160,740円");
   });
 
+  it("形がいびつな土地で補正率 1（減額なし）なら、間口・奥行の補正はふつうどおりする（valuation-1・付表5（注）3）", () => {
+    const h = rosenka({ condition: "irregular", method: { type: "rosenka", routePrice: 0, depthCorrection: 1, otherCorrection: 1, roads: [{ edge: 0, price: 200_000, depth: 30, frontage: 5 }] } });
+    // 形がいびつと選ばない土地より高くしない
+    expect(h).toContain("1㎡あたり 160,740円");
+    expect(h).not.toContain("間口が狭い・奥行が長い補正はせず");
+    expect(h).toContain("間口が狭い・奥行が長い補正はふつうどおりします");
+  });
+
   it("当てはまることの案内は、配偶者居住権でも合うように「評価が変わる」と書く", () => {
     expect(html(land())).toContain("当てはまるときは評価が変わるため、税理士への相談をご案内します");
   });
@@ -253,6 +261,55 @@ describe("小規模宅地等の特例と遺産の分け方 ui-13", () => {
     expect(h0).toContain("いまは特例を使わずに（高めに）計算しています。");
     const h1 = renderToStaticMarkup(createElement(SmallResidential, { living, a: land({ smallResidential: { ...consult, check: { ...consult.check, confirmedByAdvisor: true } } }), patch: noop }));
     expect(h1).not.toContain("いまは特例を使わずに（高めに）計算しています。");
+  });
+
+  it("税理士に確認して使うと決めたときも、未分割で取得する人の分が決まっていなければ、特例を使わずに計算すると見せる（ui-2）", () => {
+    const confirmed = { applies: true, acquirerId: "c", check: { ownHome: "yes" as const, special: "no" as const, livedTogether: "no" as const, confirmedByAdvisor: true } };
+    const show = (division?: Parameters<typeof SmallResidential>[0]["division"]) =>
+      renderToStaticMarkup(createElement(SmallResidential, { living, a: land({ smallResidential: confirmed }), patch: noop, division }));
+    expect(show({ undivided: true, allocations: [] })).toContain("分け方が決まるまでは、特例を使わずに計算します。");
+    expect(show({ allocations: alloc([{ personId: "w", numerator: 1, denominator: 1 }]) })).toContain("この土地の分け方に、取得する人が入っていません。");
+    const decided = show({ allocations: alloc([{ personId: "c", numerator: 1, denominator: 1 }]) });
+    expect(decided).not.toContain("分け方が決まるまでは");
+    expect(decided).not.toContain("取得する人が入っていません");
+    // 確認していなければ、もともと特例を使わずに計算しているので出さない
+    const unconfirmed = renderToStaticMarkup(
+      createElement(SmallResidential, { living, a: land({ smallResidential: { ...confirmed, applies: false, check: { ...confirmed.check, confirmedByAdvisor: false } } }), patch: noop, division: { undivided: true, allocations: [] } }),
+    );
+    expect(unconfirmed).not.toContain("分け方が決まるまでは");
+    expect(unconfirmed).toContain("いまは特例を使わずに（高めに）計算しています。");
+  });
+});
+
+describe("マンションの部屋の小規模宅地等の特例（ui-3）", () => {
+  const condo = (check: Record<string, string>): CondoAsset => ({
+    id: "C1",
+    kind: "condo",
+    label: "",
+    location: "",
+    landValueBeforeCorrection: 0,
+    buildingFixedAssetValue: 0,
+    builtYearsMonths: { years: 0, months: 0 },
+    totalFloors: 0,
+    floor: 0,
+    landShareSqm: 0,
+    exclusiveAreaSqm: 0,
+    smallResidential: { applies: false, acquirerId: "c", check },
+  });
+  const condoText =
+    "自宅でも、事業に使っていた部屋でもないため、特例は使えません。家賃をもらって人に貸している部屋は、「家賃をもらって人に貸している」にチェックを入れてください。家族が無料で住んでいた部屋は、使える場合があるので税理士にご相談ください。";
+
+  it("自宅でも事業用でもない部屋は、部屋の画面のチェックを案内し、土地の使い方は案内しない", () => {
+    const h = renderToStaticMarkup(createElement(AssetEditor, { living, asset: condo({ ownHome: "no", business: "no" }), patch: noop }));
+    expect(h).toContain(condoText);
+    expect(h).not.toContain("「土地の使い方」");
+    expect(h).not.toContain("人の土地を借りて建てたアパート・貸家を");
+  });
+
+  it("土地は、これまでどおり土地の使い方を案内する", () => {
+    const h = html(land({ smallResidential: { applies: false, acquirerId: "c", check: { ownHome: "no", business: "no" } } }));
+    expect(h).toContain("「土地の使い方」で貸している使い方を選んでください");
+    expect(h).not.toContain(condoText);
   });
 });
 

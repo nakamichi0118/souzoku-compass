@@ -60,10 +60,10 @@ describe("不整形地は間口狭小・奥行長大の補正をせず、税理�
     expect(v.unitPrice).toBe(128_592);
     expect(v.value).toBe(77_155_200);
   });
-  it("不整形地で「減額なし」と確認した 1 でも、間口狭小・奥行長大はしない（190,000円/㎡）", () => {
+  it("不整形地で「減額なし」と確認した 1 なら、間口狭小・奥行長大はふつうどおりする（160,740円/㎡。review3 valuation-1）", () => {
     const v = valueLand(land({ condition: "irregular", method: rosenka(1) }));
-    expect(v.unitPrice).toBe(190_000);
-    expect(v.value).toBe(28_500_000);
+    expect(v.unitPrice).toBe(160_740);
+    expect(v.value).toBe(24_111_000);
   });
   it("側方の道路の加算はする：300,000 + 200,000 × 0.03 = 306,000円 × 0.9 = 275,400円/㎡ × 140㎡", () => {
     const roads = [
@@ -168,8 +168,9 @@ describe("形がいびつ・セットバックで地積規模の大きな宅地�
     expect(s).toContain("セットバック");
     expect(s).toContain("規模格差補正率");
   });
-  it("倍率方式：両方を反映した評価額を直接入力するよう案内する", () => {
-    const v = valueLand(big({ condition: "irregular", method: { type: "multiplier", fixedAssetValue: 10_000_000, multiplier: 1.1 } }));
+  it("倍率方式：両方を反映した評価額を直接入力するよう案内する（セットバック。形がいびつは倍率方式の宅地では補正しない）", () => {
+    const v = valueLand(big({ condition: "setback", method: { type: "multiplier", fixedAssetValue: 10_000_000, multiplier: 1.1 } }));
+    expect(v.needsConsultation).toContain("セットバック");
     expect(v.needsConsultation).toContain("地積規模の大きな宅地");
     expect(v.needsConsultation).toContain("評価額を直接入力");
     expect(v.needsConsultation).not.toContain("「税理士に確認した補正率」");
@@ -193,8 +194,10 @@ describe("税理士に確認した値の入れ方は評価方法で変える", (
     for (const c of ["irregular", "setback"] as const) {
       expect(conditionMessage(c, "rosenka")).toContain(ADVISOR_HINT_RATE);
       for (const m of ["multiplier", "manual"] as const) {
-        expect(conditionMessage(c, m)).toContain("評価額を直接入力");
-        expect(conditionMessage(c, m)).not.toContain("「税理士に確認した補正率」");
+        // 倍率方式の宅地で形がいびつなときは補正しないので、入れ方の案内はしない（review3 valuation-2）
+        const landUse = c === "irregular" && m === "multiplier" ? ("雑種地" as const) : undefined;
+        expect(conditionMessage(c, m, { landUse })).toContain("評価額を直接入力");
+        expect(conditionMessage(c, m, { landUse })).not.toContain("「税理士に確認した補正率」");
       }
     }
     const v = valueLand(land({ condition: "setback", method: { type: "multiplier", fixedAssetValue: 10_000_000, multiplier: 1.1 } }));
@@ -216,7 +219,7 @@ describe("人に貸している・借りている土地の直接入力は、自�
     expect(advisorHintValue("leasehold")).toContain("自用地としての評価額");
     expect(advisorHintValue("self")).not.toContain("自用地");
     expect(advisorHintValue(undefined)).not.toContain("自用地");
-    const v = valueLand(land({ condition: "irregular", use: "rentedHouse", leaseRatio: 0.6, method: { type: "multiplier", fixedAssetValue: 10_000_000, multiplier: 1.1 } }));
+    const v = valueLand(land({ condition: "setback", use: "rentedHouse", leaseRatio: 0.6, method: { type: "multiplier", fixedAssetValue: 10_000_000, multiplier: 1.1 } }));
     expect(v.needsConsultation).toContain("自用地としての評価額");
     const big = valueLand(land({ location: "北海道札幌市", areaSqm: 1200, use: "rentedHouse", leaseRatio: 0.3, method: { type: "multiplier", fixedAssetValue: 30_000_000, multiplier: 1.1 } }));
     expect(big.needsConsultation).toContain("地積規模");
@@ -323,10 +326,11 @@ describe("貸付事業用の対象になる、貸している部分の評価額�
 
 describe("小規模宅地等の案内：貸付事業用は家賃・地代をもらっているときだけ、借りた土地のアパートは新しい選択肢へ", () => {
   const child: Person = { id: "c", name: "長男", relation: "child" };
-  it("自宅でも事業用でもない土地の案内は、借りた土地のアパートを「人の土地を借りて建てたアパート・貸家を、家賃をもらって貸している」へ案内する", () => {
+  it("自宅でも事業用でもない土地の案内は、借りた土地のアパートも「土地の使い方」の貸している使い方へ案内する", () => {
     const j = judgeSmallResidential({ ownHome: "no", business: "no" }, child);
     expect(j.result).toBe("no");
-    expect(j.reason).toContain("「人の土地を借りて建てたアパート・貸家を、家賃をもらって貸している」");
+    expect(j.reason).toContain("人の土地を借りて建てたアパート・貸家");
+    expect(j.reason).toContain("「土地の使い方」で貸している使い方を選んで");
     expect(j.reason).not.toContain("「貸している」を選んで");
     expect(j.reason).toContain("家賃・地代をもらって");
     expect(j.reason).toContain("家族が無料で住んでいた");

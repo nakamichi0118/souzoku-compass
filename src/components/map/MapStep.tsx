@@ -381,9 +381,9 @@ function LandWizard() {
     const frontage = Math.round(f.frontage * 100) / 100;
     return [{ edge: e, price: parseRouteNotation(n)?.routePrice ?? 0, depth: depthFor(f, areaForDepth), notation: n || undefined, ...(frontage > 0 ? { frontage } : {}) }];
   });
-  // 形がいびつな土地で税理士に確認した補正率（不整形地補正率）を入れてあれば、間口が狭い・奥行が長い補正はしない（土地の画面・評価の計算と同じ）
+  // 形がいびつな土地で税理士に確認した補正率（不整形地補正率）が1未満なら、間口が狭い・奥行が長い補正はしない（土地の画面・評価の計算と同じ）
   const prevRate = land?.method.type === "rosenka" ? land.method.otherCorrection : undefined;
-  const irregularRate = land?.condition === "irregular" && prevRate != null && prevRate > 0 && prevRate <= 1;
+  const irregularRate = land?.condition === "irregular" && prevRate != null && prevRate > 0 && prevRate < 1;
   const evaluation = evaluateRoads(district, roadInputs, { irregular: irregularRate });
   const duplicated = classes.some((c) => c === null);
   /** 計算に入れるすべての道路に路線価と奥行がある */

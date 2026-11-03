@@ -23,8 +23,14 @@
  * - 一部未分割（division.partlyUndivided）は、shares に無い財産と持分の合計が1に満たない財産の残りが未分割。
  *   遺言で遺贈する財産があるときは作らない（遺贈分は分割の対象にならず、穴埋め方式の合計の取り方が分かれるため）。
  * - 税理士に確かめた補正率（advisorRate）は、路線価方式の不整形地・地積規模の大きな宅地だけに付ける（配偶者居住権のある土地には付けない）。
- * - 前の相続で受けた障害者控除（priorDisabilityCredit）は、前の相続のときも今と同じ区分だったものとする。
+ * - 前の相続で受けた障害者控除（priorDisabilityCredit）は、special がなければ前の相続のときも今と同じ区分。区分が変わった人は special に
+ *   前の相続のときの区分を書き、前の相続の日を今回の相続と同じ月日にする（年齢の差＝相続の間の年数。相基通19の4-4・19の4-5）。
+ *   控除済みの額は、そのときの区分で受けられる額以下（超えるのは入力の矛盾を確かめるエッジケースだけ）。
+ * - 未分割・一部未分割の相続で、相続人が亡くなった方から受けた相続時精算課税の贈与は、生計の資本などの贈与（特別受益）とする
+ *   （質疑応答事例「未分割の場合の課税価格（相続時精算課税適用財産がある場合）」）。
+ * - 代償分割と一部未分割を組み合わせるときは、代償金を払う人が分割で取得する額が代償金より十分大きいものだけ作る。
  * - 乱数のケースで、あとから足した事柄（貸家建付借地権・補正率・一部未分割・代償金の時価・前の相続の控除）は別の乱数列（extra）で決める。
+ *   二度目の見直しで足した事柄（障害者控除の区分の変化・代償分割＋一部未分割・未分割＋精算課税）はさらに別の乱数列（extra2）で決める。
  *   元からある事柄の乱数列は変わらない。
  */
 
@@ -979,6 +985,8 @@ export function autoTags(s: Scenario): string[] {
     if (m.relation === "other") t.add("受遺者（相続人以外）");
     if (m.priorMinorCredit) t.add("前の相続でも未成年者控除");
     if (m.priorDisabilityCredit) t.add("前の相続でも障害者控除");
+    const pd = m.priorDisabilityCredit;
+    if (pd?.special !== undefined && pd.special !== (m.disability === "special")) t.add("障害者控除の区分が変わった");
   }
   const adoptedNormal = ms.filter((m) => m.relation === "adoptedChild" && !m.adoptedCountsAsBiological && !(m.grandchildAdopted && m.substituteOf));
   const bio = ms.filter((m) => m.relation === "child" || (m.relation === "adoptedChild" && m.adoptedCountsAsBiological));
@@ -1102,10 +1110,15 @@ export function autoTags(s: Scenario): string[] {
   }
 
   // 分け方
-  if (s.division.kind === "undivided") t.add("未分割");
-  else {
+  const heirGift = s.gifts.some((g) => g.settlement && h.shares.has(g.to));
+  if (s.division.kind === "undivided") {
+    t.add("未分割");
+    if (heirGift) t.add("未分割＋精算課税（特別受益）");
+  } else {
     if (s.division.partlyUndivided) t.add("一部未分割");
+    if (s.division.partlyUndivided && heirGift) t.add("未分割＋精算課税（特別受益）");
     if (s.division.compensation?.length) t.add("代償分割");
+    if (s.division.partlyUndivided && s.division.compensation?.length) t.add("代償分割＋一部未分割");
     if (s.division.compensation?.some((c) => c.basis)) t.add("代償金（時価をもとに決めた）");
     const got = roughAcquired(s);
     if (h.spouse) {
@@ -3195,7 +3208,7 @@ const EDGES: [string, string[], EdgeFn][] = [
     b.give(L, c1);
     b.split({ [sp]: 1 });
   }],
-  ["不整形地：税理士に確かめたら補正なし（補正率1）", ["補正が必要な土地"], (b) => {
+  ["不整形地：税理士に確かめたら補正なし（補正率1。間口狭小・奥行長大はふつうに掛ける）", ["補正が必要な土地"], (b) => {
     b.dec({ age: 84, male: false });
     const c1 = b.child({ age: 57 });
     b.landR({ label: `自宅の土地（${b.homeLocation()}）`, price: 230_000, frontage: 7, depth: 22, needsReduction: "irregular", advisorRate: 1 });
@@ -3226,6 +3239,136 @@ const EDGES: [string, string[], EdgeFn][] = [
     b.give(h.B, sp);
     b.smallLand(h.L, "residence", sp);
     b.split({ [c1]: 1 });
+  }],
+  // ── 二度目の見直しで足したもの ──
+  // 前の相続で受けた障害者控除：前の相続のときと区分（一般・特別）が違う（相基通19の4-4）
+  ["前の相続では一般障害者、今は特別障害者（限度額 {20万×(85−Y)＋10万×(Y−X)} − 控除済み）", ["障害者", "前の相続でも障害者控除", "障害者控除の区分が変わった"], (b) => {
+    b.dec({ age: 90, male: false, deathDate: "2026-06-15" });
+    b.spouse({ age: 92, predeceased: true });
+    const c1 = b.child({ age: 62 });
+    // 前の相続（2021-06-15）で60歳・一般障害者として250万円。今回65歳・特別障害者：20万×20＋10万×5 − 250万 = 200万（今回の400万より少ない）
+    const c2 = b.child({ birthDate: "1961-02-01", disability: "special", priorDisabilityCredit: { date: "2021-06-15", amount: 2_500_000, special: false } });
+    b.deposit(130_000_000);
+    b.funeral(1_600_000, c1);
+    b.split({ [c1]: 1, [c2]: 1 });
+  }],
+  ["前の相続では特別障害者、今は一般障害者（限度額は前の相続のときの 20万×(85−X)）", ["障害者", "前の相続でも障害者控除", "障害者控除の区分が変わった"], (b) => {
+    b.dec({ age: 93, male: true, deathDate: "2026-09-20" });
+    const sp = b.spouse({ age: 88 });
+    // 前の相続（2022-09-20）で63歳・特別障害者として300万円：20万×22 − 300万 = 140万。今回67歳・一般障害者の 10万×18 = 180万より少ない
+    const c1 = b.child({ birthDate: "1959-04-10", disability: "general", priorDisabilityCredit: { date: "2022-09-20", amount: 3_000_000, special: true } });
+    const c2 = b.child({ age: 61 });
+    const h = home(b, { price: 210_000, frontage: 12, depth: 16, bldg: 2_500_000 });
+    b.deposit(95_000_000);
+    b.funeral(1_800_000, sp);
+    b.give(h.L, sp);
+    b.give(h.B, sp);
+    b.smallLand(h.L, "residence", sp);
+    b.split({ [sp]: 1, [c1]: 2, [c2]: 2 });
+  }],
+  ["前の相続で受けた障害者控除が、今と同じ区分なら受けられない額（区分の入れ忘れ）→ 税理士に相談", ["障害者", "前の相続でも障害者控除"], (b) => {
+    b.dec({ age: 88, male: false, deathDate: "2026-03-05" });
+    b.spouse({ age: 90, predeceased: true });
+    const c1 = b.child({ age: 60 });
+    // 今は一般障害者。前の相続（2021-03-05、60歳）で一般なら 10万×25 = 250万までのはずが、300万と入っている
+    const c2 = b.child({ birthDate: "1960-07-01", disability: "general", priorDisabilityCredit: { date: "2021-03-05", amount: 3_000_000 } });
+    b.deposit(90_000_000);
+    b.funeral(1_300_000, c1);
+    b.split({ [c1]: 1, [c2]: 1 });
+  }],
+  // 代償分割と一部未分割（代償金は分割で取得した額に含めて穴埋め：相基通11の2-9）
+  ["代償分割＋一部未分割：自宅を長男が取得し二男に代償金、預金は未分割（未分割の分は半分ずつ）", ["分け方", "代償分割", "一部未分割", "代償分割＋一部未分割"], (b) => {
+    b.dec({ age: 85, male: true });
+    b.spouse({ age: 83, predeceased: true });
+    const c1 = b.child({ age: 55 });
+    const c2 = b.child({ age: 52 });
+    const h = home(b, { price: 400_000, frontage: 12, depth: 16, bldg: 6_000_000 });
+    const D1 = b.deposit(30_000_000);
+    b.deposit(60_000_000);
+    b.funeral(1_500_000, c1);
+    b.give(h.L, c1);
+    b.give(h.B, c1);
+    b.give(D1, c1);
+    b.compensate(c1, c2, 40_000_000);
+    b.partlyUndivided();
+  }],
+  ["代償分割（時価をもとに決めた）＋一部未分割：配偶者と兄（2割加算）", ["分け方", "代償分割", "一部未分割", "代償分割＋一部未分割", "代償金（時価をもとに決めた）"], (b) => {
+    b.dec({ age: 76, male: false });
+    const sp = b.spouse({ age: 79 });
+    const s1 = b.sibling({ age: 80, male: true });
+    const L = b.landR({ label: `貸していない土地（${b.location()}）`, price: 320_000, frontage: 10, depth: 15 });
+    const D1 = b.deposit(12_000_000);
+    b.deposit(80_000_000);
+    b.funeral(1_400_000, sp);
+    b.give(L, s1);
+    b.give(D1, sp);
+    // 土地の時価 6,000万をもとに代償金 2,400万（評価額に直すと 2,400万 × 4,800万 ÷ 6,000万）
+    b.compensate(s1, sp, 24_000_000, { item: L, marketValue: 60_000_000 });
+    b.partlyUndivided();
+  }],
+  // 未分割の財産と相続時精算課税の贈与（特別受益として未分割の分け方に入れる：質疑応答事例）
+  ["未分割：子2人が精算課税の贈与を受けていた（遺産＋贈与に法定相続分を掛け、贈与を引いて分ける）", ["分け方", "未分割", "精算課税", "未分割＋精算課税（特別受益）"], (b) => {
+    b.dec({ age: 82, male: true, deathDate: "2026-08-01" });
+    b.spouse({ age: 80, predeceased: true });
+    const c1 = b.child({ age: 56 });
+    const c2 = b.child({ age: 53 });
+    b.child({ age: 50 });
+    b.child({ age: 47 });
+    b.deposit(160_000_000);
+    b.otherAsset(40_000_000, "貸付金");
+    b.funeral(1_600_000, c1);
+    b.gift(c1, "2020-05-10", 20_000_000, { settlement: true });
+    b.gift(c2, "2022-11-01", 20_000_000, { settlement: true });
+    b.undivided();
+  }],
+  ["未分割：精算課税の贈与が法定相続分を超えた子には、未分割の遺産を割り当てない", ["分け方", "未分割", "精算課税", "未分割＋精算課税（特別受益）"], (b) => {
+    b.dec({ age: 87, male: false });
+    b.spouse({ age: 89, predeceased: true });
+    const c1 = b.child({ age: 60 });
+    b.child({ age: 57 });
+    b.deposit(30_000_000);
+    b.cash(2_000_000);
+    b.funeral(1_200_000, c1);
+    b.gift(c1, "2019-04-01", 50_000_000, { settlement: true });
+    b.undivided();
+  }],
+  ["一部未分割：配偶者が自宅を取得、預金は未分割。子が令和6年以後に精算課税の贈与（贈与の額そのものを特別受益に）", ["分け方", "一部未分割", "精算課税", "未分割＋精算課税（特別受益）", "小規模宅地"], (b) => {
+    b.dec({ age: 79, male: true, deathDate: "2026-10-12" });
+    const sp = b.spouse({ age: 76 });
+    const c1 = b.child({ age: 50 });
+    b.child({ age: 47 });
+    const h = home(b, { price: 280_000, frontage: 11, depth: 15, bldg: 3_500_000 });
+    b.deposit(70_000_000);
+    b.funeral(1_700_000, sp);
+    b.give(h.L, sp);
+    b.give(h.B, sp);
+    b.smallLand(h.L, "residence", sp);
+    b.gift(c1, "2024-07-01", 15_000_000, { settlement: true });
+    b.partlyUndivided();
+  }],
+  // 倍率方式の宅地は形がいびつでも 固定資産税評価額×倍率（評基通21-2）
+  ["倍率方式の宅地で形がいびつ（不整形地）：固定資産税評価額×倍率のまま計算できる", ["補正が必要な土地", "倍率地域"], (b) => {
+    b.dec({ age: 81, male: true });
+    const sp = b.spouse({ age: 78 });
+    const c1 = b.child({ age: 50 });
+    const L = b.landM({ label: `自宅の土地（旗竿地、${b.homeLocation()}）`, area: 280, fixedAssetValue: 9_800_000, rate: 1.1, needsReduction: "irregular" });
+    const B = b.building(2_600_000, { label: "自宅の建物（木造2階建）" });
+    b.deposit(52_000_000);
+    b.funeral(1_500_000, sp);
+    b.give(L, sp);
+    b.give(B, sp);
+    b.smallLand(L, "residence", sp);
+    b.split({ [sp]: 1, [c1]: 1 });
+  }],
+  ["倍率方式の雑種地で形がいびつ：宅地と比べて形の補正が要るので税理士に相談", ["補正が必要な土地", "倍率地域"], (b) => {
+    b.dec({ age: 84, male: false });
+    const c1 = b.child({ age: 58 });
+    const c2 = b.child({ age: 55 });
+    const L = b.landM({ label: `資材置場（${b.location()}）`, area: 420, fixedAssetValue: 6_300_000, rate: 1.2, landUse: "雑種地", needsReduction: "irregular" });
+    b.deposit(60_000_000);
+    b.funeral(1_300_000, c1);
+    b.give(L, c2);
+    b.split({ [c1]: 1, [c2]: 1 });
   }],
 ];
 
@@ -3277,13 +3420,15 @@ interface RandCtx {
   spouseRight: boolean;
   debts: { amount: number; label: string; tie: "general" | "rental"; rental?: number }[];
   funeral?: number;
+  /** 相続時精算課税の贈与を受けた人 */
+  settlementTo?: Set<string>;
 }
 
 /**
  * 乱数のケースを1件作る。rng は元からある事柄、extra はあとから足した事柄（貸家建付借地権・税理士に確かめた補正率・
  * 一部未分割・代償金の時価・前の相続で受けた控除）に使う別の乱数列。extra を分けたので、足した事柄のない部分は前と同じになる
  */
-function randomScenario(id: string, rng: Rng, extra: Rng): Scenario {
+function randomScenario(id: string, rng: Rng, extra: Rng, extra2: Rng): Scenario {
   const famType = rng.weighted<FamType>([
     ["spouseChildren", 55], ["childrenOnly", 30], ["siblings", 6], ["parents", 3], ["grandSub", 3], ["other", 3],
   ]);
@@ -3621,7 +3766,7 @@ function randomScenario(id: string, rng: Rng, extra: Rng): Scenario {
     b.decedent.priorInheritance = { yearsAgo: rng.int(0, 9), prevTax: floorTo(prevAcquired * rng.range(0.03, 0.2), 100), prevAcquired };
   }
   // 前の相続（祖父母・もう一人の親など）でも未成年者控除・障害者控除を受けていた
-  addPriorCredits(b, extra, heirIds());
+  addPriorCredits(b, extra, heirIds(), extra2);
   // 債務
   for (const r of ctx.rentals) if (r.loan) ctx.debts.push({ amount: r.loan, label: "アパートローン", tie: "rental", rental: ctx.rentals.indexOf(r) });
   if (rng.chance(0.21)) {
@@ -3677,7 +3822,8 @@ function randomScenario(id: string, rng: Rng, extra: Rng): Scenario {
   }
 
   // ── 分け方 ──
-  randomDivision(b, ctx, extra);
+  ctx.settlementTo = settlementTo;
+  randomDivision(b, ctx, extra, extra2);
   return b.build();
 }
 
@@ -3688,8 +3834,11 @@ function advisorRateOf(extra: Rng, kind: "irregular" | "largeLot"): number | und
   return extra.chance(0.5) ? 1 : round2(extra.range(0.7, 0.85));
 }
 
-/** 未成年者・障害者の相続人が、前の相続でも控除を受けていたことにする（受けた額は最初の控除額以下） */
-function addPriorCredits(b: Builder, extra: Rng, heirs: string[]): void {
+/**
+ * 未成年者・障害者の相続人が、前の相続でも控除を受けていたことにする（受けた額は最初の控除額以下）。
+ * 障害者は、前の相続のときの区分（一般・特別）が今と違うこともある（extra2 で決める）
+ */
+function addPriorCredits(b: Builder, extra: Rng, heirs: string[], extra2: Rng): void {
   const cands = heirs.filter((id) => {
     const m = b.member(id);
     return !m.unborn && (ageAt(m.birthDate, b.death) < 18 || !!m.disability);
@@ -3705,13 +3854,20 @@ function addPriorCredits(b: Builder, extra: Rng, heirs: string[]): void {
       const first = 100_000 * (18 - a0);
       m.priorMinorCredit = { date, amount: roundTo(first * extra.range(0.2, 1.0), 10_000) };
     } else if (m.disability && a0 < 85) {
-      const first = (m.disability === "special" ? 200_000 : 100_000) * (85 - a0);
-      m.priorDisabilityCredit = { date, amount: roundTo(first * extra.range(0.1, 0.9), 10_000) };
+      // 区分が変わった人：前の相続の日を今回の相続と同じ月日にする（年齢の差と相続の間の年数がそろう）
+      const changed = extra2.chance(0.4);
+      const d0 = changed ? addYears(b.death, -(pi && pi.yearsAgo >= 1 ? pi.yearsAgo : extra2.int(1, 8))) : date;
+      const x0 = ageAt(m.birthDate, d0);
+      const ok = !changed || (m.birthDate < d0 && x0 < 85);
+      const wasSpecial = changed && ok ? m.disability !== "special" : m.disability === "special";
+      const first = (wasSpecial ? 200_000 : 100_000) * (85 - (changed && ok ? x0 : a0));
+      const amount = roundTo(first * extra.range(0.1, 0.9), 10_000);
+      m.priorDisabilityCredit = changed && ok ? { date: d0, amount, special: wasSpecial } : { date, amount };
     }
   }
 }
 
-function randomDivision(b: Builder, ctx: RandCtx, extra: Rng): void {
+function randomDivision(b: Builder, ctx: RandCtx, extra: Rng, extra2: Rng): void {
   const rng = b.rng;
   const info = heirInfo(b.members);
   const legal = info.shares;
@@ -3731,8 +3887,12 @@ function randomDivision(b: Builder, ctx: RandCtx, extra: Rng): void {
   };
   const legalWeights = () => Object.fromEntries(heirs.map((id) => [id, legal.get(id)!]));
 
-  // 未分割（遺言で遺贈する財産があるときは作らない：遺贈分は未分割の対象にならないため）
-  if (rng.chance(0.06) && heirs.length >= 2 && !ctx.bequest) {
+  // 未分割（遺言で遺贈する財産があるときは作らない：遺贈分は未分割の対象にならないため）。
+  // 相続人に精算課税の贈与があるときは、未分割になることを多めにする（特別受益として未分割の分け方が変わる）
+  const undivNow = rng.chance(0.06);
+  const giftHeirs = heirs.filter((id) => ctx.settlementTo?.has(id));
+  const undivGift = !undivNow && giftHeirs.length > 0 && heirs.length >= 2 && !ctx.bequest && extra2.chance(0.3);
+  if ((undivNow || undivGift) && heirs.length >= 2 && !ctx.bequest) {
     b.undivided();
     addDebts(() => legalWeights(), sp && rng.chance(0.6) ? sp : legalWeights());
     return;
@@ -3759,6 +3919,20 @@ function randomDivision(b: Builder, ctx: RandCtx, extra: Rng): void {
       if (okUse && rng.chance(0.55)) b.smallLand(site, "residence", payer);
     }
     addDebts(() => payer, payer);
+    // 代償分割＋一部未分割：預貯金などの一部の分け方が決まらない。代償金は分割で取得した額に含めて穴埋めする（相基通11の2-9）。
+    // 払う人が分割で取得する額が代償金の1.2倍以上残るときだけ
+    if (!ctx.bequest && extra2.chance(0.4)) {
+      const liquid = b.estate
+        .filter((it) => (it.type === "deposit" || it.type === "listedStock" || it.type === "cash" || it.type === "other") && !("foreign" in it && it.foreign) && b.shares[it.id])
+        .sort((a, c) => roughValue(c) - roughValue(a));
+      const target = liquid[extra2.int(0, Math.max(0, liquid.length - 1))];
+      const compTotal = b.compensation.reduce((x, c) => x + c.amount, 0);
+      const kept = divisible.filter((it) => it.id !== target?.id).reduce((x, it) => x + roughValue(it), 0);
+      if (target && divisible.length > 1 && kept >= 1.2 * compTotal) {
+        delete b.shares[target.id];
+        b.partlyUndivided();
+      }
+    }
     return;
   }
 
@@ -3870,7 +4044,9 @@ function randomDivision(b: Builder, ctx: RandCtx, extra: Rng): void {
 
   // 一部未分割：申告期限までに、預貯金・株式などの一部の分け方が決まらない（未分割の部分は穴埋め方式で計算）
   // （遺言で遺贈する財産があるときは作らない：遺贈分は分割の対象にならず、穴埋め方式の合計の取り方が分かれるため）
-  if (heirs.length >= 2 && !ctx.bequest && extra.chance(0.06)) {
+  const partlyNow = heirs.length >= 2 && !ctx.bequest && extra.chance(0.06);
+  const partlyGift = !partlyNow && heirs.length >= 2 && !ctx.bequest && heirs.some((id) => ctx.settlementTo?.has(id)) && extra2.chance(0.3);
+  if (partlyNow || partlyGift) {
     const liquid = b.estate
       .filter((it) => (it.type === "deposit" || it.type === "listedStock" || it.type === "cash" || it.type === "other") && !("foreign" in it && it.foreign) && b.shares[it.id])
       .sort((a, c) => roughValue(c) - roughValue(a));
@@ -3897,7 +4073,7 @@ export function generateScenarios(n = 1000, seed = 20261108): Scenario[] {
   const out = [...edges];
   for (let i = 1; out.length < n; i++) {
     const id = `R${String(i).padStart(4, "0")}`;
-    out.push(randomScenario(id, new Rng(mixSeed(seed, i)), new Rng(mixSeed(seed ^ 0x5bd1e995, i))));
+    out.push(randomScenario(id, new Rng(mixSeed(seed, i)), new Rng(mixSeed(seed ^ 0x5bd1e995, i)), new Rng(mixSeed(seed ^ 0x27d4eb2f, i))));
   }
   return out;
 }
@@ -3981,6 +4157,10 @@ export function validateScenario(s: Scenario): string[] {
       if (!isInt(pc.amount) || pc.amount < 0) err(`${m.id} 前の${k}の額 ${pc.amount}`);
       if (k === "未成年者控除" && isDate(pc.date) && ageAt(m.birthDate, pc.date) >= 18) err(`${m.id} 前の相続のとき未成年でない`);
       if (k === "障害者控除" && !m.disability) err(`${m.id} 障害者でないのに前の障害者控除`);
+      if (pc.special !== undefined && (k !== "障害者控除" || typeof pc.special !== "boolean")) err(`${m.id} 前の${k}の区分 ${String(pc.special)}`);
+      // 区分が変わった人は、前の相続の日を今回の相続と同じ月日にする（年齢の差＝相続の間の年数）
+      if (k === "障害者控除" && pc.special !== undefined && pc.special !== (m.disability === "special") && pc.date.slice(5) !== death.slice(5))
+        err(`${m.id} 区分が変わった人の前の相続の日 ${pc.date} が今回と同じ月日でない`);
     }
     if (m.relation === "parent" && (ageAt(m.birthDate, d.birthDate) < 16 || ageAt(m.birthDate, d.birthDate) > 50)) err(`${m.id} 父母の年齢差`);
     if (m.relation === "grandparent" && ageAt(m.birthDate, d.birthDate) < 32) err(`${m.id} 祖父母の年齢差`);

@@ -112,14 +112,17 @@ export function SmallResidential({
   const kind = smallLandKind(a);
   const rule = SMALL_LAND_RULE[kind];
   const acquirer = living.find((p) => p.id === sr.acquirerId);
-  const j = judgeSmallResidential(check, acquirer, kind);
-  const gap = j.result === "ok" ? smallLandDivisionGap(division, a.id, sr.acquirerId) : null;
+  // マンションの部屋では、説明の文を部屋の画面の入力（「家賃をもらって人に貸している」のチェック）に合わせる
+  const opts = { assetKind: a.kind };
+  const j = judgeSmallResidential(check, acquirer, kind, opts);
+  // 特例を使うと判定したとき（税理士に確認して使えると分かったときも）は、分け方のために使えないかを確かめる
+  const gap = shouldApply(j, check) ? smallLandDivisionGap(division, a.id, sr.acquirerId) : null;
   const set = (next: { acquirerId?: string; check?: SmallResidentialCheck }) => {
     const acq = next.acquirerId ?? sr.acquirerId;
     const c = next.check ?? check;
     // 自宅でなく事業に使っていた土地なら特定事業用、と答えで種類が変わるので、新しい答えで決め直して判定する
     const k = smallLandKind({ ...a, smallResidential: { ...sr, check: c } });
-    const jj = judgeSmallResidential(c, living.find((p) => p.id === acq), k);
+    const jj = judgeSmallResidential(c, living.find((p) => p.id === acq), k, opts);
     patch({ smallResidential: { ...sr, acquirerId: acq, check: c, applies: shouldApply(jj, c) } });
   };
   const answer = (k: keyof SmallResidentialCheck, v: Answer) => {
@@ -212,8 +215,9 @@ function RoadsEditor({ a, m, patch }: { a: LandAsset; m: RosenkaMethod; patch: (
   const district: District = m.district ?? "普通住宅地区";
   // 以前の入力（道路が1つ・奥行価格補正率を直接入力）は、正面の道路1つとして見せる
   const roads: RoadInput[] = m.roads?.length ? m.roads : [{ edge: 0, price: m.routePrice, depth: m.lot?.depth ?? 0 }];
-  // 形がいびつな土地で税理士に確認した補正率（不整形地補正率）を使うときは、間口が狭い・奥行が長い補正をしない（評価の計算と同じ）
-  const irregular = a.condition === "irregular" && m.otherCorrection != null && m.otherCorrection > 0 && m.otherCorrection <= 1;
+  // 形がいびつな土地で税理士に確認した補正率（不整形地補正率）が1未満なら、間口が狭い・奥行が長い補正をしない（評価の計算と同じ）。
+  // 1（減額なし）のときは、間口が狭い・奥行が長い補正はふつうどおりする（付表5（注）3）
+  const irregular = a.condition === "irregular" && m.otherCorrection != null && m.otherCorrection > 0 && m.otherCorrection < 1;
   const save = (next: RoadInput[], d = district) => {
     const r = evaluateRoads(d, next);
     patch({ method: { ...m, district: d, roads: next, routePrice: r?.front.price ?? next[0]?.price ?? 0, depthCorrection: r?.front.depthRate ?? m.depthCorrection } });
@@ -292,7 +296,7 @@ function RoadsEditor({ a, m, patch }: { a: LandAsset; m: RosenkaMethod; patch: (
           <li>税理士に補正率を確認した場合は、下の「税理士に確認した補正率」に入れると計算に使います。</li>
           <li>形がいびつな土地は、税理士に確認した最後の不整形地補正率（間口が狭い・奥行が長い分も含めた率）を入れてください。このときは間口による補正はしません（二重に下げないため）。</li>
           <li>広い土地（地積規模の大きな宅地）にもあたるときは、その補正（規模格差補正率）も掛け合わせた率を入れてください。</li>
-          <li>税理士に確認して、減額にならない（当てはまらない）と分かったときは 1 を入れてください。補正なしで計算します。</li>
+          <li>税理士に確認して、減額にならない（当てはまらない）と分かったときは 1 を入れてください。形による補正なしで計算します（間口が狭い・奥行が長い補正はふつうどおりします）。</li>
         </ul>
       </details>
       <Field

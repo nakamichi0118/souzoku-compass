@@ -124,6 +124,37 @@ describe("第13表 3 債務及び葬式費用の合計額（確定・未確定�
     expect(num(pg.values["t.r7"])).toBe(r.totalDebts);
   });
 
+  it("負担する人の金額が0のままの債務は、1・2の「負担することが確定した」欄に名前を書かない", () => {
+    // 未分割にする前に債務を足し、金額だけ入れた（負担する人の行は 0円のまま）
+    const c = undividedCase();
+    c.debts = c.debts.map((d) => ({ ...d, bearers: [{ personId: "hanako", amount: 0 }] }));
+    const r = calculate(c);
+    expect(r.blockers).toEqual([]);
+    const [pg] = build13(c, r);
+    // エンジンは法定相続分で分けて「確定していない」②⑤に入れる
+    expect(num(pg.values["t.r2"])).toBe(186_400);
+    expect(num(pg.values["t.r5"])).toBe(1_850_000);
+    expect(pg.values["t.r1"]).toBe("");
+    for (const k of ["d0", "f0"]) {
+      expect(pg.values[`${k}.bearer`]).toBeUndefined();
+      expect(pg.values[`${k}.bearerAmount`]).toBe("");
+      expect(pg.values[`${k}.amount`]).not.toBe("");
+    }
+    expect(pg.values["d1.amount"]).toBeUndefined();
+  });
+
+  it("金額を決めた人だけを負担する人の欄に書く（0円の人は書かない）", () => {
+    const c = structuredClone(demoCase);
+    c.debts = c.debts.map((d) => (d.kind === "debt" ? { ...d, bearers: [{ personId: "ichiro", amount: 0 }, { personId: "hanako", amount: d.amount }] } : d));
+    const r = calculate(c);
+    expect(r.blockers).toEqual([]);
+    const [pg] = build13(c, r);
+    expect(pg.values["d0.bearer"]).toBe("相続 花子");
+    expect(num(pg.values["d0.bearerAmount"])).toBe(186_400);
+    expect(pg.values["d1.bearer"]).toBeUndefined();
+    expect(pg.values["d1.bearerAmount"]).toBeUndefined();
+  });
+
   it("分け方が決まっていれば、これまでどおり①④に書く", () => {
     const r = calculate(demoCase);
     const [pg] = build13(demoCase, r);

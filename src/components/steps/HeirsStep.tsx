@@ -277,6 +277,19 @@ function PriorCredits({ p, age, isLegalHeir, patch }: { p: Person; age: number |
                 <Field label="これまでに控除を受けた金額（扶養義務者から引いた分を含む）">
                   <YenInput value={v.amount} onChange={(n) => put(key, { ...v, amount: n })} />
                 </Field>
+                {key === "priorDisabilityCredit" && (
+                  // 前の相続のときの区分で、今回引ける額の上限が変わる（相基通19の4-4）。選ぶまでは今と同じ区分
+                  <Field label="その相続のときの区分">
+                    <Select
+                      value={(v.special ?? p.disability === "special") ? "special" : "general"}
+                      onChange={(x) => put(key, { ...v, special: x === "special" })}
+                      options={[
+                        { value: "general", label: "一般障害者" },
+                        { value: "special", label: "特別障害者" },
+                      ]}
+                    />
+                  </Field>
+                )}
               </div>
             )}
           </div>

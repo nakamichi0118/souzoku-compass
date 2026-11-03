@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { demoCase } from "@/data/demo";
-import { calculate } from "@/domain/tax/engine";
+import { calculate, type TaxResult } from "@/domain/tax/engine";
+import type { Case } from "@/domain/types";
 import { buildFilingPages } from "../filing";
 import { layout } from "../render";
 import { buildSchedule11, scheduleTotals, siteRightRatio, splitLocation } from "../schedule11";
@@ -150,5 +151,165 @@ describe("第11表と付表", () => {
     expect(splitLocation("東京都港区六本木6丁目10番1")).toEqual({ pref: "東京都", city: "港区", town: "六本木6丁目", lot: "10番1" });
     expect(splitLocation("東京都港区六本木６丁目１０番１")).toMatchObject({ town: "六本木６丁目", lot: "１０番１" });
     expect(splitLocation("東京都港区六本木6丁目")).toMatchObject({ town: "六本木6丁目", lot: "" });
+  });
+});
+
+describe("一部が空いている貸家建付地などに貸付事業用宅地等の特例を使ったとき（付表1の⑧・別表1の3）", () => {
+  type Share = { personId: string; numerator: number; denominator: number };
+  const rental = { applies: true, acquirerId: "ichiro", check: { continues: "yes" as const, keep: "yes" as const, recent: "no" as const } };
+  /** 自宅の特例を外し、アパートの敷地（150㎡・賃貸割合0.8）を足した事例。一郎さんが貸付事業用宅地等の特例を使う */
+  function aptCase(use: "rentedHouse" | "rentedLeasehold", shares: Share[] = [{ personId: "ichiro", numerator: 1, denominator: 1 }], rentRatio = 0.8): Case {
+    const c = structuredClone(demoCase);
+    c.assets = c.assets.map((a) => (a.id === "home-land" && a.kind === "land" ? { ...a, smallResidential: undefined } : a));
+    c.assets.push({
+      id: "apt",
+      kind: "land",
+      label: "アパート敷地",
+      location: "東京都千代田区架空町五丁目1番",
+      areaSqm: 150,
+      landUse: "宅地",
+      use,
+      rentRatio,
+      leaseRatio: 0.6,
+      method: { type: "rosenka", routePrice: 300_000, depthCorrection: 1.0, district: "普通住宅地区", roads: [{ edge: 0, price: 300_000, depth: 10, notation: "300D" }] },
+      smallResidential: rental,
+    });
+    c.allocations.push({ assetId: "apt", shares });
+    return c;
+  }
+  const aptItems = (c: Case, r: TaxResult) => scheduleTotals(c, r).items.filter((i) => i.values.town === "架空町五丁目");
+  const sumOf = (xs: { amount: number }[]) => xs.reduce((s, x) => s + x.amount, 0);
+  const num = (v: unknown) => Number(String(v ?? "").replace(/,/g, ""));
+
+  it("貸家建付地：貸している部分（特例・⑧の額）と空いている部分（自用地）の2行に分け、合計は変わらない", () => {
+    const c = aptCase("rentedHouse");
+    const r = calculate(c);
+    expect(r.blockers).toEqual([]);
+    const line = r.assets.find((l) => l.asset.id === "apt")!;
+    const s = line.small!;
+    expect(s.kind).toBe("rental");
+    expect(line.reduction).toBeGreaterThan(0);
+    const items = aptItems(c, r);
+    expect(items).toHaveLength(2);
+    const [rented, vacant] = items;
+    expect(rented.values).toMatchObject({ use: "貸家建付地", area: "120", special: "1" });
+    expect(rented.value).toBe(s.value - line.reduction);
+    expect(rented.acquirers).toEqual([{ personId: "ichiro", amount: s.value - line.reduction }]);
+    expect(vacant.values).toMatchObject({ use: "自用地", area: "30", special: "", note: "空室部分" });
+    // 空いている部分は自用地として評価した額（300,000円 × 30㎡）
+    expect(vacant.value).toBe(9_000_000);
+    expect(vacant.value).toBe(line.valuation.value - s.value);
+    expect(vacant.acquirers).toEqual([{ personId: "ichiro", amount: vacant.value }]);
+    // 行の合計は1行で書いていたときの価額（評価額 − 減額）、各人の合計は第1表①のまま
+    expect(rented.value + vacant.value).toBe(line.valuation.value - line.reduction);
+    expect(rented.cat).toBe(3);
+    expect(vacant.cat).toBe(3);
+    const { byPerson } = scheduleTotals(c, r);
+    for (const p of r.persons) expect(byPerson.get(p.person.id) ?? 0).toBe(p.acquired);
+    // 付表1の⑧（特例を使ったあとの価額）が、特例の行の価額と同じ
+    const pages = buildFilingPages(c, r);
+    const f1 = pages.find((p) => p.page === "t11_11_2_f1")!;
+    expect(num(f1.values["b0.taxable"])).toBe(rented.value);
+  });
+
+  it("貸家建付借地権：空いている部分は借地権（自用）の行にする", () => {
+    const c = aptCase("rentedLeasehold");
+    const r = calculate(c);
+    expect(r.blockers).toEqual([]);
+    const line = r.assets.find((l) => l.asset.id === "apt")!;
+    const [rented, vacant, ...rest] = aptItems(c, r);
+    expect(rest).toEqual([]);
+    expect(rented.values).toMatchObject({ use: "貸家建付借地権", area: "120", special: "1" });
+    expect(rented.value).toBe(line.small!.value - line.reduction);
+    expect(vacant.values).toMatchObject({ use: "借地権", area: "30", special: "" });
+    // 自用地 300,000円 × 30㎡ × 借地権割合 0.6
+    expect(vacant.value).toBe(5_400_000);
+    expect(rented.value + vacant.value).toBe(line.valuation.value - line.reduction);
+  });
+
+  it("2人で取得した土地：特例を使う人の分を2行に、ほかの人の分はもとの利用区分の行に書き、各人の金額は変わらない", () => {
+    const c = aptCase("rentedHouse", [
+      { personId: "ichiro", numerator: 2, denominator: 3 },
+      { personId: "sakura", numerator: 1, denominator: 3 },
+    ]);
+    const r = calculate(c);
+    expect(r.blockers).toEqual([]);
+    const line = r.assets.find((l) => l.asset.id === "apt")!;
+    const items = aptItems(c, r);
+    expect(items).toHaveLength(3);
+    const [rented, vacant, other] = items;
+    expect(rented.values).toMatchObject({ use: "貸家建付地", area: "80", special: "1" });
+    expect(rented.acquirers).toEqual([{ personId: "ichiro", amount: line.small!.value - line.reduction }]);
+    expect(vacant.values).toMatchObject({ use: "自用地", area: "20", special: "" });
+    expect(vacant.acquirers.map((a) => a.personId)).toEqual(["ichiro"]);
+    expect(other.values).toMatchObject({ use: "貸家建付地", area: "50", special: "" });
+    expect(other.acquirers.map((a) => a.personId)).toEqual(["sakura"]);
+    // 特例番号は貸している部分の行だけ
+    expect(items.filter((i) => i.values.special === "1")).toEqual([rented]);
+    // 行の価額＝取得者ごとの金額の合計、3行の合計＝評価額 − 減額、各人の合計は分ける前と同じ
+    for (const it of items) expect(sumOf(it.acquirers) + sumOf(it.undivided)).toBe(it.value);
+    expect(items.reduce((t, i) => t + i.value, 0)).toBe(line.valuation.value - line.reduction);
+    for (const b of line.byPerson) expect(sumOf(items.flatMap((i) => i.acquirers.filter((a) => a.personId === b.personId)))).toBe(b.amount);
+    const { byPerson } = scheduleTotals(c, r);
+    for (const p of r.persons) expect(byPerson.get(p.person.id) ?? 0).toBe(p.acquired);
+    // 第11表の付表1のページ：特例番号「1」は1か所だけ、欄はすべて様式にある
+    const pages = buildFilingPages(c, r);
+    const f1 = pages.filter((p) => p.page === "t11_f1");
+    const specials = f1.flatMap((p) => Object.entries(p.values).filter(([k, v]) => k.endsWith(".special") && v === "1"));
+    expect(specials).toHaveLength(1);
+    for (const p of pages) {
+      const fields = layout[p.page].fields as Record<string, unknown>;
+      for (const k of Object.keys(p.values)) if (p.values[k] !== undefined && p.values[k] !== "") expect(fields[k], `${p.page}:${k}`).toBeDefined();
+    }
+  });
+
+  it("全部貸していれば（賃貸割合1）これまでどおり1行", () => {
+    const c = aptCase("rentedHouse", undefined, 1);
+    const r = calculate(c);
+    expect(r.blockers).toEqual([]);
+    const line = r.assets.find((l) => l.asset.id === "apt")!;
+    expect(line.reduction).toBeGreaterThan(0);
+    const items = aptItems(c, r);
+    expect(items).toHaveLength(1);
+    expect(items[0].values).toMatchObject({ use: "貸家建付地", area: "150", special: "1" });
+    expect(items[0].value).toBe(line.valuation.value - line.reduction);
+  });
+
+  it("特例を使わなければ、空いている部屋があっても1行", () => {
+    const c = aptCase("rentedHouse");
+    c.assets = c.assets.map((a) => (a.id === "apt" ? { ...a, smallResidential: undefined } : a));
+    const r = calculate(c);
+    expect(r.blockers).toEqual([]);
+    const items = aptItems(c, r);
+    expect(items).toHaveLength(1);
+    expect(items[0].values).toMatchObject({ use: "貸家建付地", area: "150", special: "" });
+  });
+
+  it("貸している部屋が一部空いているマンション：敷地利用権の行を貸している部分（特例）と空いている部分（自用地）に分ける", () => {
+    const c = structuredClone(demoCase);
+    c.assets = c.assets.map((a) =>
+      a.id === "home-land" && a.kind === "land" ? { ...a, smallResidential: undefined } : a.kind === "condo" ? { ...a, rented: true, rentRatio: 0.8, leaseRatio: 0.6, smallResidential: rental } : a,
+    );
+    const r = calculate(c);
+    expect(r.blockers).toEqual([]);
+    const line = r.assets.find((l) => l.asset.kind === "condo")!;
+    expect(line.reduction).toBeGreaterThan(0);
+    const { items, byPerson } = scheduleTotals(c, r);
+    const sites = items.filter((i) => i.part === "site");
+    const bldg = items.filter((i) => i.part === "building");
+    expect(sites).toHaveLength(2);
+    expect(bldg).toHaveLength(1);
+    const [rented, vacant] = sites;
+    expect(rented.values).toMatchObject({ use: "貸家建付地", special: "1", note: "10000分の169", area: String(line.small!.area) });
+    expect(rented.value).toBe(line.small!.value - line.reduction);
+    expect(vacant.values).toMatchObject({ use: "自用地", special: "", note: "10000分の169" });
+    expect(num(vacant.values.area) + line.small!.area).toBeCloseTo((line.asset as { landShareSqm: number }).landShareSqm, 2);
+    expect(bldg[0].values.special).toBeUndefined();
+    // 3行の合計は評価額 − 減額、家屋の行は分けない前と同じ
+    expect(rented.value + vacant.value + bldg[0].value).toBe(line.valuation.value - line.reduction);
+    for (const it of [...sites, ...bldg]) expect(sumOf(it.acquirers)).toBe(it.value);
+    for (const p of r.persons) expect(byPerson.get(p.person.id) ?? 0).toBe(p.acquired);
+    const f1 = buildFilingPages(c, r).find((p) => p.page === "t11_11_2_f1")!;
+    expect(num(f1.values["b0.taxable"])).toBe(rented.value);
   });
 });

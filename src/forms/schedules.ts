@@ -171,7 +171,10 @@ export function build13(c: Case, r: TaxResult): PageFill[] {
   const debtRows: Row[] = [];
   const funeralRows: Row[] = [];
   for (const d of c.debts) {
-    const bearers = d.bearers.length ? d.bearers : [{ personId: "", amount: 0 }];
+    // 「負担することが確定した債務」には、金額を決めた人だけを書く。金額が0の人しかいない債務は、
+    // エンジンが法定相続分で分けて「確定していない」（3の②⑤）に入れるので、負担する人の欄は空けておく
+    const shown = d.bearers.filter((b) => b.amount > 0);
+    const bearers = shown.length ? shown : [{ personId: "", amount: 0 }];
     bearers.forEach((b, i) => {
       const head: Row =
         i > 0
