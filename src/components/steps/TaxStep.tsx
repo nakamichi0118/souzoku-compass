@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { Button, Card, Note, fmt } from "@/components/ui";
 import { toString as fracText } from "@/domain/fraction";
@@ -55,8 +56,36 @@ export function TaxStep() {
   const basicPart = Math.min(r.basicDeduction, r.totalTaxable);
   const deadline = data.decedent.deathDate ? nextOpenDay(addMonths(data.decedent.deathDate, 10)) : null;
 
+  // 確認待ちの財産や、取得する人が決まっていない財産があるうちは、税額は暫定
+  const pendingAssets = data.assets.filter((a) => a.pending?.length || r.assets.find((l) => l.asset.id === a.id)?.valuation.needsConsultation);
+  const undivided = data.assets.filter((a) => a.kind !== "insurance" && a.kind !== "retirement" && !data.allocations.some((x) => x.assetId === a.id && x.shares.some((s) => s.numerator > 0)));
+  const provisional = pendingAssets.length > 0 || undivided.length > 0 || r.blockers.length > 0;
+
   return (
     <div className="space-y-5">
+      {provisional && (
+        <Note tone="warn">
+          <p className="font-semibold">まだ確定していない入力があるため、下の税額は暫定です。</p>
+          <ul className="mt-1 list-disc pl-5">
+            {pendingAssets.length > 0 && (
+              <li>
+                確認待ちの財産：{pendingAssets.map((a) => a.label || "（名称未入力）").join("、")}
+                <Link href={`/case/assets?asset=${pendingAssets[0].id}`} className="ml-2 font-semibold underline">
+                  財産を確かめる ›
+                </Link>
+              </li>
+            )}
+            {undivided.length > 0 && (
+              <li>
+                取得する人が決まっていない財産：{undivided.map((a) => a.label || "（名称未入力）").join("、")}
+                <Link href="/case/division" className="ml-2 font-semibold underline">
+                  分け方を決める ›
+                </Link>
+              </li>
+            )}
+          </ul>
+        </Note>
+      )}
       {r.blockers.map((b) => (
         <Note key={b} tone="stop">
           {b}
@@ -65,7 +94,7 @@ export function TaxStep() {
 
       {/* いちばん大事なこと：家族全体で、誰がいくら納めるか */}
       <section className="rounded-2xl border border-teal-200 bg-gradient-to-br from-teal-50 to-white p-5 shadow-sm">
-        <p className="text-sm font-semibold text-teal-900">家族全体で納める相続税</p>
+        <p className="text-sm font-semibold text-teal-900">家族全体で納める相続税{provisional && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900">暫定</span>}</p>
         <p className="mt-1 text-4xl font-bold tabular-nums text-teal-900">
           {fmt(r.totalPayable)}
           <span className="ml-1 text-xl">円</span>

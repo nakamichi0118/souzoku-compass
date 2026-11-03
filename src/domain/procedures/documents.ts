@@ -154,6 +154,7 @@ export const DOCS: Record<string, DocSpec> = {
   touki: {
     id: "touki",
     category: "不動産",
+    readable: true,
     name: "登記事項証明書（登記簿謄本）",
     purpose: "不動産の所在・地番・面積・持ち主を確認する",
     where: "全国どこの法務局でも取れる",
@@ -207,6 +208,7 @@ export const DOCS: Record<string, DocSpec> = {
   funeralReceipt: {
     id: "funeralReceipt",
     category: "その他",
+    readable: true,
     name: "葬儀の領収書・お布施などのメモ",
     purpose: "葬祭費の申請と、相続税の葬式費用の控除に使う",
     where: "葬儀社・寺院（お布施など領収書がないものは、日付・相手・金額をメモ）",

@@ -10,7 +10,10 @@ export function filingSteps(c: Case, r: TaxResult | null) {
     heirs: c.persons.length > 0,
     assets: c.assets.length > 0,
     debts: true,
-    division: c.allocations.length > 0,
+    // 保険金・退職金（受取人が取得）以外のすべての財産に、取得する人が決まっていること
+    division:
+      c.assets.length > 0 &&
+      c.assets.filter((a) => a.kind !== "insurance" && a.kind !== "retirement").every((a) => c.allocations.some((x) => x.assetId === a.id && x.shares.some((s) => s.numerator > 0))),
     tax: !!r,
     documents: true,
   };

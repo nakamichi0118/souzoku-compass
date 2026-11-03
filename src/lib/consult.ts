@@ -23,6 +23,7 @@ export function consultPoints(c: Case, r: TaxResult | null): string[] {
     if (a.kind === "unlistedStock") out.push(`非上場株式「${a.label}」の評価をお願いしたい。`);
     if (a.foreign) out.push(`国外の財産「${a.label}」がある。`);
   }
+  if (c.decedent.priorInheritanceTax) out.push("亡くなった方が10年以内の相続で相続税を納めている（相次相続控除を計算してほしい）。");
   for (const p of c.persons) {
     if (p.predeceased && p.deathDate && c.decedent.deathDate && p.deathDate > c.decedent.deathDate)
       out.push(`${p.name || "相続人"}さんが亡くなった方より後に亡くなっている（数次相続）。`);

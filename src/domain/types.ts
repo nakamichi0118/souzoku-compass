@@ -65,6 +65,8 @@ export interface Decedent {
   deathDate: ISODate;
   address: string;
   occupation?: string;
+  /** 亡くなった方が、亡くなる前10年以内に相続で財産を受け取り相続税を納めていた（相次相続控除の対象。自動計算の対象外） */
+  priorInheritanceTax?: boolean;
 }
 
 export type AssetKind =
@@ -87,6 +89,8 @@ export interface AssetBase {
   label: string;
   /** 国外財産。自動完結の対象外 */
   foreign?: boolean;
+  /** 書類から読み取って登録したが、まだ確かめていない・入っていない項目（確認待ち） */
+  pending?: string[];
 }
 
 export type LandMethod =

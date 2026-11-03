@@ -118,6 +118,13 @@ export function valueAsset(a: Asset): Valuation {
         steps: [`固定資産税評価額 ${a.fixedAssetValue.toLocaleString()}円 × 1.0`],
       };
     case "condo": {
+      if (!(a.exclusiveAreaSqm > 0) || !(a.landShareSqm > 0) || !(a.totalFloors > 0) || !(a.landValueBeforeCorrection > 0)) {
+        return {
+          value: 0,
+          steps: [],
+          needsConsultation: "区分所有補正に使う値（専有面積・敷地権の面積・総階数）と敷地利用権の評価額がそろっていません。登記事項証明書などを見て入力してください。",
+        };
+      }
       const c = condoCorrection(a);
       const land = Math.floor((a.landValueBeforeCorrection * c.correction) / 10000);
       const bldg = Math.floor((a.buildingFixedAssetValue * c.correction) / 10000);

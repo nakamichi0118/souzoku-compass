@@ -3,6 +3,8 @@
 import { Card, Field, Note, TextInput } from "@/components/ui";
 import { addMonths, isValidDate, nextOpenDay } from "@/domain/procedures/dates";
 import { useCase } from "@/lib/store";
+import { Choice } from "@/components/plan/inputs";
+import { ConsultLink } from "@/components/compass/ConsultLink";
 import { wareki } from "@/forms/format";
 
 export function DecedentStep() {
@@ -44,6 +46,30 @@ export function DecedentStep() {
             />
           </Field>
         </div>
+      </Card>
+      <Card title="10年以内の相続">
+        <p className="text-sm text-stone-700">亡くなった方は、亡くなる前の10年以内に、ほかの方の相続で財産を受け取り、相続税を納めましたか？</p>
+        <p className="mt-1 text-xs text-stone-500">たとえば、先に亡くなった配偶者や子どもから相続していた場合です。納めた相続税の一部を今回の相続税から差し引ける「相次相続控除」の対象になります。</p>
+        <div className="mt-3">
+          <Choice
+            value={d.priorInheritanceTax ?? false}
+            onChange={(v) => update((c) => ({ ...c, decedent: { ...c.decedent, priorInheritanceTax: v } }))}
+            options={[
+              { value: false, label: "いいえ・分からない" },
+              { value: true, label: "はい" },
+            ]}
+          />
+        </div>
+        {d.priorInheritanceTax && (
+          <div className="mt-3">
+            <Note tone="stop">
+              相続コンパスでは、相次相続控除の計算と申告書（第7表）の作成はできません。前回の相続の申告書の控えを用意して、税理士にご相談ください。
+              <span className="mt-2 block">
+                <ConsultLink topic="相次相続控除" />
+              </span>
+            </Note>
+          </div>
+        )}
       </Card>
       {outOfScope ? (
         <Note tone="stop">相続コンパスは令和8年（2026年）中に亡くなった方の相続を対象にしています。それ以外の年は税制や様式が異なります。</Note>

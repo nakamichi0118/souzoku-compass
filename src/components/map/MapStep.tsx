@@ -348,6 +348,7 @@ function MapWorkspace() {
     if (!land || !lot || !evaluation) return;
     const prev = land.method.type === "rosenka" ? land.method : undefined;
     patchLand({
+      pending: land.pending?.filter((x) => !/路線価|奥行|倍率/.test(x)).length ? land.pending.filter((x) => !/路線価|奥行|倍率/.test(x)) : undefined,
       areaSqm: land.areaSqm > 0 ? land.areaSqm : Math.round(lot.width * lot.depth * 100) / 100,
       method: {
         type: "rosenka",

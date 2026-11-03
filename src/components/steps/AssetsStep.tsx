@@ -9,6 +9,7 @@ import { DISTRICTS, type District } from "@/domain/valuation/depth";
 import { type Edge, type RoadInput, evaluateRoads } from "@/domain/valuation/roads";
 import { newId, useCase } from "@/lib/store";
 import { usePlan } from "@/lib/planStore";
+import { AssetIcon } from "@/components/my/icons";
 import { Choice } from "@/components/plan/inputs";
 import { ConsultLink } from "@/components/compass/ConsultLink";
 import { type Answer, type SmallResidentialCheck, judgeSmallResidential, shouldApply } from "@/domain/valuation/smallResidential";
@@ -224,7 +225,10 @@ export function AssetsStep() {
               className={`scroll-mt-40 rounded-xl border bg-white ${open ? "border-sky-400 shadow-sm" : "border-stone-200"}`}
             >
               <button type="button" onClick={() => setOpenId(open ? null : a.id)} aria-expanded={open} className="flex w-full items-center gap-3 px-4 py-3 text-left">
-                <span className="w-24 shrink-0 rounded bg-stone-100 px-2 py-0.5 text-center text-xs font-medium text-stone-700">{kindLabel(a.kind)}</span>
+                <span className="flex w-28 shrink-0 items-center gap-1.5 rounded bg-stone-100 px-2 py-0.5 text-xs font-medium text-stone-700">
+                  <AssetIcon k={a.kind} className="h-4 w-4 shrink-0" />
+                  <span className="truncate">{kindLabel(a.kind)}</span>
+                </span>
                 <span className={`min-w-0 flex-1 truncate font-semibold ${a.label ? "text-stone-900" : "text-stone-400"}`}>{a.label || "（名称未入力）"}</span>
                 {missingRecipient && <span className="shrink-0 rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-orange-800">受取人が未設定</span>}
                 {docId && (
@@ -232,11 +236,25 @@ export function AssetsStep() {
                     {got ? "書類あり" : "書類まだ"}
                   </span>
                 )}
-                <span className="w-32 shrink-0 text-right font-bold tabular-nums text-teal-800">{line ? `${fmt(line.valuation.value)}円` : "—"}</span>
+                {(a.pending?.length || line?.valuation.needsConsultation) && <span className="shrink-0 rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-orange-800">確認待ち</span>}
+                <span className="w-32 shrink-0 text-right font-bold tabular-nums text-teal-800">{line?.valuation.needsConsultation ? <span className="text-sm text-orange-700">入力待ち</span> : line ? `${fmt(line.valuation.value)}円` : "—"}</span>
                 <ChevronDown className={`h-4 w-4 shrink-0 text-stone-400 transition ${open ? "rotate-180" : ""}`} aria-hidden />
               </button>
               {open && (
                 <div className="space-y-3 border-t border-stone-100 px-4 py-4">
+                  {a.pending && a.pending.length > 0 && (
+                    <Note tone="warn">
+                      <p className="font-semibold">書類から読み取って登録しました。次の項目を確かめて入れてください。</p>
+                      <ul className="mt-1 list-disc pl-5">
+                        {a.pending.map((x) => (
+                          <li key={x}>{x}</li>
+                        ))}
+                      </ul>
+                      <button type="button" onClick={() => patch(a.id, { pending: undefined })} className="mt-2 rounded-lg border border-amber-400 bg-white px-3 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100">
+                        入れて確かめました
+                      </button>
+                    </Note>
+                  )}
                   {applied === a.id && <Note tone="ok">地図で入れた土地の形と路線価を反映しました。評価額は {line ? `${fmt(line.valuation.value)}円` : "計算中"} です。</Note>}
                   {missingRecipient && noHeirs && (
                     <Note tone="warn">
@@ -292,11 +310,17 @@ export function AssetsStep() {
       <div className="sticky bottom-3 z-20 flex justify-end">
         <div className="relative">
           {menu && (
-            <div className="absolute bottom-full right-0 mb-2 w-72 rounded-xl border border-stone-200 bg-white p-2 shadow-xl">
-              <p className="px-2 pb-1 text-xs text-stone-500">追加する財産の種類</p>
-              <div className="grid grid-cols-2 gap-1">
+            <div className="absolute bottom-full right-0 mb-2 w-[min(22rem,calc(100vw-2rem))] rounded-2xl border border-stone-200 bg-white p-3 shadow-xl">
+              <p className="px-1 pb-2 text-xs font-semibold text-stone-500">追加する財産の種類</p>
+              <div className="grid grid-cols-3 gap-2">
                 {KINDS.map((k) => (
-                  <button key={k.kind} type="button" onClick={() => add(k.kind)} className="rounded-lg px-2 py-1.5 text-left text-sm hover:bg-sky-50">
+                  <button
+                    key={k.kind}
+                    type="button"
+                    onClick={() => add(k.kind)}
+                    className="flex flex-col items-center gap-1 rounded-xl border border-stone-100 bg-stone-50/60 px-1 py-2.5 text-center text-xs font-semibold text-stone-700 hover:border-brand hover:bg-brand-soft"
+                  >
+                    <AssetIcon k={k.kind} className="h-6 w-6" />
                     {k.label}
                   </button>
                 ))}

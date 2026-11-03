@@ -240,6 +240,9 @@ export function calculate(c: Case, opts: EngineOptions = {}): TaxResult {
   const legalHeirCount = heirsTax.count;
   const basicDeduction = BASIC_DEDUCTION_BASE + BASIC_DEDUCTION_PER_HEIR * legalHeirCount;
 
+  if (c.decedent.priorInheritanceTax) {
+    blockers.push("亡くなった方が10年以内の相続で相続税を納めているため、相次相続控除の対象になります。相続コンパスでは相次相続控除を計算できないので、税理士にご相談ください。");
+  }
   for (const p of c.persons) {
     if (p.nonResident && !p.predeceased) {
       blockers.push(`${p.name}さんは国外に住所があります。非居住者がいる相続は税理士にご相談ください。`);
