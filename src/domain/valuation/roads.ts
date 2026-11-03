@@ -1,17 +1,22 @@
 /**
- * 2つ以上の道路に面する宅地の1㎡当たりの価額（財産評価基本通達15〜18）。
+ * 道路に面する宅地の1㎡当たりの価額（財産評価基本通達15〜18・20-4）。
  *
  * - 正面路線：路線価 × 奥行価格補正率 が最も高い道路（通達16(1)）
  * - 側方路線（正面の隣の辺の道路）：その路線価を正面路線とみなして奥行価格補正をした額 × 側方路線影響加算率（付表2）
  * - 裏面路線（正面の向かいの辺の道路）：同じく × 二方路線影響加算率（付表3）
  * - 三方・四方は上を併用（通達18）
+ * - 間口狭小・奥行長大（通達20-4）：正面の道路の間口距離が入っていれば、ここまでの1㎡当たりの価額に
+ *   間口狭小補正率（付表6）× 奥行長大補正率（付表7。奥行距離 ÷ 間口距離 で決まる）を掛ける（1円未満切捨て）。
+ *   ビル街地区で間口8m未満は表に定めがないため 1.00 とする。間口距離が入っていなければ補正しない
  *
  * 安全側（高め）に評価する：角地と準角地の区別は角地の加算率を使い、側方路線に一部しか接しない場合の
- * 按分や、間口狭小・奥行長大・不整形地などの減額の補正はしない。減額できる場合は税理士への相談を案内する。
- * 出典：https://www.nta.go.jp/law/tsutatsu/kihon/sisan/hyoka_new/02/02.htm
- *       https://www.nta.go.jp/law/tsutatsu/kihon/sisan/hyoka_new/02/07.htm（付表1〜3）
+ * 按分や、不整形地などの減額の補正はしない。減額できる場合は税理士への相談を案内する。
+ * 出典：https://www.nta.go.jp/law/tsutatsu/kihon/sisan/hyoka_new/02/02.htm（通達15〜18）
+ *       https://www.nta.go.jp/law/tsutatsu/kihon/sisan/hyoka_new/02/03.htm（通達20-4）
+ *       https://www.nta.go.jp/law/tsutatsu/kihon/sisan/hyoka_new/02/07.htm（付表1〜3・6・7）
  */
 import { type District, depthCorrection } from "./depth";
+import { frontageRate100, longRate100 } from "./frontage";
 
 /** 土地の辺の番号。0の向かいが2、1の向かいが3（四角形の辺を順に数えたもの） */
 export type Edge = 0 | 1 | 2 | 3;
@@ -69,8 +74,14 @@ export interface RoadLine extends RoadInput {
 
 export interface MultiRoadResult {
   lines: RoadLine[];
-  /** 1㎡当たりの価額（円） */
+  /** 1㎡当たりの価額（円）。間口狭小・奥行長大の補正をした後 */
   perSqm: number;
+  /** 間口狭小・奥行長大の補正をする前の1㎡当たりの価額（円）。側方・二方の加算後 */
+  basePerSqm: number;
+  /** 間口狭小補正率（正面の道路に間口距離が入っているときだけ。ビル街地区で間口8m未満は1） */
+  frontageRate?: number;
+  /** 奥行長大補正率（正面の道路に間口距離が入っているときだけ） */
+  longRate?: number;
   front: RoadLine;
   steps: string[];
 }
@@ -90,7 +101,7 @@ export function evaluateRoads(district: District, roads: RoadInput[]): MultiRoad
     const addRate = back ? backRate(district) : sideRate(district);
     return { ...r, role: back ? "back" : "side", addRate, addition: Math.floor((r.corrected * milli(addRate)) / 1000) };
   });
-  const perSqm = lines.reduce((s, l) => s + (l.role === "front" ? l.corrected : l.addition), 0);
+  const basePerSqm = lines.reduce((s, l) => s + (l.role === "front" ? l.corrected : l.addition), 0);
   const yen = (n: number) => n.toLocaleString("ja-JP");
   const name = { front: "正面", side: "側方", back: "裏面" } as const;
   lines.sort((a, b) => ["front", "side", "back"].indexOf(a.role) - ["front", "side", "back"].indexOf(b.role));
@@ -103,7 +114,23 @@ export function evaluateRoads(district: District, roads: RoadInput[]): MultiRoad
         ? `正面路線 ${yen(l.price)}円 × 奥行価格補正率 ${l.depthRate}（奥行${l.depth}m） = ${yen(l.corrected)}円`
         : `${label(l)} ${yen(l.price)}円 × 奥行価格補正率 ${l.depthRate} × ${l.role === "side" ? "側方路線影響加算率" : "二方路線影響加算率"} ${l.addRate} = ${yen(l.addition)}円`,
     ),
-    ...(lines.length > 1 ? [`1㎡当たり ${yen(perSqm)}円`] : []),
+    ...(lines.length > 1 ? [`1㎡当たり ${yen(basePerSqm)}円`] : []),
   ];
-  return { lines, perSqm, front: lines.find((l) => l.role === "front")!, steps };
+  const frontLine = lines.find((l) => l.role === "front")!;
+  // 間口狭小・奥行長大の補正（通達20-4）。正面の道路の間口距離が入っているときだけ
+  const fr = frontLine.frontage;
+  if (!(fr != null && fr > 0)) return { lines, perSqm: basePerSqm, basePerSqm, front: frontLine, steps };
+  const table = frontageRate100(district, fr);
+  const f100 = table ?? 100; // ビル街地区で間口8m未満は表に定めがないため補正しない
+  const l100 = longRate100(district, frontLine.depth, fr);
+  // 2つの率を掛けた値（小数4桁）で1回だけ1円未満を切り捨てる。ありえない大きさの入力でも止まらないよう、安全な整数でなければ通常の計算にする
+  const perSqm = Number.isSafeInteger(basePerSqm)
+    ? Number((BigInt(basePerSqm) * BigInt(f100) * BigInt(l100)) / 10000n)
+    : Math.floor((basePerSqm * f100 * l100) / 10000);
+  const rate = (x: number) => (x / 100).toFixed(2);
+  steps.push(
+    ...(table == null ? [`ビル街地区で間口${fr}m（8m未満）は間口狭小補正率表に定めがないため、間口狭小補正率を1.00とします`] : []),
+    `間口狭小補正率 ${rate(f100)}（間口${fr}m）× 奥行長大補正率 ${rate(l100)}（奥行${frontLine.depth}m ÷ 間口${fr}m）：${yen(basePerSqm)}円 × ${rate(f100)} × ${rate(l100)} = ${yen(perSqm)}円`,
+  );
+  return { lines, perSqm, basePerSqm, frontageRate: f100 / 100, longRate: l100 / 100, front: frontLine, steps };
 }

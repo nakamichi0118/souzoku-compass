@@ -1,16 +1,23 @@
 "use client";
 
-import { Card, Field, Note, TextInput } from "@/components/ui";
+import Link from "next/link";
+import { Card, Field, Note, TextInput, YenInput, fmt } from "@/components/ui";
 import { isValidDate, monthsDeadline, nextOpenDay } from "@/domain/procedures/dates";
+import type { Decedent } from "@/domain/types";
 import { useCase } from "@/lib/store";
 import { Choice } from "@/components/plan/inputs";
-import { ConsultLink } from "@/components/compass/ConsultLink";
 import { wareki } from "@/forms/format";
 
 export function DecedentStep() {
-  const { data, update } = useCase();
+  const { data, update, result } = useCase();
   const d = data.decedent;
   const set = (k: keyof typeof d, v: string) => update((c) => ({ ...c, decedent: { ...c.decedent, [k]: v } }));
+  const pi = d.priorInheritance ?? {};
+  // 相続人ごとに差し引く相次相続控除の合計（それぞれの相続税額が上限）
+  const successive = result?.persons.reduce((s, p) => s + p.successiveCredit, 0) ?? 0;
+  // 前の相続の内容（空欄は undefined にして、入っていないことが分かるようにする）
+  const setPrior = (p: Partial<NonNullable<Decedent["priorInheritance"]>>) =>
+    update((c) => ({ ...c, decedent: { ...c.decedent, priorInheritance: { ...c.decedent.priorInheritance, ...p } } }));
   // やることリスト・カレンダーと同じ計算（応当日がなければ月末、休みの日なら次の開いている日）
   const deadline = d.deathDate && isValidDate(d.deathDate) ? nextOpenDay(monthsDeadline(d.deathDate, 10)) : null;
   const outOfScope = d.deathDate && !d.deathDate.startsWith("2026");
@@ -61,13 +68,32 @@ export function DecedentStep() {
           />
         </div>
         {d.priorInheritanceTax && (
-          <div className="mt-3">
-            <Note tone="stop">
-              相続コンパスでは、相次相続控除の計算と申告書（第7表）の作成はできません。前回の相続の申告書の控えを用意して、税理士にご相談ください。
-              <span className="mt-2 block">
-                <ConsultLink topic="相次相続控除" />
-              </span>
-            </Note>
+          <div className="mt-4 space-y-3">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field label="前の相続があった日" hint={wareki(pi.date)?.text ?? "前に亡くなった方が亡くなった日"}>
+                <TextInput type="date" value={pi.date ?? ""} onChange={(e) => setPrior({ date: e.target.value || undefined })} />
+              </Field>
+              <Field label="そのとき納めた相続税">
+                <YenInput value={pi.prevTax} onChange={(v) => setPrior({ prevTax: v > 0 ? v : undefined })} />
+              </Field>
+              <Field label="そのとき受け取った財産の額" hint="債務を引いた後の額。前の申告書の第1表④">
+                <YenInput value={pi.prevAcquired} onChange={(v) => setPrior({ prevAcquired: v > 0 ? v : undefined })} />
+              </Field>
+            </div>
+            {successive > 0 && <Note tone="ok">今回の相続税から、家族全体で {fmt(successive)}円 を差し引けます（相次相続控除）。</Note>}
+            <details className="text-xs text-stone-600">
+              <summary className="cursor-pointer font-medium text-teal-800">Tips：差し引ける額の計算</summary>
+              <div className="mt-2 space-y-1 leading-relaxed">
+                <p>差し引ける額の合計 ＝ A × C ÷（B − A）×（10 − E）÷ 10（相続税法20条）</p>
+                <ul className="list-disc space-y-1 pl-5">
+                  <li>A：そのとき納めた相続税（延滞税・加算税は含めません）</li>
+                  <li>B：そのとき受け取った財産の額（債務を引いた後）</li>
+                  <li>C：今回の相続で財産を受け取る人全員の財産の額の合計（債務を引いた後。自動で計算します）。C ÷（B − A）が1を超えるときは1にします</li>
+                  <li>E：前の相続があった日から今回亡くなった日までの年数（1年未満は切り捨て）。10年以上たっていれば差し引けません</li>
+                </ul>
+                <p>この合計を、今回財産を受け取る相続人ごとに、受け取る財産の額の割合で分けて、それぞれの相続税から差し引きます。相続を放棄した人や、相続人でない人は差し引けません。</p>
+              </div>
+            </details>
           </div>
         )}
       </Card>
@@ -87,14 +113,13 @@ export function DecedentStep() {
           />
         </div>
         {d.settlementGift && (
-          <div className="mt-3">
-            <Note tone="stop">
-              相続コンパスでは、相続時精算課税を選んだ贈与がある場合の計算と申告書（第11の2表）の作成はできません。贈与税の申告書の控えを用意して、税理士にご相談ください。
-              <span className="mt-2 block">
-                <ConsultLink topic="相続時精算課税" />
-              </span>
-            </Note>
-          </div>
+          <p className="mt-3 text-sm text-stone-700">
+            その贈与は
+            <Link href="/case/debts" className="mx-1 font-semibold underline">
+              債務・葬式費用
+            </Link>
+            の画面の贈与の一覧に入れて、「相続時精算課税」に印を付けてください。
+          </p>
         )}
       </Card>
       {outOfScope ? (

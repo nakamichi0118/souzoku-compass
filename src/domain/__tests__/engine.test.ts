@@ -347,13 +347,19 @@ describe("未成年者控除・障害者控除の対象", () => {
     expect(b.age).toBe(0);
     expect(b.minorCredit + b.minorExcess).toBe(1_800_000);
   });
-  it("引ききれない控除は、ほかに税額のある人がいれば止める（扶養義務者からの控除は自動計算しない）", () => {
+  it("引ききれない控除は、ほかに税額のある扶養義務者の相続税から引く（相続税法19条の3第2項）", () => {
+    // 総額 500万（課税遺産総額 4,000万）。算出税額 長男 4,878,048・次男 121,951（按分割合10桁）
+    // 次男（2歳）の未成年者控除 160万：本人 121,951、残り 1,478,049 を長男から → 3,399,999 → 3,399,900円
     const minor: Person = { id: "m", name: "次男", relation: "child", birthDate: "2024-01-01" }; // 2歳 → 160万円
     const r = calculate(mk([c1, minor], [dep("預金", 80_000_000), dep("少し", 2_000_000)], [all("預金", ["c1", 1, 1]), all("少し", ["m", 1, 1])]));
     const m = r.persons.find((p) => p.person.id === "m")!;
-    expect(m.minorExcess).toBeGreaterThan(0);
+    expect(m.minorCredit).toBe(121_951);
+    expect(m.minorExcess).toBe(1_478_049);
     expect(m.beforeOtherCredits).toBe(m.minorCredit);
-    expect(r.blockers.some((b) => b.includes("扶養義務者"))).toBe(true);
+    const a = r.persons.find((p) => p.person.id === "c1")!;
+    expect(a.transfersIn).toEqual([{ fromId: "m", kind: "minor", amount: 1_478_049 }]);
+    expect(a.payable).toBe(3_399_900);
+    expect(r.blockers).toEqual([]);
   });
   it("ほかに税額のある人がいなければ止めずに知らせるだけ", () => {
     const minor: Person = { id: "m", name: "長男", relation: "child", birthDate: "2024-01-01" };
@@ -384,7 +390,7 @@ describe("2割加算と代襲", () => {
 });
 
 describe("自動では計算できない事項", () => {
-  it("相続時精算課税を選んだ贈与があれば止める", () => {
+  it("相続時精算課税を選んだと答えたのに、その贈与が入っていなければ止める", () => {
     const r = calculate({ ...mk([c1], [dep("預金", 50_000_000)], [all("預金", ["c1", 1, 1])]), decedent: { ...decedent, settlementGift: true } });
     expect(r.blockers.some((b) => b.includes("相続時精算課税"))).toBe(true);
   });

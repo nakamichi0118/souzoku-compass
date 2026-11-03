@@ -1,0 +1,511 @@
+/**
+ * 未分割・代償金・相続時精算課税・相次相続控除・扶養義務者への控除の移し・相続人不存在・小規模宅地等の種類の計算。
+ * 期待値は、テストごとのコメントの手計算（申告書の欄の順）で出したもの。亡くなった日はすべて 2026-03-15。
+ */
+import { describe, expect, it } from "vitest";
+import { calculate } from "../tax/engine";
+import { consultPoints } from "@/lib/consult";
+import type { Asset, Case, Person } from "../types";
+import type { SmallResidentialCheck } from "../valuation/smallResidential";
+
+const decedent = { name: "相続 太郎", birthDate: "1950-01-01", deathDate: "2026-03-15", address: "東京都千代田区" };
+const dep = (id: string, amount: number): Asset => ({ id, kind: "deposit", label: id, amount });
+const all = (assetId: string, ...s: [string, number, number][]) => ({
+  assetId,
+  shares: s.map(([personId, numerator, denominator]) => ({ personId, numerator, denominator })),
+});
+const mk = (persons: Person[], assets: Asset[], allocations: Case["allocations"], extra: Partial<Case> = {}): Case => ({
+  id: "t",
+  title: "t",
+  decedent,
+  persons,
+  assets,
+  allocations,
+  debts: [],
+  priorGifts: [],
+  ...extra,
+});
+const spouse: Person = { id: "s", name: "妻", relation: "spouse" };
+const c1: Person = { id: "c1", name: "長男", relation: "child" };
+const c2: Person = { id: "c2", name: "長女", relation: "child" };
+const of = (r: ReturnType<typeof calculate>, id: string) => r.persons.find((p) => p.person.id === id)!;
+const land = (id: string, areaSqm: number, value: number, acquirerId: string, over: Partial<Extract<Asset, { kind: "land" }>> = {}, check?: SmallResidentialCheck): Asset => ({
+  id,
+  kind: "land",
+  label: id,
+  location: "x",
+  areaSqm,
+  landUse: "宅地",
+  method: { type: "manual", value },
+  smallResidential: { applies: true, acquirerId, ...(check ? { check } : {}) },
+  ...over,
+});
+
+describe("未分割（相続税法55条）", () => {
+  it("分け方が決まっていない財産は法定相続分で取得したものとし、配偶者の税額軽減は使えない", () => {
+    // 預金1.5億円を未分割。妻 1/2 = 7,500万、子 1/4 = 3,750万ずつ（すべて未分割財産）
+    // 課税遺産総額 1.5億 − 4,800万 = 1億200万 → 5,100万×30%−700万 = 830万、2,550万×15%−50万 = 332.5万×2 → 総額 1,495万
+    // 第5表：③分割財産 0、⑤未分割 7,500万、⑧ 0 → 軽減 0。妻は 1,495万×1/2 = 747.5万を納める
+    const r = calculate(mk([spouse, c1, c2], [dep("預金", 150_000_000)], [], { undivided: true }));
+    expect(r.blockers).toEqual([]);
+    expect(r.undivided).toBe(true);
+    expect(r.assets[0].byPerson).toEqual([
+      { personId: "s", amount: 75_000_000 },
+      { personId: "c1", amount: 37_500_000 },
+      { personId: "c2", amount: 37_500_000 },
+    ]);
+    expect(r.assets[0].undivided).toEqual(r.assets[0].byPerson);
+    expect(of(r, "s").undivided).toBe(75_000_000);
+    expect(of(r, "s").inherited).toBe(75_000_000);
+    expect(r.totalTax).toBe(14_950_000);
+    expect(r.spouse).toMatchObject({ divided: 0, undivided: 75_000_000, debtsOverUndivided: 0, spouseTaxable: 0, base: 0, credit: 0 });
+    expect(of(r, "s").payable).toBe(7_475_000);
+    expect(r.totalPayable).toBe(14_950_000);
+    expect(r.warnings.some((w) => w.includes("申告期限後3年以内の分割見込書") && w.includes("更正の請求"))).toBe(true);
+  });
+
+  it("一部だけ決まった財産：決まっていない割合を法定相続分で分け、1円未満の端数は割合がいちばん大きい人に寄せる", () => {
+    // 100,000,001円のうち妻に1/2。残り1/2を 妻1/4・長男1/8・長女1/8 で分ける
+    // 切捨て 50,000,000 + 25,000,000 + 12,500,000 + 12,500,000 = 100,000,000、残り1円は割合1/2（妻の分割分）へ
+    const r = calculate(mk([spouse, c1, c2], [dep("預金", 100_000_001)], [all("預金", ["s", 1, 2])], { undivided: true }));
+    expect(r.blockers).toEqual([]);
+    expect(r.assets[0].byPerson).toEqual([
+      { personId: "s", amount: 75_000_001 },
+      { personId: "c1", amount: 12_500_000 },
+      { personId: "c2", amount: 12_500_000 },
+    ]);
+    expect(of(r, "s").undivided).toBe(25_000_000);
+  });
+
+  it("相続分が同じ人の端数は、家族の一覧で先の人に寄せる", () => {
+    // 1,000,001円を長女・長男（一覧の順）で 1/2 ずつ：500,000円ずつ、残り1円は先の長女へ
+    const r = calculate(mk([c2, c1], [dep("預金", 1_000_001)], [], { undivided: true }));
+    expect(r.assets[0].byPerson).toEqual([
+      { personId: "c2", amount: 500_001 },
+      { personId: "c1", amount: 500_000 },
+    ]);
+  });
+
+  it("小規模宅地等は取得者が受け継ぐと決まった部分だけに使い、配偶者の税額軽減の基は第5表のとおり", () => {
+    // 自宅 200㎡ 6,000万円のうち妻に1/2（3,000万・100㎡）。残り1/2は未分割（妻・長男 1,500万ずつ）。預金1億円は長男
+    // 小規模宅地等：妻の分割分 3,000万×80% = 2,400万を減額 → 妻 3,000万−2,400万+1,500万 = 2,100万、長男 1億+1,500万 = 1億1,500万
+    // 課税価格 1億3,600万 − 4,200万 = 9,400万 → 4,700万×20%−200万 = 740万×2 → 総額 1,480万
+    // 按分（10桁）：妻 0.1544117647 → 2,285,294円、長男 0.8455882353 → 12,514,705円
+    // 第5表：③分割財産 2,100万−1,500万 = 600万、⑤未分割 1,500万、⑥ 0、⑧ 600万 → 1,480万×600万/1億3,600万 = 652,941円
+    // 妻 2,285,294−652,941 = 1,632,353 → 1,632,300円、長男 12,514,700円
+    const r = calculate(
+      mk([spouse, c1], [land("自宅", 200, 60_000_000, "s"), dep("預金", 100_000_000)], [all("自宅", ["s", 1, 2]), all("預金", ["c1", 1, 1])], { undivided: true }),
+    );
+    expect(r.blockers).toEqual([]);
+    expect(r.assets[0].reduction).toBe(24_000_000);
+    expect(r.assets[0].small).toMatchObject({ area: 100, value: 30_000_000, selectedArea: 100, kind: "residence", rate: 80 });
+    expect(of(r, "s").taxable).toBe(21_000_000);
+    expect(of(r, "c1").taxable).toBe(115_000_000);
+    expect(r.totalTax).toBe(14_800_000);
+    expect(r.spouse).toMatchObject({ divided: 6_000_000, debts: 0, undivided: 15_000_000, spouseTaxable: 6_000_000, base: 6_000_000, creditBase: 652_941, credit: 652_941 });
+    expect(of(r, "s").payable).toBe(1_632_300);
+    expect(of(r, "c1").payable).toBe(12_514_700);
+  });
+
+  it("全部が未分割の宅地には小規模宅地等を使わず、その旨と後から使う方法を知らせる", () => {
+    const r = calculate(mk([spouse, c1], [land("自宅", 200, 60_000_000, "s"), dep("預金", 40_000_000)], [all("預金", ["c1", 1, 1])], { undivided: true }));
+    expect(r.blockers).toEqual([]);
+    expect(r.assets[0].reduction).toBe(0);
+    expect(r.assets[0].small).toBeUndefined();
+    expect(r.warnings.some((w) => w.includes("「自宅」は分け方が決まっていないため") && w.includes("更正の請求"))).toBe(true);
+  });
+
+  it("配偶者の債務が未分割財産より多いときは、その差を分割財産から引く（第5表⑥）", () => {
+    // 預金1億円を未分割（妻・長男 5,000万ずつ）、保険金2,000万（妻。非課税1,000万）は分割財産と同じ扱い。
+    // 妻の葬式費用 6,000万（説明のための大きな額）→ ⑥ = 6,000万−5,000万 = 1,000万、③ 1,000万 → ⑧ 0
+    const r = calculate(
+      mk([spouse, c1], [dep("預金", 100_000_000), { id: "保険", kind: "insurance", label: "保険", amount: 20_000_000, recipientId: "s" }], [], {
+        undivided: true,
+        debts: [{ id: "f", kind: "funeral", label: "葬式", amount: 60_000_000, bearers: [{ personId: "s", amount: 60_000_000 }] }],
+      }),
+    );
+    expect(r.blockers).toEqual([]);
+    expect(r.spouse).toMatchObject({ divided: 10_000_000, debts: 60_000_000, undivided: 50_000_000, debtsOverUndivided: 10_000_000, spouseTaxable: 0 });
+  });
+
+  it("負担する人を入れていない債務は、未分割なら法定相続分で負担したものとする", () => {
+    // 1,000,001円 → 妻 500,000（+端数1円）、長男・長女 250,000
+    const r = calculate(
+      mk([spouse, c1, c2], [dep("預金", 100_000_000)], [], {
+        undivided: true,
+        debts: [{ id: "d", kind: "debt", label: "借入", amount: 1_000_001, bearers: [] }],
+      }),
+    );
+    expect(r.blockers).toEqual([]);
+    expect([of(r, "s").debts, of(r, "c1").debts, of(r, "c2").debts]).toEqual([500_001, 250_000, 250_000]);
+    expect(r.warnings.some((w) => w.includes("「借入」は負担する人が決まっていない"))).toBe(true);
+  });
+
+  it("チェックがないときは、取得者が決まっていない財産で止め、分け方の画面のチェックを案内する", () => {
+    const none = calculate(mk([spouse, c1], [dep("預金", 50_000_000)], []));
+    expect(none.blockers.some((b) => b.includes("「分け方がまだ決まっていない」にチェック"))).toBe(true);
+    const part = calculate(mk([spouse, c1], [dep("預金", 50_000_000)], [all("預金", ["s", 1, 2])]));
+    expect(part.blockers.some((b) => b.includes("（いま 50%）") && b.includes("「分け方がまだ決まっていない」"))).toBe(true);
+    // 合計が1を超えるときは、チェックがあっても止める
+    const over = calculate(mk([spouse, c1], [dep("預金", 50_000_000)], [all("預金", ["s", 1, 2], ["c1", 2, 3])], { undivided: true }));
+    expect(over.blockers.some((b) => b.includes("取得割合の合計が1になっていません"))).toBe(true);
+  });
+
+  it("全部の財産の分け方が決まっていれば、チェックがあってもなくても結果は同じ", () => {
+    const assets = [land("自宅", 200, 50_000_000, "s"), dep("預金", 80_000_000)];
+    const allocs = [all("自宅", ["s", 1, 1]), all("預金", ["s", 1, 4], ["c1", 3, 4])];
+    const a = calculate(mk([spouse, c1], assets, allocs));
+    const b = calculate(mk([spouse, c1], assets, allocs, { undivided: true }));
+    expect(b.undivided).toBe(false);
+    expect(b.persons.map((p) => [p.taxable, p.spouseCredit, p.payable])).toEqual(a.persons.map((p) => [p.taxable, p.spouseCredit, p.payable]));
+    expect(b.spouse).toEqual(a.spouse);
+    expect(b.warnings).toEqual(a.warnings);
+  });
+});
+
+describe("代償金（相基通11の2-9）", () => {
+  it("払う人の取得財産から引き、受け取る人に足す", () => {
+    // 預金1億円を長男、長男→長女 3,000万。長男 7,000万・長女 3,000万
+    // 課税遺産総額 1億−4,200万 = 5,800万 → 2,900万×15%−50万 = 385万×2 → 総額 770万。長男 539万、長女 231万
+    const r = calculate(mk([c1, c2], [dep("預金", 100_000_000)], [all("預金", ["c1", 1, 1])], { compensation: [{ fromId: "c1", toId: "c2", amount: 30_000_000 }] }));
+    expect(r.blockers).toEqual([]);
+    expect(of(r, "c1")).toMatchObject({ inherited: 70_000_000, compensationOut: 30_000_000, compensationIn: 0, taxable: 70_000_000, payable: 5_390_000 });
+    expect(of(r, "c2")).toMatchObject({ inherited: 30_000_000, compensationIn: 30_000_000, acquiresSomething: true, taxable: 30_000_000, payable: 2_310_000 });
+  });
+
+  it("代償金だけを受け取った人も財産を取得した人なので、3年以内の贈与を足す", () => {
+    const r = calculate(
+      mk([c1, c2], [dep("預金", 100_000_000)], [all("預金", ["c1", 1, 1])], {
+        compensation: [{ fromId: "c1", toId: "c2", amount: 30_000_000 }],
+        priorGifts: [{ personId: "c2", date: "2025-05-01", amount: 1_000_000, giftTaxPaid: 0 }],
+      }),
+    );
+    expect(of(r, "c2").gifts).toBe(1_000_000);
+    expect(of(r, "c2").taxable).toBe(31_000_000);
+  });
+
+  it("保険金を代償金にあてる：保険金も払う人が受け取った財産として数え、取得財産の価額から引く", () => {
+    // 長男：預金2,000万＋保険金5,000万（非課税1,000万）− 代償金4,000万 = 2,000万。長女：預金3,000万＋4,000万 = 7,000万
+    const r = calculate(
+      mk(
+        [c1, c2],
+        [dep("A", 20_000_000), dep("B", 30_000_000), { id: "保険", kind: "insurance", label: "保険", amount: 50_000_000, recipientId: "c1" }],
+        [all("A", ["c1", 1, 1]), all("B", ["c2", 1, 1])],
+        { compensation: [{ fromId: "c1", toId: "c2", amount: 40_000_000 }] },
+      ),
+    );
+    expect(r.blockers).toEqual([]);
+    expect(of(r, "c1")).toMatchObject({ inherited: -20_000_000, acquired: 20_000_000, taxable: 20_000_000 });
+    expect(of(r, "c2").taxable).toBe(70_000_000);
+  });
+
+  it.each([
+    ["金額が0円", { fromId: "c1", toId: "c2", amount: 0 }, "1円以上の整数"],
+    ["金額が整数でない", { fromId: "c1", toId: "c2", amount: 1.5 }, "1円以上の整数"],
+    ["同じ人", { fromId: "c1", toId: "c1", amount: 1_000_000 }, "同じ人"],
+    ["一覧にいない人", { fromId: "c1", toId: "x", amount: 1_000_000 }, "相続人の一覧から選んで"],
+    ["受け継ぐ財産より多い", { fromId: "c1", toId: "c2", amount: 30_000_001 }, "受け継ぐ財産の評価額（30,000,000円）より多く"],
+  ])("%s なら止める", (_, comp, word) => {
+    const r = calculate(mk([c1, c2], [dep("A", 30_000_000), dep("B", 70_000_000)], [all("A", ["c1", 1, 1]), all("B", ["c2", 1, 1])], { compensation: [comp] }));
+    expect(r.blockers.some((b) => b.includes(word))).toBe(true);
+  });
+});
+
+describe("相続時精算課税（相続税法21条の15・21条の16）", () => {
+  const settled = (gifts: Case["priorGifts"], deposit = 50_000_000) =>
+    calculate({ ...mk([c1], [dep("預金", deposit)], [all("預金", ["c1", 1, 1])], { priorGifts: gifts }), decedent: { ...decedent, settlementGift: true } });
+
+  it("期間に関係なく足し、令和6年以後の贈与は年110万円を引く。納めた贈与税は⑰で引く", () => {
+    // ② = 2023年 2,000万（全額）＋ 2024年 (1,000万+100万)−110万 = 990万 ＋ 2025年 100万−110万 → 0 = 2,990万
+    // 課税価格 5,000万+2,990万 = 7,990万、課税遺産総額 7,990万−3,600万 = 4,390万 → 4,390万×20%−200万 = 678万
+    // ⑯ 678万 − ⑰ 98万 = 580万
+    const r = settled([
+      { personId: "c1", date: "2023-06-01", amount: 20_000_000, giftTaxPaid: 0, settlement: true },
+      { personId: "c1", date: "2024-05-10", amount: 10_000_000, giftTaxPaid: 980_000, settlement: true },
+      { personId: "c1", date: "2024-08-01", amount: 1_000_000, giftTaxPaid: 0, settlement: true },
+      { personId: "c1", date: "2025-05-10", amount: 1_000_000, giftTaxPaid: 0, settlement: true },
+    ]);
+    expect(r.blockers).toEqual([]);
+    const p = r.persons[0];
+    expect(p.settlementGifts).toBe(29_900_000);
+    expect(p.gifts).toBe(0); // 3年以内でも暦年課税の加算には入れない
+    expect(p.giftTaxCredit).toBe(0);
+    expect(p.net).toBe(79_900_000);
+    expect(r.totalTax).toBe(6_780_000);
+    expect(p.afterCredits).toBe(6_780_000);
+    expect(p.settlementCredit).toBe(980_000);
+    expect(p.payable).toBe(5_800_000);
+    expect(p.refund).toBe(0);
+    expect(r.warnings.some((w) => w.includes("110万円"))).toBe(true);
+  });
+
+  it("引ききれない贈与税は還付（1円単位）", () => {
+    // 課税価格 1,000万+3,000万 = 4,000万 → 課税遺産総額 400万 → 40万。⑯ 40万 − ⑰ 100万 = −60万 → 還付 60万
+    const r = settled([{ personId: "c1", date: "2021-04-01", amount: 30_000_000, giftTaxPaid: 1_000_000, settlement: true }], 10_000_000);
+    expect(r.persons[0].payable).toBe(0);
+    expect(r.persons[0].refund).toBe(600_000);
+    expect(r.totalRefund).toBe(600_000);
+    expect(r.warnings.some((w) => w.includes("還付"))).toBe(true);
+  });
+
+  it("精算課税の贈与だけを受けた人も財産を取得したものとし、3年以内の暦年課税の贈与も足す", () => {
+    // 長女：② 500万−110万 = 390万、⑤ 100万 → ⑥ 490万。長男 6,000万。合計 6,490万 − 4,200万 = 2,290万
+    // 1,145万×15%−50万 = 1,217,500 ×2 = 2,435,000。長女 2,435,000×490/6,490 → 183,844円、長男 2,251,155円
+    const r = calculate(
+      mk([c1, c2], [dep("預金", 60_000_000)], [all("預金", ["c1", 1, 1])], {
+        priorGifts: [
+          { personId: "c2", date: "2023-05-01", amount: 1_000_000, giftTaxPaid: 0 },
+          { personId: "c2", date: "2024-06-01", amount: 5_000_000, giftTaxPaid: 0, settlement: true },
+        ],
+      }),
+    );
+    const b = of(r, "c2");
+    expect(b.acquiresSomething).toBe(true);
+    expect(b.settlementGifts).toBe(3_900_000);
+    expect(b.gifts).toBe(1_000_000);
+    expect(b.taxable).toBe(4_900_000);
+    expect(r.totalTax).toBe(2_435_000);
+    expect(b.computed).toBe(183_844);
+    expect(b.payable).toBe(183_800);
+    expect(of(r, "c1").payable).toBe(2_251_100);
+  });
+
+  it("精算課税を選んだと答えたのに、その贈与が入っていなければ贈与の一覧への入力を案内する", () => {
+    const r = settled([]);
+    const b = r.blockers.find((x) => x.includes("相続時精算課税"));
+    expect(b).toContain("贈与の一覧");
+    expect(b).not.toContain("税理士");
+  });
+
+  it("贈与の入力漏れは精算課税でも止める", () => {
+    const r = settled([{ personId: "", date: "2024-05-10", amount: 10_000_000, giftTaxPaid: 0, settlement: true }]);
+    expect(r.blockers.some((b) => b.includes("相続時精算課税の贈与（1件目") && b.includes("受け取った人"))).toBe(true);
+  });
+});
+
+describe("相次相続控除（相続税法20条・第7表）", () => {
+  const prior = (date: string, prevTax: number, prevAcquired: number) => ({ ...decedent, priorInheritanceTax: true, priorInheritance: { date, prevTax, prevAcquired } });
+  const base = (d: Case["decedent"], persons: Person[] = [spouse, c1]) =>
+    calculate({ ...mk(persons, [dep("預金", 100_000_000)], [all("預金", ...persons.map((p) => [p.id, 1, persons.length] as [string, number, number]))]), decedent: d });
+
+  it("C/(B−A) が1を超えるときは1。相続人の純資産価額の割合で分け、税額を限度にする", () => {
+    // E = 2020-01-10 → 2026-03-15 で6年。A 500万、B−A 5,500万、C 1億 → 1。総額 500万×4/10 = 200万
+    // 妻・長男 100万ずつ。妻は配偶者の税額軽減で0円のため0、長男は 385万−100万 = 285万
+    const r = base(prior("2020-01-10", 5_000_000, 60_000_000));
+    expect(r.blockers).toEqual([]);
+    expect(r.successive).toEqual({ prevTax: 5_000_000, prevAcquired: 60_000_000, netTotal: 100_000_000, years: 6, total: 2_000_000 });
+    expect(of(r, "s").successiveCredit).toBe(0);
+    expect(of(r, "c1").successiveCredit).toBe(1_000_000);
+    expect(of(r, "c1").otherCredits).toBe(1_000_000);
+    expect(of(r, "c1").payable).toBe(2_850_000);
+  });
+
+  it("C/(B−A) が1未満なら按分する（円未満切捨て）", () => {
+    // A 3,000万、B−A 2億7,000万、C 1億、E 6 → 3,000万×1億/2.7億×4/10 = 4,444,444円。長男 2,222,222円
+    const r = base(prior("2020-01-10", 30_000_000, 300_000_000));
+    expect(r.successive?.total).toBe(4_444_444);
+    expect(of(r, "c1").successiveCredit).toBe(2_222_222);
+    expect(of(r, "c1").payable).toBe(1_627_700);
+  });
+
+  it("相続人でない受遺者は控除を受けないが、C には入る", () => {
+    // 預金1億円を長男1/2・内縁の妻1/2。C 1億、総額 200万、長男 100万、内縁の妻 0
+    const naien: Person = { id: "n", name: "内縁の妻", relation: "other" };
+    const r = base(prior("2020-01-10", 5_000_000, 60_000_000), [c1, naien]);
+    expect(r.successive?.netTotal).toBe(100_000_000);
+    expect(of(r, "c1").successiveCredit).toBe(1_000_000);
+    expect(of(r, "n").successiveCredit).toBe(0);
+  });
+
+  it("10年以上たっていれば使えない（1年未満切捨てで10年）", () => {
+    const ten = base(prior("2016-03-15", 5_000_000, 60_000_000));
+    expect(ten.successive).toBeUndefined();
+    expect(ten.persons.every((p) => p.successiveCredit === 0)).toBe(true);
+    expect(ten.warnings.some((w) => w.includes("10年以上"))).toBe(true);
+    const nine = base(prior("2016-03-16", 5_000_000, 60_000_000));
+    expect(nine.successive?.years).toBe(9);
+    expect(nine.successive?.total).toBe(500_000);
+  });
+
+  it("前の相続の内容が入っていなければ、亡くなった方の画面での入力を案内する", () => {
+    const r = base({ ...decedent, priorInheritanceTax: true });
+    const b = r.blockers.find((x) => x.includes("相次相続控除"));
+    expect(b).toContain("亡くなった方の画面");
+    expect(b).not.toContain("税理士");
+    expect(base(prior("2026-04-01", 5_000_000, 60_000_000)).blockers.some((x) => x.includes("前の相続の日"))).toBe(true);
+  });
+});
+
+describe("扶養義務者の相続税額から引く未成年者控除・障害者控除（相続税法19条の3第2項・19条の4第3項）", () => {
+  it("引ききれない分を、ほかの家族の相続税額の割合で引く。残りの1円は家族の一覧の順に配る", () => {
+    // 長男6,000万・長女3,000万・次男（9歳）1,000万。課税遺産総額 5,200万 → 1,733.3万×15%−50万 = 2,099,950 ×3 → 総額 6,299,800
+    // 算出税額 長男 3,779,880・長女 1,889,940・次男 629,980。次男の未成年者控除 90万 → 本人 629,980、残り 270,020
+    // 長男 270,020×2/3 = 180,013.3 → 180,013、長女 90,006.6 → 90,006、残り1円は長男 → 180,014
+    const minor: Person = { id: "m", name: "次男", relation: "child", birthDate: "2016-06-01" };
+    const r = calculate(
+      mk([c1, c2, minor], [dep("A", 60_000_000), dep("B", 30_000_000), dep("C", 10_000_000)], [all("A", ["c1", 1, 1]), all("B", ["c2", 1, 1]), all("C", ["m", 1, 1])]),
+    );
+    expect(r.blockers).toEqual([]);
+    expect(r.totalTax).toBe(6_299_800);
+    const m = of(r, "m");
+    expect(m.minorCredit).toBe(629_980);
+    expect(m.minorExcess).toBe(270_020);
+    expect(of(r, "c1").transfersIn).toEqual([{ fromId: "m", kind: "minor", amount: 180_014 }]);
+    expect(of(r, "c2").transfersIn).toEqual([{ fromId: "m", kind: "minor", amount: 90_006 }]);
+    expect(of(r, "c1").otherCredits).toBe(180_014);
+    expect(of(r, "c1").payable).toBe(3_599_800);
+    expect(of(r, "c2").payable).toBe(1_799_900);
+    expect(m.payable).toBe(0);
+    expect(r.warnings.some((w) => w.includes("相続税額の割合") && w.includes("話し合って"))).toBe(true);
+  });
+
+  it("順番：全員の未成年者控除 → その移し → 全員の障害者控除 → その移し", () => {
+    // 総額 6,299,800 を X（障害者40歳）10%・M（15歳）1%・Y 89% → 629,980・62,998・5,606,822
+    // M の未成年者控除 30万：本人 62,998、残り 237,002 → X 23,939・Y 213,062、残り1円は一覧で先の X → 23,940
+    // X の障害者控除 450万：残りの税額 606,040 だけ本人から引き、残り 3,893,960 を Y から引く → Y 1,499,800
+    const X: Person = { id: "x", name: "長男", relation: "child", birthDate: "1985-06-01", disability: "general" };
+    const M: Person = { id: "m", name: "次男", relation: "child", birthDate: "2010-06-01" };
+    const Y: Person = { id: "y", name: "長女", relation: "child", birthDate: "1980-01-01" };
+    const r = calculate(mk([X, M, Y], [dep("A", 10_000_000), dep("B", 1_000_000), dep("C", 89_000_000)], [all("A", ["x", 1, 1]), all("B", ["m", 1, 1]), all("C", ["y", 1, 1])]));
+    expect(r.blockers).toEqual([]);
+    expect(of(r, "m")).toMatchObject({ minorCredit: 62_998, minorExcess: 237_002, payable: 0 });
+    expect(of(r, "x")).toMatchObject({ disabilityCredit: 606_040, disabilityExcess: 3_893_960, payable: 0 });
+    expect(of(r, "x").transfersIn).toEqual([{ fromId: "m", kind: "minor", amount: 23_940 }]);
+    expect(of(r, "y").transfersIn).toEqual([
+      { fromId: "m", kind: "minor", amount: 213_062 },
+      { fromId: "x", kind: "disability", amount: 3_893_960 },
+    ]);
+    expect(of(r, "y").payable).toBe(1_499_800);
+  });
+
+  it("相続人でない受遺者（親族でない人）からは引かない", () => {
+    const minor: Person = { id: "m", name: "長男", relation: "child", birthDate: "2024-01-01" };
+    const naien: Person = { id: "n", name: "内縁の妻", relation: "other" };
+    const r = calculate(mk([minor, naien], [dep("A", 2_000_000), dep("B", 80_000_000)], [all("A", ["m", 1, 1]), all("B", ["n", 1, 1])]));
+    expect(of(r, "n").transfersIn).toEqual([]);
+    expect(r.warnings.some((w) => w.includes("引ききれません"))).toBe(true);
+  });
+});
+
+describe("相続人がいない", () => {
+  it("全員が放棄した、または受遺者しかいないときは止めて税理士を案内する", () => {
+    const naien: Person = { id: "n", name: "内縁の妻", relation: "other" };
+    for (const persons of [[{ ...c1, renounced: true }, naien], [naien]]) {
+      const r = calculate(mk(persons, [dep("預金", 50_000_000)], [all("預金", ["n", 1, 1])]));
+      expect(r.blockers.some((b) => b.includes("民法上の相続人がいません") && b.includes("税理士"))).toBe(true);
+    }
+  });
+  it("家族をまだ入れていなければ、入力を案内する", () => {
+    const r = calculate(mk([], [dep("預金", 50_000_000)], []));
+    expect(r.blockers.some((b) => b.includes("相続人がまだ入っていません"))).toBe(true);
+  });
+});
+
+describe("小規模宅地等の種類（措置法69条の4）", () => {
+  const bizCheck: SmallResidentialCheck = { ownHome: "no", business: "yes", continues: "yes", keep: "yes", recent: "no" };
+
+  it("特定事業用宅地等は400㎡まで80%", () => {
+    // 500㎡ 1億円 → 400㎡分 8,000万 × 80% = 6,400万
+    const r = calculate(mk([c1], [land("店", 500, 100_000_000, "c1", {}, bizCheck), dep("預金", 20_000_000)], [all("店", ["c1", 1, 1]), all("預金", ["c1", 1, 1])]));
+    expect(r.blockers).toEqual([]);
+    expect(r.assets[0].small).toEqual({ acquirerId: "c1", kind: "business", rate: 80, area: 500, value: 100_000_000, selectedArea: 400, selectedValue: 80_000_000 });
+    expect(r.assets[0].reduction).toBe(64_000_000);
+    expect(r.warnings.some((w) => w.includes("事業に使っていた土地") && w.includes("400㎡まで"))).toBe(true);
+    expect(r.warnings.some((w) => w.includes("330㎡"))).toBe(false);
+  });
+
+  it("貸している土地は貸付事業用宅地等として200㎡まで50%", () => {
+    const r = calculate(mk([c1], [land("アパート", 300, 60_000_000, "c1", { use: "rentedHouse", leaseRatio: 0.6 })], [all("アパート", ["c1", 1, 1])]));
+    const l = r.assets[0];
+    const v = l.valuation.value; // 貸家建付地の評価は財産の評価に任せる
+    expect(l.small).toMatchObject({ kind: "rental", rate: 50, selectedArea: 200 });
+    expect(l.small?.selectedValue).toBe(Math.floor((v * 2) / 3));
+    expect(l.reduction).toBe(Math.floor(Math.floor((v * 2) / 3) / 2));
+    expect(r.warnings.some((w) => w.includes("人に貸していた土地") && w.includes("200㎡まで"))).toBe(true);
+  });
+
+  it("貸付事業用宅地等を含むときは、特定居住用を200/330に換算して合わせて200㎡まで", () => {
+    // 自宅 100㎡ 3,000万（減額 24万/㎡、換算 39.6万）、アパート 200㎡（減額 25万/㎡ 程度）→ 自宅を先に100㎡
+    // 残りは 200 − 100×200/330 = 139.393…㎡ → 0.01㎡未満切捨てで 139.39㎡
+    const r = calculate(
+      mk([c1], [land("自宅", 100, 30_000_000, "c1"), land("アパート", 200, 100_000_000, "c1", { use: "rentedHouse", leaseRatio: 0.6 })], [all("自宅", ["c1", 1, 1]), all("アパート", ["c1", 1, 1])]),
+    );
+    const [home, apt] = r.assets;
+    expect(home.small).toMatchObject({ kind: "residence", selectedArea: 100 });
+    expect(home.reduction).toBe(24_000_000);
+    expect(apt.small).toMatchObject({ kind: "rental", rate: 50, selectedArea: 139.39 });
+    const sv = Math.floor((apt.valuation.value * 13939) / 20000);
+    expect(apt.small?.selectedValue).toBe(sv);
+    expect(apt.reduction).toBe(Math.floor(sv / 2));
+    const w = r.warnings.find((x) => x.includes("人に貸していた土地も選ぶときは"));
+    expect(w).toContain("「自宅」に100㎡、「アパート」は残り139.39㎡分");
+  });
+
+  it("貸付事業用宅地等がなければ、特定居住用330㎡と特定事業用400㎡は別々に使える", () => {
+    const r = calculate(
+      mk([c1], [land("自宅", 330, 33_000_000, "c1"), land("店", 400, 40_000_000, "c1", {}, bizCheck)], [all("自宅", ["c1", 1, 1]), all("店", ["c1", 1, 1])]),
+    );
+    expect(r.assets.map((l) => [l.small?.kind, l.small?.selectedArea, l.reduction])).toEqual([
+      ["residence", 330, 26_400_000],
+      ["business", 400, 32_000_000],
+    ]);
+    expect(r.warnings.some((w) => w.includes("㎡まで"))).toBe(false);
+  });
+
+  it("宅地が6筆以上なら、限度面積1㎡あたりの減額が大きい順に割り当てる（貸付事業用を含むとき）", () => {
+    // 自宅 100㎡ 3,000万：減額 24万/㎡ × 330/200 = 39.6万。アパート 50㎡×5：貸家建付地でも減額は 25万/㎡ × 50% 以下
+    // 自宅に100㎡ → 残りは 139.39㎡ → アパート1・2に50㎡、3に39.39㎡、4・5は0
+    const apts = [1, 2, 3, 4, 5].map((i) => land(`アパート${i}`, 50, 25_000_000, "c1", { use: "rentedHouse", leaseRatio: 0.6 }));
+    const assets = [...apts, land("自宅", 100, 30_000_000, "c1")];
+    const r = calculate(mk([c1], assets, assets.map((a) => all(a.id, ["c1", 1, 1]))));
+    expect(r.assets.map((l) => l.small?.selectedArea)).toEqual([50, 50, 39.39, undefined, undefined, 100]);
+    const w = r.warnings.find((x) => x.includes("人に貸していた土地も選ぶときは"))!;
+    expect(w).toContain("減額できる額が大きい土地から順に");
+    expect(w).toContain("「アパート4」・「アパート5」には適用していません");
+  });
+
+  it("貸している部屋（マンション）は貸付事業用宅地等", () => {
+    const condo: Asset = {
+      id: "部屋",
+      kind: "condo",
+      label: "部屋",
+      location: "x",
+      landValueBeforeCorrection: 20_000_000,
+      buildingFixedAssetValue: 10_000_000,
+      builtYearsMonths: { years: 10, months: 0 },
+      totalFloors: 2,
+      floor: 1,
+      landShareSqm: 30,
+      exclusiveAreaSqm: 60,
+      rented: true,
+      leaseRatio: 0.6,
+      smallResidential: { applies: true, acquirerId: "c1" },
+    };
+    const r = calculate(mk([c1], [condo], [all("部屋", ["c1", 1, 1])]));
+    expect(r.assets[0].small).toMatchObject({ kind: "rental", rate: 50, selectedArea: 30 });
+    expect(r.assets[0].reduction).toBe(Math.floor(r.assets[0].small!.value / 2));
+  });
+});
+
+describe("税理士に相談するときのメモ（consultPoints）", () => {
+  it("相続コンパスが計算するようになった事柄は、相談の項目に入れない", () => {
+    const minor: Person = { id: "m", name: "次男", relation: "child", birthDate: "2024-01-01" };
+    const c = mk([c1, minor], [dep("預金", 80_000_000), dep("少し", 2_000_000)], [all("預金", ["c1", 1, 1]), all("少し", ["m", 1, 1])], {
+      decedent: { ...decedent, settlementGift: true, priorInheritanceTax: true, priorInheritance: { date: "2020-01-10", prevTax: 5_000_000, prevAcquired: 60_000_000 } },
+      priorGifts: [{ personId: "c1", date: "2024-05-10", amount: 10_000_000, giftTaxPaid: 0, settlement: true }],
+    });
+    const points = consultPoints(c, calculate(c));
+    expect(points.some((x) => x.includes("扶養義務者") || x.includes("相続時精算課税") || x.includes("相次相続控除"))).toBe(false);
+  });
+  it("前の相続の内容が分からないときと、相続人がいないときは相談の項目にする", () => {
+    const c = { ...mk([c1], [dep("預金", 50_000_000)], [all("預金", ["c1", 1, 1])]), decedent: { ...decedent, priorInheritanceTax: true } };
+    expect(consultPoints(c, calculate(c)).some((x) => x.includes("相次相続控除"))).toBe(true);
+    const none = mk([{ ...c1, renounced: true }], [dep("預金", 50_000_000)], []);
+    expect(consultPoints(none, calculate(none)).some((x) => x.includes("相続人がいない"))).toBe(true);
+  });
+  it("小規模宅地等の判定は特例の種類ごとの質問で行う", () => {
+    // 事業用の土地で「3年以内に始めた事業か」が分からない → 相談
+    const c = mk([c1], [land("店", 200, 50_000_000, "c1", {}, { ownHome: "no", business: "yes", continues: "yes", keep: "yes", recent: "unsure" })], [all("店", ["c1", 1, 1])]);
+    expect(consultPoints(c, calculate(c)).some((x) => x.includes("「店」の小規模宅地等の特例") && x.includes("3年以内に始めた事業"))).toBe(true);
+  });
+});

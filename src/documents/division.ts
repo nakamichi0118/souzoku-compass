@@ -2,7 +2,7 @@
  * 遺産分割協議書の文面を組み立てる（PDF化は renderDivision.ts）。
  *
  * 法定の様式はないため、一般的な記載事項（被相続人の特定、相続人全員の合意、
- * 各人が取得する財産・負担する債務、後日判明した財産の扱い、署名押印欄）を備えた文面にする。
+ * 各人が取得する財産・代償金の支払い・負担する債務、後日判明した財産の扱い、署名押印欄）を備えた文面にする。
  */
 import { civilHeirIds } from "@/domain/heirs";
 import type { Asset, Case } from "@/domain/types";
@@ -96,14 +96,33 @@ export function buildDivisionDoc(c: Case): DivisionDoc {
 
   const articles: DivisionDoc["articles"] = [];
   let no = 1;
+  /** 相続人ごとの「次の遺産を取得する」の条の番号（代償金の条で使う） */
+  const articleOf = new Map<string, number>();
   for (const h of heirs) {
     const assets = take.get(h.id);
     if (!assets) continue;
+    articleOf.set(h.id, no);
     articles.push({
       heading: `第${no++}条　相続人 ${h.name} は、次の遺産を取得する。`,
       items: assets.map((lines, i) => [`(${i + 1}) ${lines[0]}`, ...lines.slice(1)].join("\n")),
     });
   }
+  // 代償金（代償分割）：遺産を多く受け継ぐ人が、ほかの相続人にお金を払う約束。1件ごとに1つの条にする
+  const compensationTo = new Set<string>();
+  (c.compensation ?? []).forEach((x, i) => {
+    const from = byId.get(x.fromId);
+    const to = byId.get(x.toId);
+    if (!from || !to || x.fromId === x.toId || !civil.has(x.fromId) || !civil.has(x.toId) || !Number.isSafeInteger(x.amount) || x.amount <= 0) {
+      warnings.push(`代償金（${i + 1}件目）は、払う人・受け取る人（どちらも相続人）・金額がそろっていないため、協議書に記載していません。遺産の分け方の画面で確かめてください。`);
+      return;
+    }
+    compensationTo.add(to.id);
+    const k = articleOf.get(from.id);
+    articles.push({
+      heading: `第${no++}条　相続人 ${from.name} は、${k ? `第${k}条記載の遺産` : "本協議により遺産"}を取得する代償として、相続人 ${to.name} に対し、${yen(x.amount)}を支払う。`,
+      items: [],
+    });
+  });
   for (const h of heirs) {
     const ds = bear.get(h.id);
     if (!ds) continue;
@@ -126,7 +145,7 @@ export function buildDivisionDoc(c: Case): DivisionDoc {
       `${s.name}さんは未成年のため、法定代理人（親権者）が代わりに署名します。親権者も相続人である場合は、家庭裁判所で特別代理人を選任する必要があります。`,
     );
   }
-  const missing = heirs.filter((h) => !take.has(h.id) && !bear.has(h.id));
+  const missing = heirs.filter((h) => !take.has(h.id) && !bear.has(h.id) && !compensationTo.has(h.id));
   if (missing.length) warnings.push(`${missing.map((h) => h.name).join("、")}さんは何も取得しませんが、相続人として協議書への署名押印が必要です。`);
 
   return {

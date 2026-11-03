@@ -137,7 +137,7 @@ function sanity(r: TaxResult): string[] {
     if (!isYen(v)) bad.push(`${where} が円の整数でない（${String(v)}）`);
     else if (nonNegative && (v as number) < 0) bad.push(`${where} が負（${String(v)}）`);
   };
-  for (const k of ["legalHeirCount", "basicDeduction", "totalAcquired", "totalDebts", "totalTaxable", "taxableEstate", "totalTax", "totalPayable", "insuranceExemptLimit", "retirementExemptLimit"] as const) {
+  for (const k of ["legalHeirCount", "basicDeduction", "totalAcquired", "totalDebts", "totalTaxable", "taxableEstate", "totalTax", "totalPayable", "totalRefund", "insuranceExemptLimit", "retirementExemptLimit"] as const) {
     check(k, r[k]);
   }
   r.slots.forEach((s, i) => {
@@ -150,12 +150,15 @@ function sanity(r: TaxResult): string[] {
     for (const b of l.byPerson) check(`財産 ${l.asset.id} の ${b.personId} 取得分`, b.amount);
   }
   const fields = [
-    "inherited", "insurance", "insuranceExempt", "retirement", "retirementExempt", "acquired", "debts", "debtOnly", "funeralOnly", "net",
-    "gifts", "taxable", "computed", "surcharge", "giftTaxCredit", "spouseCredit", "beforeOtherCredits", "minorCredit", "disabilityCredit",
-    "minorExcess", "disabilityExcess", "otherCredits", "totalCredits", "afterCredits", "payable",
+    "inherited", "undivided", "compensationIn", "compensationOut", "insurance", "insuranceExempt", "retirement", "retirementExempt", "acquired",
+    "settlementGifts", "debts", "debtOnly", "funeralOnly", "net", "gifts", "taxable", "computed", "surcharge", "giftTaxCredit", "spouseCredit",
+    "beforeOtherCredits", "minorCredit", "disabilityCredit", "minorExcess", "disabilityExcess", "successiveCredit", "otherCredits", "totalCredits",
+    "afterCredits", "settlementCredit", "payable", "refund",
   ] as const;
   for (const p of r.persons) {
-    for (const f of fields) check(`${p.person.id}.${f}`, p[f]);
+    // 代償金を払った人は、払った代償金が受け継いだ財産より多いと取得財産の価額（第1表①）が赤字になりうる（課税価格は0。相基通11の2-9）
+    const mayBeNegative = (f: (typeof fields)[number]) => (f === "inherited" || f === "acquired") && p.compensationOut > 0;
+    for (const f of fields) check(`${p.person.id}.${f}`, p[f], !mayBeNegative(f));
     if (!Number.isFinite(p.ratio)) bad.push(`${p.person.id}.ratio が数でない（${p.ratio}）`);
     if (p.taxable % 1000 !== 0) bad.push(`${p.person.id}.taxable が1,000円未満を切り捨てていない（${p.taxable}）`);
     if (p.payable % 100 !== 0) bad.push(`${p.person.id}.payable が100円未満を切り捨てていない（${p.payable}）`);

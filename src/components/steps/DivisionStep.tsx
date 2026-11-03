@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Button, Card, Note, fmt } from "@/components/ui";
+import { Button, Card, Check, Field, Note, Select, YenInput, fmt } from "@/components/ui";
 import { civilHeirIds, determineHeirs } from "@/domain/heirs";
-import type { Allocation, Person } from "@/domain/types";
+import type { Allocation, Compensation, Person } from "@/domain/types";
+import { isAllocated } from "@/lib/progress";
 import { useCase } from "@/lib/store";
 import { kindLabel } from "./AssetsStep";
 
@@ -60,12 +61,18 @@ export function DivisionStep() {
           すべて法定相続分どおりにする
         </Button>
       </div>
+      <Check
+        checked={!!data.undivided}
+        onChange={(v) => update((c) => ({ ...c, undivided: v || undefined }))}
+        label="分け方がまだ決まっていない（決まっていない財産は法定相続分で計算します）"
+      />
       {heirs.length === 0 && <Note tone="warn">先に「相続人」で家族を登録してください。</Note>}
       <ol className="space-y-4">
         {divisible.map((a, i) => (
           <AssetChoice key={a.id} no={i + 1} assetId={a.id} heirs={heirs} evenHeirs={evenHeirs} />
         ))}
       </ol>
+      {heirs.length > 0 && <CompensationList living={heirs} />}
 
       {result && (
         <Card title="この分け方での各人の取得額と相続税">
@@ -114,6 +121,8 @@ function AssetChoice({ no, assetId, heirs, evenHeirs }: { no: number; assetId: s
   const mode = picked && fits(picked) ? picked : derived;
   const total = shares.reduce((s, x) => s + x.numerator / x.denominator, 0);
   const line = result?.assets.find((l) => l.asset.id === assetId);
+  // 未分割で申告するときは、決まっていない財産（一部だけ決まっている財産の残りも）を法定相続分で計算する
+  const undividedPart = !!data.undivided && (!isAllocated(data, assetId) || total < 1 - 1e-9);
 
   const setAlloc = (next: Allocation["shares"]) =>
     update((c) => ({ ...c, allocations: [...c.allocations.filter((x) => x.assetId !== assetId), { assetId, shares: next }] }));
@@ -143,7 +152,10 @@ function AssetChoice({ no, assetId, heirs, evenHeirs }: { no: number; assetId: s
           <span className="mr-1.5 rounded bg-stone-100 px-1.5 py-0.5 text-xs font-normal">{kindLabel(a.kind)}</span>
           {a.label || "（名称未入力）"}
         </p>
-        {line && <p className="tabular-nums text-stone-700">{fmt(line.valuation.value)}円</p>}
+        <div className="flex flex-wrap items-baseline gap-2">
+          {undividedPart && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-900">未分割（法定相続分）</span>}
+          {line && <p className="tabular-nums text-stone-700">{fmt(line.valuation.value)}円</p>}
+        </div>
       </div>
       <p className="mt-3 text-sm font-semibold text-stone-700">誰が受け取りますか？</p>
       <div className="mt-2 grid grid-cols-3 gap-2">
@@ -191,16 +203,60 @@ function AssetChoice({ no, assetId, heirs, evenHeirs }: { no: number; assetId: s
             <button type="button" onClick={even} disabled={evenHeirs.length === 0} className="text-sm text-sky-800 underline disabled:text-stone-400 disabled:no-underline">
               相続人全員で均等に分ける
             </button>
-            {shares.length > 0 && Math.abs(total - 1) > 1e-9 && <span className="text-xs text-red-700">合計が1になっていません（いま {Math.round(total * 1000) / 1000}）</span>}
+            {shares.length > 0 && Math.abs(total - 1) > 1e-9 && !(undividedPart && total < 1) && (
+              <span className="text-xs text-red-700">合計が1になっていません（いま {Math.round(total * 1000) / 1000}）</span>
+            )}
           </div>
         </div>
       )}
 
-      {mode === "undecided" && (
+      {mode === "undecided" && !data.undivided && (
         <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          決まったら、ここで選び直してください。分け方が決まらないまま申告する場合（未分割の申告）は、相続コンパスでは作れないため、税理士にご相談ください。
+          決まったら、ここで選び直してください。申告期限までに決まらないときは、上の「分け方がまだ決まっていない」にチェックを入れると、法定相続分で計算します。
         </p>
       )}
     </li>
+  );
+}
+
+/** 代償金：財産を多く受け継いだ人が、ほかの人にお金を払う（代償分割）。入れたものがあれば開いておく */
+function CompensationList({ living }: { living: Person[] }) {
+  const { data, update } = useCase();
+  const rows = data.compensation ?? [];
+  const [open, setOpen] = useState(rows.length > 0);
+  const isLiving = (id: string) => living.some((p) => p.id === id);
+  const options = [{ value: "", label: "選んでください" }, ...living.map((p) => ({ value: p.id, label: p.name || "（名前未入力）" }))];
+  const set = (i: number, p: Partial<Compensation>) => update((c) => ({ ...c, compensation: (c.compensation ?? []).map((x, j) => (j === i ? { ...x, ...p } : x)) }));
+  const remove = (i: number) => update((c) => ({ ...c, compensation: (c.compensation ?? []).filter((_, j) => j !== i) }));
+  const add = () => update((c) => ({ ...c, compensation: [...(c.compensation ?? []), { fromId: "", toId: "", amount: 0 }] }));
+  const incomplete = rows.some((x) => !isLiving(x.fromId) || !isLiving(x.toId) || x.fromId === x.toId || !(x.amount > 0));
+
+  return (
+    <details open={open} onToggle={(e) => setOpen(e.currentTarget.open)} className="rounded-xl border border-stone-200 bg-white p-4 shadow-sm">
+      <summary className="cursor-pointer font-bold text-stone-800">代償金（財産を多く受け継いだ人が、ほかの人にお金を払う）</summary>
+      <div className="mt-3 space-y-2">
+        <p className="text-xs text-stone-500">払う人の受け取る財産から差し引き、受け取る人の財産に足して計算します。</p>
+        {rows.map((x, i) => (
+          <div key={i} className="grid items-end gap-2 rounded-lg border border-stone-200 p-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+            <Field label="払う人">
+              <Select value={isLiving(x.fromId) ? x.fromId : ""} onChange={(v) => set(i, { fromId: v })} options={options} />
+            </Field>
+            <Field label="受け取る人">
+              <Select value={isLiving(x.toId) ? x.toId : ""} onChange={(v) => set(i, { toId: v })} options={options} />
+            </Field>
+            <Field label="金額">
+              <YenInput value={x.amount} onChange={(v) => set(i, { amount: v })} />
+            </Field>
+            <Button variant="danger" onClick={() => remove(i)}>
+              削除
+            </Button>
+          </div>
+        ))}
+        <Button variant="secondary" onClick={add}>
+          ＋ 代償金を追加
+        </Button>
+        {incomplete && <Note tone="warn">払う人と受け取る人（別の人）、金額を入れてください。入れるまで相続税の計算を確定できません。</Note>}
+      </div>
+    </details>
   );
 }

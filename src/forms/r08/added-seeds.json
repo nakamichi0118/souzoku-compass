@@ -1,0 +1,692 @@
+{
+ "note": "scripts/forms/fields/*.json にまだ入っていない欄の seed（300dpi画像のピクセル座標）。calibrate.py で layout.json を作り直す前に、各ページの fields へ移すこと。t07 は新しいページ（title 第7表）",
+ "pages": {
+  "t06": [
+   {
+    "id": "s0.name",
+    "seed": [
+     840,
+     1466
+    ],
+    "size": 10
+   },
+   {
+    "id": "s1.name",
+    "seed": [
+     1280,
+     1466
+    ],
+    "size": 10
+   },
+   {
+    "id": "s2.name",
+    "seed": [
+     1730,
+     1466
+    ],
+    "size": 10
+   },
+   {
+    "id": "s0.tax",
+    "seed": [
+     840,
+     1584
+    ],
+    "align": "right",
+    "size": 11
+   },
+   {
+    "id": "s1.tax",
+    "seed": [
+     1280,
+     1584
+    ],
+    "align": "right",
+    "size": 11
+   },
+   {
+    "id": "s2.tax",
+    "seed": [
+     1730,
+     1584
+    ],
+    "align": "right",
+    "size": 11
+   },
+   {
+    "id": "s.tax",
+    "seed": [
+     2180,
+     1584
+    ],
+    "align": "right",
+    "size": 11
+   },
+   {
+    "id": "s0.credit",
+    "seed": [
+     840,
+     1704
+    ],
+    "align": "right",
+    "size": 11
+   },
+   {
+    "id": "s1.credit",
+    "seed": [
+     1280,
+     1704
+    ],
+    "align": "right",
+    "size": 11
+   },
+   {
+    "id": "s2.credit",
+    "seed": [
+     1730,
+     1704
+    ],
+    "align": "right",
+    "size": 11
+   },
+   {
+    "id": "s.credit",
+    "seed": [
+     2180,
+     1704
+    ],
+    "align": "right",
+    "size": 11
+   },
+   {
+    "id": "t0.name",
+    "seed": [
+     840,
+     2920
+    ],
+    "size": 10
+   },
+   {
+    "id": "t1.name",
+    "seed": [
+     1280,
+     2920
+    ],
+    "size": 10
+   },
+   {
+    "id": "t2.name",
+    "seed": [
+     1730,
+     2920
+    ],
+    "size": 10
+   },
+   {
+    "id": "t0.tax",
+    "seed": [
+     840,
+     3060
+    ],
+    "align": "right",
+    "size": 11
+   },
+   {
+    "id": "t1.tax",
+    "seed": [
+     1280,
+     3060
+    ],
+    "align": "right",
+    "size": 11
+   },
+   {
+    "id": "t2.tax",
+    "seed": [
+     1730,
+     3060
+    ],
+    "align": "right",
+    "size": 11
+   },
+   {
+    "id": "t.tax",
+    "seed": [
+     2180,
+     3060
+    ],
+    "align": "right",
+    "size": 11
+   },
+   {
+    "id": "t0.credit",
+    "seed": [
+     840,
+     3206
+    ],
+    "align": "right",
+    "size": 11
+   },
+   {
+    "id": "t1.credit",
+    "seed": [
+     1280,
+     3206
+    ],
+    "align": "right",
+    "size": 11
+   },
+   {
+    "id": "t2.credit",
+    "seed": [
+     1730,
+     3206
+    ],
+    "align": "right",
+    "size": 11
+   },
+   {
+    "id": "t.credit",
+    "seed": [
+     2180,
+     3206
+    ],
+    "align": "right",
+    "size": 11
+   }
+  ],
+  "t11_11_2_f1": [
+   {
+    "id": "area2",
+    "seed": [
+     1360,
+     2966
+    ],
+    "align": "right"
+   },
+   {
+    "id": "area4",
+    "seed": [
+     2200,
+     2966
+    ],
+    "align": "right"
+   },
+   {
+    "id": "limitA2",
+    "seed": [
+     1400,
+     3080
+    ],
+    "align": "right"
+   },
+   {
+    "id": "limitB1",
+    "seed": [
+     900,
+     3194
+    ],
+    "align": "right"
+   },
+   {
+    "id": "limitB2",
+    "seed": [
+     1500,
+     3194
+    ],
+    "align": "right"
+   },
+   {
+    "id": "limitB4",
+    "seed": [
+     2000,
+     3194
+    ],
+    "align": "right"
+   },
+   {
+    "id": "b0.business",
+    "seed": [
+     1240,
+     1514
+    ],
+    "size": 9
+   },
+   {
+    "id": "b1.business",
+    "seed": [
+     1240,
+     1842
+    ],
+    "size": 9
+   },
+   {
+    "id": "b2.business",
+    "seed": [
+     1240,
+     2168
+    ],
+    "size": 9
+   }
+  ],
+  "t07": [
+   {
+    "id": "d.name",
+    "seed": [
+     2060,
+     456
+    ],
+    "size": 12
+   },
+   {
+    "id": "prev.name",
+    "seed": [
+     500,
+     750
+    ],
+    "size": 11
+   },
+   {
+    "id": "prev.relation",
+    "seed": [
+     1280,
+     750
+    ],
+    "size": 11
+   },
+   {
+    "id": "prev.office",
+    "seed": [
+     1920,
+     750
+    ],
+    "align": "center",
+    "size": 11
+   },
+   {
+    "id": "prevEra",
+    "seed": [
+     230,
+     980
+    ],
+    "align": "center"
+   },
+   {
+    "id": "prevY",
+    "seed": [
+     356,
+     980
+    ],
+    "align": "center"
+   },
+   {
+    "id": "prevM",
+    "seed": [
+     486,
+     980
+    ],
+    "align": "center"
+   },
+   {
+    "id": "prevD",
+    "seed": [
+     612,
+     980
+    ],
+    "align": "center"
+   },
+   {
+    "id": "deathEra",
+    "seed": [
+     790,
+     980
+    ],
+    "align": "center"
+   },
+   {
+    "id": "deathY",
+    "seed": [
+     916,
+     980
+    ],
+    "align": "center"
+   },
+   {
+    "id": "deathM",
+    "seed": [
+     1044,
+     980
+    ],
+    "align": "center"
+   },
+   {
+    "id": "deathD",
+    "seed": [
+     1170,
+     980
+    ],
+    "align": "center"
+   },
+   {
+    "id": "r03",
+    "seed": [
+     1520,
+     966
+    ],
+    "align": "right",
+    "size": 12
+   },
+   {
+    "id": "r04",
+    "seed": [
+     2080,
+     966
+    ],
+    "align": "right",
+    "size": 12
+   },
+   {
+    "id": "r05",
+    "seed": [
+     420,
+     1230
+    ],
+    "align": "right",
+    "size": 11
+   },
+   {
+    "id": "r06",
+    "seed": [
+     960,
+     1230
+    ],
+    "align": "right",
+    "size": 11
+   },
+   {
+    "id": "r07",
+    "seed": [
+     1540,
+     1230
+    ],
+    "align": "right",
+    "size": 11
+   },
+   {
+    "id": "r08",
+    "seed": [
+     2080,
+     1230
+    ],
+    "align": "right",
+    "size": 11
+   },
+   {
+    "id": "x.tax",
+    "seed": [
+     380,
+     1460
+    ],
+    "align": "right",
+    "size": 11
+   },
+   {
+    "id": "x.net",
+    "seed": [
+     1040,
+     1396
+    ],
+    "align": "right",
+    "size": 10
+   },
+   {
+    "id": "x.base",
+    "seed": [
+     1040,
+     1530
+    ],
+    "align": "right",
+    "size": 10
+   },
+   {
+    "id": "x.years",
+    "seed": [
+     1644,
+     1396
+    ],
+    "align": "center",
+    "size": 11
+   },
+   {
+    "id": "total",
+    "seed": [
+     2120,
+     1460
+    ],
+    "align": "right",
+    "size": 11
+   },
+   {
+    "id": "h0.name",
+    "seed": [
+     330,
+     1880
+    ],
+    "size": 10
+   },
+   {
+    "id": "h1.name",
+    "seed": [
+     330,
+     1994
+    ],
+    "size": 10
+   },
+   {
+    "id": "h2.name",
+    "seed": [
+     330,
+     2106
+    ],
+    "size": 10
+   },
+   {
+    "id": "h3.name",
+    "seed": [
+     330,
+     2220
+    ],
+    "size": 10
+   },
+   {
+    "id": "h4.name",
+    "seed": [
+     330,
+     2332
+    ],
+    "size": 10
+   },
+   {
+    "id": "r09",
+    "seed": [
+     700,
+     2160
+    ],
+    "align": "right",
+    "size": 11
+   },
+   {
+    "id": "h0.net",
+    "seed": [
+     1060,
+     1880
+    ],
+    "align": "right",
+    "size": 10
+   },
+   {
+    "id": "h1.net",
+    "seed": [
+     1060,
+     1994
+    ],
+    "align": "right",
+    "size": 10
+   },
+   {
+    "id": "h2.net",
+    "seed": [
+     1060,
+     2106
+    ],
+    "align": "right",
+    "size": 10
+   },
+   {
+    "id": "h3.net",
+    "seed": [
+     1060,
+     2220
+    ],
+    "align": "right",
+    "size": 10
+   },
+   {
+    "id": "h4.net",
+    "seed": [
+     1060,
+     2332
+    ],
+    "align": "right",
+    "size": 10
+   },
+   {
+    "id": "r11",
+    "seed": [
+     1470,
+     2100
+    ],
+    "align": "right",
+    "size": 10
+   },
+   {
+    "id": "h0.ratio",
+    "seed": [
+     1810,
+     1880
+    ],
+    "align": "right",
+    "size": 10
+   },
+   {
+    "id": "h1.ratio",
+    "seed": [
+     1810,
+     1994
+    ],
+    "align": "right",
+    "size": 10
+   },
+   {
+    "id": "h2.ratio",
+    "seed": [
+     1810,
+     2106
+    ],
+    "align": "right",
+    "size": 10
+   },
+   {
+    "id": "h3.ratio",
+    "seed": [
+     1810,
+     2220
+    ],
+    "align": "right",
+    "size": 10
+   },
+   {
+    "id": "h4.ratio",
+    "seed": [
+     1810,
+     2332
+    ],
+    "align": "right",
+    "size": 10
+   },
+   {
+    "id": "h0.credit",
+    "seed": [
+     2180,
+     1880
+    ],
+    "align": "right",
+    "size": 10
+   },
+   {
+    "id": "h1.credit",
+    "seed": [
+     2180,
+     1994
+    ],
+    "align": "right",
+    "size": 10
+   },
+   {
+    "id": "h2.credit",
+    "seed": [
+     2180,
+     2106
+    ],
+    "align": "right",
+    "size": 10
+   },
+   {
+    "id": "h3.credit",
+    "seed": [
+     2180,
+     2220
+    ],
+    "align": "right",
+    "size": 10
+   },
+   {
+    "id": "h4.credit",
+    "seed": [
+     2180,
+     2332
+    ],
+    "align": "right",
+    "size": 10
+   }
+  ],
+  "t01": [
+   {
+    "id": "p.causeSettlement",
+    "seed": [
+     2310,
+     1210
+    ],
+    "align": "center"
+   }
+  ],
+  "t01c": [
+   {
+    "id": "a.causeSettlement",
+    "seed": [
+     1428,
+     1242
+    ],
+    "align": "center"
+   },
+   {
+    "id": "b.causeSettlement",
+    "seed": [
+     2310,
+     1242
+    ],
+    "align": "center"
+   }
+  ]
+ }
+}

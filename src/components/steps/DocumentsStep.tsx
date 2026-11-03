@@ -23,6 +23,12 @@ export function DocumentsStep() {
   const { data, result, update } = useCase();
   const plan = usePlan();
   const missing = result ? formsNotGenerated(data, result) : [];
+  // 相続コンパスで聞いていないため、申告書で空欄にしている欄
+  const blanks = [
+    "マイナンバー（個人番号）欄",
+    ...(result?.persons.some((p) => p.successiveCredit > 0) ? ["第7表の前の相続で亡くなった方の氏名・続柄・申告書を出した税務署"] : []),
+    ...(result?.assets.some((l) => l.small?.kind === "business" && l.reduction > 0) ? ["第11・11の2表の付表1の事業内容（お店や工場などの事業の種類）"] : []),
+  ];
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -55,7 +61,7 @@ export function DocumentsStep() {
       ) : null}
       <Card title="相続税の申告書（国税庁 令和8年分様式）">
         <p className="mb-3 text-sm text-stone-600">
-          国税庁が公開している令和8年分の正式様式に、計算結果を記入したPDFを作ります。自動で作るのは第1表・第1表（続）・第2表・第5表・第6表・第9表・第10表・第11表と付表1〜4・第11・11の2表の付表1（小規模宅地等）・第13表・第15表です（使う表だけが入ります）。
+          国税庁が公開している令和8年分の正式様式に、計算結果を記入したPDFを作ります。自動で作るのは第1表・第1表（続）・第2表・第5表・第6表・第7表・第9表・第10表・第11表と付表1〜4・第11・11の2表の付表1（小規模宅地等）・第13表・第15表です（使う表だけが入ります）。
         </p>
         {missing.length > 0 && (
           <div className="mb-3 rounded-lg border border-orange-300 bg-orange-50 p-3 text-sm text-orange-950">
@@ -74,7 +80,7 @@ export function DocumentsStep() {
           {busy === "tax" ? "作成中…" : "申告書PDFをダウンロード"}
         </Button>
         <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-stone-600">
-          <li>マイナンバー（個人番号）欄は空欄です。印刷後に記入してください。</li>
+          <li>{blanks.join("、")}は空欄です。印刷後に記入してください。</li>
           {result?.assets.some((l) => l.reduction > 0) && <li>小規模宅地等の特例を受けるときは、遺産分割協議書の写し・取得者の住民票などの添付書類も必要です。</li>}
           <li>提出前に、内容を必ず確認してください。相続コンパスは税理士による確認の代わりにはなりません。</li>
         </ul>

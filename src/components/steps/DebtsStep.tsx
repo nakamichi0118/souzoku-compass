@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Card, Field, Note, Select, TextInput, YenInput, fmt } from "@/components/ui";
+import { Button, Card, Check, Field, Note, Select, TextInput, YenInput, fmt } from "@/components/ui";
 import type { Debt } from "@/domain/types";
 import { newId, useCase } from "@/lib/store";
 
@@ -19,6 +19,8 @@ export function DebtsStep() {
   const add = (kind: Debt["kind"]) =>
     update((c) => ({ ...c, debts: [...c.debts, { id: newId(), kind, label: "", amount: 0, bearers: living[0] ? [{ personId: living[0].id, amount: 0 }] : [] }] }));
   const patch = (id: string, p: Partial<Debt>) => update((c) => ({ ...c, debts: c.debts.map((d) => (d.id === id ? { ...d, ...p } : d)) }));
+  // 相続時精算課税を選んだ贈与があるときだけ、贈与ごとの「相続時精算課税」の印を出す（印を付けた贈与があるときも出したままにする）
+  const settlement = !!data.decedent.settlementGift || data.priorGifts.some((g) => g.settlement);
 
   return (
     <div className="space-y-5">
@@ -101,9 +103,10 @@ export function DebtsStep() {
       })}
       {result && result.totalDebts > 0 && <Note tone="ok">差し引く債務・葬式費用の合計：{fmt(result.totalDebts)}円</Note>}
 
-      <Card title="亡くなる前3年以内に贈与した財産">
+      <Card title={settlement ? "亡くなる前3年以内の贈与・相続時精算課税の贈与" : "亡くなる前3年以内に贈与した財産"}>
         <p className="mb-3 text-sm text-stone-600">
           亡くなる前3年以内に、相続や遺贈で財産を受け取る人へ贈与したお金や物は、相続財産に足して計算します（納めた贈与税は差し引けます）。
+          {settlement && <span className="mt-1 block">相続時精算課税を選んだ後の贈与は、3年より前のものも含めて全部入れ、「相続時精算課税」に印を付けてください。</span>}
         </p>
         <div className="space-y-2">
           {data.priorGifts.map((g, i) => {
@@ -125,6 +128,11 @@ export function DebtsStep() {
                 <Button variant="danger" onClick={() => update((c) => ({ ...c, priorGifts: c.priorGifts.filter((_, j) => j !== i) }))}>
                   削除
                 </Button>
+                {settlement && (
+                  <div className="sm:col-span-5">
+                    <Check checked={!!g.settlement} onChange={(v) => set({ settlement: v || undefined })} label="相続時精算課税" />
+                  </div>
+                )}
               </div>
             );
           })}

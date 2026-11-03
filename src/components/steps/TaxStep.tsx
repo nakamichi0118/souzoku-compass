@@ -4,12 +4,16 @@ import Link from "next/link";
 import { Button, Card, Note, fmt } from "@/components/ui";
 import { useAsk } from "@/components/compass/AskCompass";
 import { toString as fracText } from "@/domain/fraction";
-import { RATE_TABLE, rateFor } from "@/domain/tax/engine";
+import { type PersonTax, RATE_TABLE, rateFor } from "@/domain/tax/engine";
 import { Markdown } from "@/components/compass/Markdown";
 import { jpDate, monthsDeadline, nextOpenDay } from "@/domain/procedures/dates";
 import { relationLabel } from "@/forms/filing";
+import { unallocatedAssets } from "@/lib/progress";
 import { useCase } from "@/lib/store";
 import { summarizeForAssistant } from "@/lib/summary";
+
+/** ほかの人の引ききれなかった未成年者控除・障害者控除を、扶養義務者として差し引いた額の合計 */
+const transfersInTotal = (p: PersonTax) => p.transfersIn.reduce((s, t) => s + t.amount, 0);
 
 function Row({ label, value, sub, strong }: { label: React.ReactNode; value: number | string; sub?: React.ReactNode; strong?: boolean }) {
   return (
@@ -35,14 +39,15 @@ export function TaxStep() {
   const { answer: explain, busy } = explainer;
 
   const man = (n: number) => (n >= 10_000 ? `約${(Math.round(n / 1_000) / 10).toLocaleString("ja-JP")}万円` : `${fmt(n)}円`);
-  const payers = r.persons.filter((p) => p.taxable > 0 || p.payable > 0);
+  const payers = r.persons.filter((p) => p.taxable > 0 || p.payable > 0 || p.refund > 0);
   const maxBar = Math.max(1, ...payers.map((p) => p.computed + p.surcharge));
   const basicPart = Math.min(r.basicDeduction, r.totalTaxable);
   const deadline = data.decedent.deathDate ? nextOpenDay(monthsDeadline(data.decedent.deathDate, 10)) : null;
 
   // 確認待ちの財産や、取得する人が決まっていない財産があるうちは、税額は暫定
   const pendingAssets = data.assets.filter((a) => a.pending?.length || r.assets.find((l) => l.asset.id === a.id)?.valuation.needsConsultation);
-  const undivided = data.assets.filter((a) => a.kind !== "insurance" && a.kind !== "retirement" && !data.allocations.some((x) => x.assetId === a.id && x.shares.some((s) => s.numerator > 0)));
+  // 「分け方がまだ決まっていない」を選んだときは、決まっていない財産を法定相続分で計算した税額になる（暫定ではない）
+  const undivided = data.undivided ? [] : unallocatedAssets(data);
   const provisional = pendingAssets.length > 0 || undivided.length > 0 || r.blockers.length > 0;
 
   return (
@@ -84,15 +89,44 @@ export function TaxStep() {
           <span className="ml-1 text-xl">円</span>
         </p>
         <p className="mt-2 text-sm text-stone-700">
-          {!r.needsFiling ? "相続税はかからず、申告も原則いりません。" : r.totalPayable === 0 ? "特例を使うので納める税金は0円ですが、申告は必要です。" : "それぞれが自分の分を、申告期限までに納めます。"}
+          {!r.needsFiling
+            ? r.totalRefund > 0
+              ? "相続税はかかりませんが、申告すると納めた贈与税が戻ってきます。"
+              : "相続税はかからず、申告も原則いりません。"
+            : r.totalPayable > 0
+              ? "それぞれが自分の分を、申告期限までに納めます。"
+              : r.totalRefund > 0
+                ? "納める税金は0円ですが、申告は必要です。"
+                : "特例を使うので納める税金は0円ですが、申告は必要です。"}
           {r.needsFiling && deadline && <span className="ml-1 font-semibold">申告・納税の期限：{jpDate(deadline)}</span>}
         </p>
+        {r.totalRefund > 0 && (
+          <p className="mt-1 text-sm text-stone-700">
+            還付される税額 <span className="font-bold tabular-nums text-teal-900">{fmt(r.totalRefund)}円</span>
+            <span className="ml-1 text-xs text-stone-500">（相続時精算課税で納めた贈与税のうち、相続税から引ききれない分）</span>
+          </p>
+        )}
+        {r.undivided && (
+          <p className="mt-1 text-xs text-stone-600">
+            分け方が決まっていない財産は、法定相続分で受け継いだものとして計算しています。申告書と一緒に「申告期限後3年以内の分割見込書」を出してください。
+          </p>
+        )}
 
         {payers.length > 0 && r.totalTax > 0 && (
           <ul className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {payers.map((p) => {
               const before = p.computed + p.surcharge;
-              const minus = before - p.afterCredits;
+              const paid = Math.min(before, p.payable);
+              const minus = before - paid;
+              const credits = [
+                p.spouseCredit && `配偶者の税額軽減 −${fmt(p.spouseCredit)}円`,
+                p.minorCredit && `未成年者控除 −${fmt(p.minorCredit)}円`,
+                p.disabilityCredit && `障害者控除 −${fmt(p.disabilityCredit)}円`,
+                transfersInTotal(p) && `扶養義務者として差し引いた控除 −${fmt(transfersInTotal(p))}円`,
+                p.successiveCredit && `相次相続控除 −${fmt(p.successiveCredit)}円`,
+                p.giftTaxCredit && `贈与税額控除 −${fmt(p.giftTaxCredit)}円`,
+                p.settlementCredit && `精算課税の贈与税額控除 −${fmt(p.settlementCredit)}円`,
+              ].filter(Boolean);
               return (
                 <li key={p.person.id} className="rounded-xl border border-stone-200 bg-white p-4">
                   <p className="text-sm text-stone-600">
@@ -103,24 +137,18 @@ export function TaxStep() {
                     {fmt(p.payable)}
                     <span className="ml-0.5 text-sm">円</span>
                   </p>
+                  {p.refund > 0 && <p className="text-sm font-semibold tabular-nums text-teal-800">還付される税額 {fmt(p.refund)}円</p>}
                   {/* 割り当てられた税額のうち、控除で減った分と納める分 */}
                   <div className="mt-3 flex h-3 overflow-hidden rounded-full bg-stone-100" style={{ width: `${Math.max(8, (before / maxBar) * 100)}%` }} aria-hidden>
-                    <div className="h-full bg-teal-600" style={{ width: `${before ? (p.afterCredits / before) * 100 : 0}%` }} />
+                    <div className="h-full bg-teal-600" style={{ width: `${before ? (paid / before) * 100 : 0}%` }} />
                     <div className="h-full bg-emerald-200" style={{ width: `${before ? (minus / before) * 100 : 0}%` }} />
                   </div>
                   <p className="mt-2 text-xs leading-relaxed text-stone-500">
                     受け取った財産 {man(p.taxable)}・税額の割り当て {fmt(before)}円
-                    {minus > 0 && (
+                    {credits.length > 0 && (
                       <>
                         <br />
-                        {[
-                          p.spouseCredit && `配偶者の税額軽減 −${fmt(p.spouseCredit)}円`,
-                          p.minorCredit && `未成年者控除 −${fmt(p.minorCredit)}円`,
-                          p.disabilityCredit && `障害者控除 −${fmt(p.disabilityCredit)}円`,
-                          p.giftTaxCredit && `贈与税額控除 −${fmt(p.giftTaxCredit)}円`,
-                        ]
-                          .filter(Boolean)
-                          .join("・")}
+                        {credits.join("・")}
                       </>
                     )}
                   </p>
@@ -234,6 +262,7 @@ export function TaxStep() {
                       [
                         ["取得財産の価額", p.acquired],
                         ["債務及び葬式費用", p.debts],
+                        ["相続時精算課税の贈与財産", p.settlementGifts],
                         ["3年以内の贈与財産", p.gifts],
                         ["課税価格", p.taxable],
                         ["按分割合", p.ratioText],
@@ -243,6 +272,9 @@ export function TaxStep() {
                         ["配偶者の税額軽減", -p.spouseCredit],
                         ["未成年者控除", -p.minorCredit],
                         ["障害者控除", -p.disabilityCredit],
+                        ["扶養義務者として差し引いた控除", -transfersInTotal(p)],
+                        ["相次相続控除", -p.successiveCredit],
+                        ["精算課税の贈与税額控除", -p.settlementCredit],
                       ] as [string, number | string][]
                     )
                       .filter(([, v]) => v !== 0 && v !== "")
@@ -256,10 +288,24 @@ export function TaxStep() {
                       <dt>納付すべき税額</dt>
                       <dd>{fmt(p.payable)}円</dd>
                     </div>
+                    {p.refund > 0 && (
+                      <div className="flex justify-between gap-2 pt-1 font-bold text-teal-800">
+                        <dt>還付される税額</dt>
+                        <dd>{fmt(p.refund)}円</dd>
+                      </div>
+                    )}
                   </dl>
                 </li>
               ))}
             </ul>
+            {r.persons.some((p) => transfersInTotal(p) > 0) && (
+              <details className="mt-2 text-xs text-stone-600">
+                <summary className="cursor-pointer text-teal-800">Tips：扶養義務者として差し引いた控除</summary>
+                <p className="mt-2 leading-relaxed">
+                  未成年者控除・障害者控除のうち、本人の相続税から引ききれない分は、本人を養う立場の家族（配偶者・父母・子など。扶養義務者）の相続税から差し引けます（相続税法19条の3・19条の4）。
+                </p>
+              </details>
+            )}
           </section>
         </div>
       </details>

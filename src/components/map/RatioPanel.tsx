@@ -41,6 +41,14 @@ export const ratioNumber = (s: string | null | undefined): number | null => {
   return /^\d+(\.\d+)?$/.test(t) ? Number(t) : null;
 };
 
+/** 借地権割合の欄の「60」「60%」「６０％」を割合（0.6）に。整数の%で 1〜99 でなければ undefined */
+export const tableLeaseRatio = (s: string | null | undefined): number | undefined => {
+  const t = (s ?? "").normalize("NFKC").replace(/\s/g, "").replace(/%$/, "");
+  if (!/^\d{1,2}$/.test(t)) return undefined;
+  const n = Number(t);
+  return n > 0 ? n / 100 : undefined;
+};
+
 export function RatioPanel({
   step,
   setStep,
@@ -59,7 +67,8 @@ export function RatioPanel({
   cache: Map<string, ArrayBuffer>;
   /** この市区町村の評価倍率表の PDF（場所から調べたもの。行を探せなかったときの案内に使う） */
   ratioUrl?: string | null;
-  onApply: (method: MultiplierMethod, areaSqm: number) => void;
+  /** lease：評価倍率表の行を確かめたときだけ、その行の借地権割合（読めなければ ratio は undefined） */
+  onApply: (method: MultiplierMethod, areaSqm: number, lease?: { ratio?: number }) => void;
   onUseRosenka: () => void;
   /** 倍率が決まったか（確かめたか、自分で入れたか）を知らせる。決まるまで 3. には進めない */
   onReady?: (ready: boolean) => void;
@@ -79,6 +88,8 @@ export function RatioPanel({
   const [area, setArea] = useState<number>(land.areaSqm);
   /** 本人が「はい」と確かめた行（あとで別の行を選んでも、確かめた行の倍率と出典を使う） */
   const [confirmed, setConfirmed] = useState<RatioSource | undefined>(saved?.source);
+  /** 確かめた行の借地権割合（この画面で行を確かめたときだけ。開き直したときや自分で倍率を入れたときは土地の値を変えない） */
+  const [confirmedLease, setConfirmedLease] = useState<{ ratio?: number } | undefined>(undefined);
 
   useEffect(() => {
     onReady?.(multiplier > 0);
@@ -200,6 +211,7 @@ export function RatioPanel({
                       if (!row) return;
                       setMultiplier(rowRate);
                       setConfirmed({ city: res.city ?? "", town: row.town, area: row.area || undefined, pdfUrl: res.pdfUrl ?? undefined, page: row.page });
+                      setConfirmedLease({ ratio: tableLeaseRatio(row.leaseRatio) });
                       setManual(false);
                       setStep(3);
                     }}
@@ -232,12 +244,14 @@ export function RatioPanel({
                 onChange={(v) => {
                   setMultiplier(v);
                   setConfirmed(undefined);
+                  setConfirmedLease(undefined);
                 }}
               />
             </Field>
             <Button
               onClick={() => {
                 setConfirmed(undefined);
+                setConfirmedLease(undefined);
                 setStep(3);
               }}
               disabled={!(multiplier > 0)}
@@ -308,7 +322,7 @@ export function RatioPanel({
         </span>
       </Note>
       {!hasArea && <p className="text-xs text-amber-800">地積を入れてください（登記簿や課税明細書に書いてある面積）。</p>}
-      <Button onClick={() => onApply(method, area)} disabled={!!v.needsConsultation || !hasRate || !hasArea} className="w-full py-3">
+      <Button onClick={() => onApply(method, area, confirmed ? confirmedLease : undefined)} disabled={!!v.needsConsultation || !hasRate || !hasArea} className="w-full py-3">
         この評価を反映して財産の入力へ戻る
       </Button>
     </div>

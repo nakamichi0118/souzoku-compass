@@ -23,6 +23,7 @@ import { type LatLng, type Road, fitLot, lotCorners } from "@/domain/geo/lot";
 import { depthFor, directionLabel, edgeClasses, edgeTouches, frontagesOf, polygonAreaSqm, rectangle } from "@/domain/geo/polygon";
 import type { LandAsset } from "@/domain/types";
 import { DISTRICTS, type District } from "@/domain/valuation/depth";
+import { leaseLetterOf } from "@/domain/valuation/lease";
 import { type RoadInput, evaluateRoads } from "@/domain/valuation/roads";
 import { parseRouteNotation } from "@/domain/valuation/rosenka";
 import { useCase } from "@/lib/store";
@@ -376,7 +377,9 @@ function LandWizard() {
     const e = classes[i];
     if (e === null || e === undefined) return [];
     const n = noteFor(readings, keyOf(f), frontageContext(ctx, f));
-    return [{ edge: e, price: parseRouteNotation(n)?.routePrice ?? 0, depth: depthFor(f, areaForDepth), notation: n || undefined }];
+    // 間口は土地の形から測った長さ（m、小数2桁）。間口狭小・奥行長大の補正に使う
+    const frontage = Math.round(f.frontage * 100) / 100;
+    return [{ edge: e, price: parseRouteNotation(n)?.routePrice ?? 0, depth: depthFor(f, areaForDepth), notation: n || undefined, ...(frontage > 0 ? { frontage } : {}) }];
   });
   const evaluation = evaluateRoads(district, roadInputs);
   const duplicated = classes.some((c) => c === null);
@@ -540,6 +543,8 @@ function LandWizard() {
     patchLand({
       pending: rest?.length ? rest : undefined,
       areaSqm,
+      // 正面の道路の記号（A〜G）で借地権割合が決まるときは、前に選んだ借地権割合は使わない（記号のほうを使う）
+      ...(leaseLetterOf(evaluation.front.notation) ? { leaseRatio: undefined } : {}),
       method: {
         type: "rosenka",
         routePrice: evaluation.front.price,
@@ -995,7 +1000,7 @@ function LandWizard() {
                     )}
                   </div>
                   <Note tone="info">
-                    高めに評価しています（角地の加算率を使い、間口が狭い・形がいびつ・がけ地などの減額はしていません）。下げられるかは税理士に確認できます。
+                    間口が狭い・奥行が長い土地の補正はしています。角地の加算率を使い、形がいびつ・がけ地などの減額はしていないため、高めに出ることがあります。下げられるかは税理士に確認できます。
                     <span className="mt-2 block">
                       <ConsultLink topic="土地の評価" />
                     </span>
@@ -1021,10 +1026,11 @@ function LandWizard() {
                 setRoute("rosenka");
                 setStep(2);
               }}
-              onApply={(method, areaSqm) => {
+              onApply={(method, areaSqm, lease) => {
                 // 地積が入っていないときは、「地積」の確認待ちを消さない
                 const rest = land.pending?.filter((x) => !/路線価|奥行|倍率|固定資産税評価額/.test(x) && !(/地積/.test(x) && areaSqm > 0));
-                patchLand({ method, areaSqm, pending: rest?.length ? rest : undefined });
+                // 評価倍率表の行を確かめたときは、その行の借地権割合を使う（読めない行なら空にして、土地の画面で選んでもらう）
+                patchLand({ method, areaSqm, pending: rest?.length ? rest : undefined, ...(lease ? { leaseRatio: lease.ratio } : {}) });
                 router.push(`/case/assets?asset=${land.id}&applied=1`);
               }}
             />

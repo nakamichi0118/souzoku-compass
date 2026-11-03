@@ -12,6 +12,7 @@ export const CASE_LIMITS = {
   assets: 500,
   debts: 200,
   priorGifts: 200,
+  compensation: 50,
   allocations: 500,
   shares: 50,
   bearers: 50,
@@ -71,6 +72,7 @@ export const caseSchema = z
     debts: many(debt, CASE_LIMITS.debts, "債務・葬式費用"),
     allocations: many(allocation, CASE_LIMITS.allocations, "遺産分割の割合"),
     priorGifts: many(z.looseObject({}), CASE_LIMITS.priorGifts, "生前の贈与"),
+    compensation: many(z.looseObject({}), CASE_LIMITS.compensation, "代償金").optional(),
     progress: z.looseObject({ completed: many(z.string().max(100), CASE_LIMITS.progress, "進み具合の記録").optional() }).optional(),
   })
   .superRefine((c, ctx) => {

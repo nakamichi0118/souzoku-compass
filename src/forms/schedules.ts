@@ -10,13 +10,19 @@ import { yen, yenOrBlank } from "./format";
 import type { PageFill } from "./render";
 import { scheduleTotals } from "./schedule11";
 
-/** 第1表・第15表に記載する人（財産の取得者・債務の負担者） */
-export const filingPersons = (r: TaxResult) => r.persons.filter((p) => p.acquired > 0 || p.taxable > 0 || p.debts > 0);
+/**
+ * 第1表・第15表に記載する人（財産の取得者・債務の負担者・相続時精算課税の贈与を受けた人）。
+ * 代償金を払って取得財産の価額が0円になった人も、財産を取得した人として記載する
+ */
+export const filingPersons = (r: TaxResult) =>
+  r.persons.filter(
+    (p) => p.acquired > 0 || p.taxable > 0 || p.debts > 0 || p.settlementGifts > 0 || p.settlementCredit > 0 || p.compensationOut > 0 || p.undivided > 0,
+  );
 
 // ---------------------------------------------------------------- 第15表
 
 /** 第15表の①〜㊳を計算する（各人） */
-export function rows15(perCat: Map<number, number>, t: Pick<PersonTax, "debtOnly" | "funeralOnly" | "gifts">): number[] {
+export function rows15(perCat: Map<number, number>, t: Pick<PersonTax, "debtOnly" | "funeralOnly" | "gifts"> & Partial<Pick<PersonTax, "settlementGifts">>): number[] {
   const v = (n: number) => perCat.get(n) ?? 0;
   const r: number[] = new Array(39).fill(0);
   for (let i = 1; i <= 5; i++) r[i] = v(i);
@@ -31,7 +37,7 @@ export function rows15(perCat: Map<number, number>, t: Pick<PersonTax, "debtOnly
   for (const i of [25, 26, 27, 28]) r[i] = v(i);
   r[29] = r[25] + r[26] + r[27] + r[28];
   r[30] = r[6] + r[10] + r[16] + r[22] + r[23] + r[24] + r[29];
-  r[31] = 0; // 相続時精算課税適用財産（対象外）
+  r[31] = t.settlementGifts ?? 0; // 相続時精算課税適用財産の価額（第11の2表1⑧。第1表②と同じ）
   r[32] = r[6] + r[10] + r[12] + r[17] + r[18] + r[27];
   r[33] = t.debtOnly;
   r[34] = t.funeralOnly;
@@ -55,8 +61,9 @@ export function build15(c: Case, r: TaxResult): PageFill[] {
   const { items } = scheduleTotals(c, r);
   const persons = filingPersons(r);
   const perPerson = new Map<string, Map<number, number>>();
+  // 第15表は未分割の財産も法定相続分で取得したものとして各人の欄に入れる（第1表①と合う）
   for (const it of items) {
-    for (const a of it.acquirers) {
+    for (const a of [...it.acquirers, ...it.undivided]) {
       const m = perPerson.get(a.personId) ?? new Map<number, number>();
       m.set(it.cat, (m.get(it.cat) ?? 0) + a.amount);
       perPerson.set(a.personId, m);
@@ -231,10 +238,13 @@ export function build5(c: Case, r: TaxResult): PageFill[] {
         g03: d ?? "1",
         g04: yen(Number(raw.n / raw.d)),
         g05: yen(s.legalShareAmount),
-        g06: yen(sp.acquired),
-        g07: yenOrBlank(sp.debts),
-        g09: yenOrBlank(sp.debts),
-        g10: yenOrBlank(sp.gifts),
+        // ① 分割財産の価額（第11表2の配偶者の①。相続時精算課税の贈与財産を含む）、② 債務及び葬式費用、
+        // ③ 未分割財産の価額（第11表2の配偶者の②）、④ ②−③（③が大きいときは0）、⑤ 暦年課税分の贈与財産価額
+        g06: yen(s.divided),
+        g07: yenOrBlank(s.debts),
+        g08: yenOrBlank(s.undivided),
+        g09: s.debts > 0 ? yen(s.debtsOverUndivided) : "",
+        g10: yenOrBlank(s.gifts),
         g11: yen(s.spouseTaxable, ",000"),
         g12: yen(r.totalTax, "00"),
         g13: yen(s.base),

@@ -1,9 +1,13 @@
 /** 申告書への記入用の書式 */
 
-/** 金額を3桁区切りにし、様式に印字済みの末尾（"000" ",000" "00" "000,000"）を取り除く */
+/**
+ * 金額を3桁区切りにし、様式に印字済みの末尾（"000" ",000" "00" "000,000"）を取り除く。
+ * マイナスの金額は、申告書の書き方どおり頭に「△」を付ける（例：△5,000,000）
+ */
 export function yen(n: number | undefined, preprinted = ""): string {
   if (n === undefined || n === null) return "";
-  const s = Math.trunc(n).toLocaleString("ja-JP");
+  const t = Math.trunc(n);
+  const s = (t < 0 ? "△" : "") + Math.abs(t).toLocaleString("ja-JP");
   if (!preprinted) return s;
   if (n === 0) return ""; // 0円は空欄（印字済みの0だけが残る）
   if (!s.endsWith(preprinted)) {

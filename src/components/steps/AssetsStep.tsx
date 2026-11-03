@@ -8,7 +8,7 @@ import type { Asset, AssetKind, Person } from "@/domain/types";
 import { newId, useCase } from "@/lib/store";
 import { usePlan } from "@/lib/planStore";
 import { AssetIcon } from "@/components/my/icons";
-import { LandEditor, SmallResidential } from "./LandEditor";
+import { LandEditor, LeaseRatioSelect, RentRatioField, SmallResidential, resetSmallOnKindChange } from "./LandEditor";
 import type { Interview } from "@/domain/procedures/interview";
 
 const KINDS: { kind: AssetKind; label: string }[] = [
@@ -222,20 +222,23 @@ export function AssetsStep() {
               }}
               className={`scroll-mt-40 rounded-xl border bg-white ${open ? "border-sky-400 shadow-sm" : "border-stone-200"}`}
             >
-              <button type="button" onClick={() => setOpenId(open ? null : a.id)} aria-expanded={open} className="flex w-full items-center gap-3 px-4 py-3 text-left">
-                <span className="flex w-28 shrink-0 items-center gap-1.5 rounded bg-stone-100 px-2 py-0.5 text-xs font-medium text-stone-700">
+              <button type="button" onClick={() => setOpenId(open ? null : a.id)} aria-expanded={open} className="flex w-full items-center gap-2 px-4 py-3 text-left sm:gap-3">
+                <span className="flex w-24 shrink-0 items-center gap-1.5 rounded bg-stone-100 px-2 py-0.5 text-xs font-medium text-stone-700 sm:w-28">
                   <AssetIcon k={a.kind} className="h-4 w-4 shrink-0" />
                   <span className="truncate">{kindLabel(a.kind)}</span>
                 </span>
-                <span className={`min-w-0 flex-1 truncate font-semibold ${a.label ? "text-stone-900" : "text-stone-400"}`}>{a.label || "（名称未入力）"}</span>
-                {missingRecipient && <span className="shrink-0 rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-orange-800">受取人が未設定</span>}
-                {docId && (
-                  <span className={`hidden shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold sm:inline ${got ? "bg-emerald-100 text-emerald-800" : "bg-stone-100 text-stone-500"}`}>
-                    {got ? "書類あり" : "書類まだ"}
-                  </span>
-                )}
-                {(a.pending?.length || line?.valuation.needsConsultation) && <span className="shrink-0 rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-orange-800">確認待ち</span>}
-                <span className="w-32 shrink-0 text-right font-bold tabular-nums text-teal-800">{line?.valuation.needsConsultation ? <span className="text-sm text-orange-700">入力待ち</span> : line ? `${fmt(line.valuation.value)}円` : "—"}</span>
+                {/* スマートフォンでは、印（確認待ちなど）を名称の下に回して横にはみ出さないようにする */}
+                <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+                  <span className={`min-w-0 grow basis-full truncate font-semibold sm:basis-0 ${a.label ? "text-stone-900" : "text-stone-400"}`}>{a.label || "（名称未入力）"}</span>
+                  {missingRecipient && <span className="shrink-0 rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-orange-800">受取人が未設定</span>}
+                  {docId && (
+                    <span className={`hidden shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold sm:inline ${got ? "bg-emerald-100 text-emerald-800" : "bg-stone-100 text-stone-500"}`}>
+                      {got ? "書類あり" : "書類まだ"}
+                    </span>
+                  )}
+                  {(a.pending?.length || line?.valuation.needsConsultation) && <span className="shrink-0 rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-orange-800">確認待ち</span>}
+                </span>
+                <span className="shrink-0 text-right font-bold tabular-nums text-teal-800 sm:w-32">{line?.valuation.needsConsultation ? <span className="text-sm text-orange-700">入力待ち</span> : line ? `${fmt(line.valuation.value)}円` : "—"}</span>
                 <ChevronDown className={`h-4 w-4 shrink-0 text-stone-400 transition ${open ? "rotate-180" : ""}`} aria-hidden />
               </button>
               {open && (
@@ -396,6 +399,11 @@ function AssetEditor({
           <Field label="固定資産税評価額" hint="固定資産税の課税明細書に記載。家屋の評価額は固定資産税評価額×1.0です">
             <YenInput value={a.fixedAssetValue} onChange={(v) => patch({ fixedAssetValue: v })} />
           </Field>
+          <div className="sm:col-span-2">
+            {/* 貸している家屋（貸家）は、借りている人の権利の分だけ低く評価する。やめたら賃貸割合は残さない */}
+            <Check checked={!!a.rented} onChange={(v) => patch({ rented: v || undefined, rentRatio: v ? a.rentRatio : undefined })} label="人に貸している" />
+          </div>
+          {a.rented && <RentRatioField value={a.rentRatio} onChange={(v) => patch({ rentRatio: v })} />}
         </>
       );
     case "listedStock":
@@ -442,19 +450,19 @@ function AssetEditor({
             <YenInput value={a.buildingFixedAssetValue} onChange={(v) => patch({ buildingFixedAssetValue: v })} />
           </Field>
           <Field label="築年数（年・月）">
-            <div className="flex gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <NumInput value={a.builtYearsMonths.years} onChange={(v) => patch({ builtYearsMonths: { ...a.builtYearsMonths, years: v } })} unit="年" />
               <NumInput value={a.builtYearsMonths.months} onChange={(v) => patch({ builtYearsMonths: { ...a.builtYearsMonths, months: v } })} unit="月" />
             </div>
           </Field>
           <Field label="総階数（地階を除く）／所在階" hint="地下を除いて2階建て以下の建物は、区分所有補正をしません">
-            <div className="flex gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <NumInput value={a.totalFloors} onChange={(v) => patch({ totalFloors: v })} unit="階建" />
               <NumInput value={a.floor} onChange={(v) => patch({ floor: v })} unit="階" />
             </div>
           </Field>
           <Field label="敷地利用権の面積／専有部分の面積" hint="敷地利用権の面積＝敷地の面積×敷地権の割合（小数点以下第3位切上げ）">
-            <div className="flex gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <NumInput value={a.landShareSqm} onChange={(v) => patch({ landShareSqm: v })} unit="㎡" />
               <NumInput value={a.exclusiveAreaSqm} onChange={(v) => patch({ exclusiveAreaSqm: v })} unit="㎡" />
             </div>
@@ -467,6 +475,23 @@ function AssetEditor({
             />
             <p className="text-xs text-stone-500">二世帯住宅などで当てはまる場合は、区分所有補正をしません。当てはまるか分からない場合は、税理士に確認してください。</p>
           </div>
+          <div className="sm:col-span-2">
+            <Check
+              checked={!!a.rented}
+              onChange={(v) => {
+                // 貸しているかで特例の種類（貸付事業用）が変わるので、前の種類のための答えは引き継がない
+                const p = { rented: v || undefined, rentRatio: v ? a.rentRatio : undefined };
+                patch({ ...p, ...resetSmallOnKindChange(a, p) });
+              }}
+              label="人に貸している"
+            />
+          </div>
+          {a.rented && (
+            <>
+              <RentRatioField value={a.rentRatio} onChange={(v) => patch({ rentRatio: v })} />
+              <LeaseRatioSelect value={a.leaseRatio} onChange={(v) => patch({ leaseRatio: v })} hint="マンションの敷地の路線価の記号です（例：420D の D）。倍率地域は評価倍率表の「借地権割合」の欄" />
+            </>
+          )}
           <SmallResidential living={living} a={a} patch={patch} />
         </>
       );
