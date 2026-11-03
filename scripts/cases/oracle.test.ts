@@ -14,6 +14,7 @@ import {
   rosenkaUnitPrice,
   condoCorrection,
   ageAt,
+  isSupporter,
   TABLES,
 } from "./oracle";
 
@@ -372,3 +373,311 @@ describe("土地・マンションの評価", () => {
 function floorK(x: number): number {
   return Math.floor(x / 1000) * 1000;
 }
+
+/* ------------------------------------------------------------------ */
+/* 見直しで直した決まり（扶養義務者・空室・貸家建付借地権・前の控除・穴埋め・還付・代償金・正面路線・補正率） */
+/* ------------------------------------------------------------------ */
+
+type LandItem = Extract<EstateItem, { type: "land" }>;
+function landR(id: string, roads: LandItem["valuation"] extends infer V ? (V extends { kind: "rosenka"; roads: infer R } ? R : never) : never, area: number, extra: Partial<LandItem> = {}): EstateItem {
+  return { id, type: "land", label: id, areaSqm: area, landUse: "宅地", valuation: { kind: "rosenka", district: "普通住宅地区", roads }, use: "self", ...extra } as EstateItem;
+}
+const ref = (e: ReturnType<typeof expected>, id: string): number => e.persons.find((p) => p.id === id)?.refund ?? 0;
+
+describe("扶養義務者（相基通1の2-1：配偶者・直系血族・兄弟姉妹）", () => {
+  const sp = mem("sp", "spouse");
+  const c1 = mem("c1", "child");
+  const c2 = mem("c2", "child", "1975-01-01", { predeceased: true });
+  const g1 = mem("g1", "grandchild", "2021-01-01", { substituteOf: "c2" });
+  const g2 = mem("g2", "grandchild", "2006-01-01", { substituteOf: "c2" });
+  // c3（先に亡くなった子）は g3 の被代襲者。人としては使わない
+  mem("c3", "child", "1976-01-01", { predeceased: true });
+  const g3 = mem("g3", "grandchild", "2004-01-01", { substituteOf: "c3" });
+  const fa = mem("fa", "parent", "1940-01-01");
+  const mo = mem("mo", "parent", "1942-01-01");
+  const gp = mem("gp", "grandparent", "1920-01-01");
+  const sFull = mem("sf", "sibling");
+  const sHalf = mem("sh", "sibling", "1971-01-01", { halfBlood: true });
+  const sHalf2 = mem("sh2", "sibling", "1972-01-01", { halfBlood: true });
+  const o = mem("o", "other");
+  it("子：配偶者（親）・ほかの子・亡くなった方の父母祖父母。兄弟姉妹（おじ・おば）・受遺者は含めない", () => {
+    expect([sp, c1, fa, gp].every((q) => isSupporter(mem("x", "child"), q))).toBe(true);
+    expect(isSupporter(mem("x", "child"), mem("y", "adoptedChild"))).toBe(true);
+    expect([sFull, o, g3, c2].some((q) => isSupporter(mem("x", "child"), q))).toBe(false);
+  });
+  it("代襲相続人の孫：配偶者（祖母）・同じ親の兄弟。おじ（亡くなった方の子）・いとこは含めない", () => {
+    expect(isSupporter(g1, sp)).toBe(true);
+    expect(isSupporter(g1, g2)).toBe(true);
+    expect(isSupporter(g1, fa)).toBe(true);
+    expect(isSupporter(g1, c1)).toBe(false);
+    expect(isSupporter(g1, g3)).toBe(false);
+  });
+  it("配偶者：子と代襲相続人。亡くなった方の父母・兄弟姉妹（姻族）は含めない", () => {
+    expect(isSupporter(sp, c1)).toBe(true);
+    expect(isSupporter(sp, g1)).toBe(true);
+    expect(isSupporter(sp, fa)).toBe(false);
+    expect(isSupporter(sp, sFull)).toBe(false);
+    expect(isSupporter(sp, mem("gx", "grandchild", "2000-01-01"))).toBe(false);
+  });
+  it("父母：ほかの父母と全血の兄弟姉妹。半血・配偶者・祖父母は含めない", () => {
+    expect(isSupporter(mo, fa)).toBe(true);
+    expect(isSupporter(mo, sFull)).toBe(true);
+    expect(isSupporter(mo, sHalf)).toBe(false);
+    expect(isSupporter(mo, sp)).toBe(false);
+    expect(isSupporter(mo, gp)).toBe(false);
+  });
+  it("兄弟姉妹：どちらかが全血なら兄弟姉妹、半血どうしは含めない。父母は本人が全血のときだけ", () => {
+    expect(isSupporter(sHalf, sFull)).toBe(true);
+    expect(isSupporter(sFull, sHalf)).toBe(true);
+    expect(isSupporter(sHalf, sHalf2)).toBe(false);
+    expect(isSupporter(sFull, mo)).toBe(true);
+    expect(isSupporter(sHalf, mo)).toBe(false);
+  });
+  it("甥姪：同じ親の甥姪だけ。おじ・おば（亡くなった方の兄弟姉妹）・いとこは含めない", () => {
+    const n1 = mem("n1", "nephewNiece", "2016-01-01", { substituteOf: "bx" });
+    const n2 = mem("n2", "nephewNiece", "2000-01-01", { substituteOf: "bx" });
+    const n3 = mem("n3", "nephewNiece", "1990-01-01", { substituteOf: "by" });
+    expect(isSupporter(n1, n2)).toBe(true);
+    expect(isSupporter(n1, n3)).toBe(false);
+    expect(isSupporter(n1, sFull)).toBe(false);
+  });
+  it("先に亡くなった人は扶養義務者にならない", () => {
+    expect(isSupporter(g1, mem("sp0", "spouse", "1950-01-01", { predeceased: true }))).toBe(false);
+  });
+  it("特別障害者の配偶者（子なし）：控除しきれない分を亡くなった方の兄弟姉妹から引かない", () => {
+    const ms = [mem("s", "spouse", "1956-01-01", { disability: "special" }), mem("b1", "sibling"), mem("b2", "sibling", "1972-01-01")];
+    const e = expected(scen(ms, [cash("d1", 96_000_000), cash("d2", 24_000_000)], { d1: [["s", 1, 1]], d2: [["b1", 1, 2], ["b2", 1, 2]] }));
+    // 基礎控除4,800万 → 7,200万：配偶者5,400万→920万、兄弟各900万→90万 → 総額1,100万。兄弟は110万×1.2 = 132万（振替なし）
+    expect(e.totalTax).toBe(11_000_000);
+    expect(pay(e, "b1")).toBe(1_320_000);
+    expect(pay(e, "b2")).toBe(1_320_000);
+    expect(pay(e, "s")).toBe(0);
+  });
+  it("未成年の代襲相続人（5歳）：控除しきれない分は同じ親の兄から引き、おじからは引かない", () => {
+    const ms = [mem("s", "spouse", "1957-01-01"), mem("c1", "child"), c2, g1, g2];
+    const e = expected(
+      scen(ms, [cash("d1", 70_000_000), cash("d2", 35_000_000), cash("d3", 1_000_000), cash("d4", 34_000_000)], {
+        d1: [["s", 1, 1]],
+        d2: [["c1", 1, 1]],
+        d3: [["g1", 1, 1]],
+        d4: [["g2", 1, 1]],
+      }),
+    );
+    // 基礎控除5,400万 → 8,600万：配偶者4,300万→660万、子2,150万→272.5万、孫各1,075万→111.25万 → 総額1,155万
+    expect(e.totalTax).toBe(11_550_000);
+    // おじ（c1）は 1,155万×35/140 = 2,887,500 のまま（配偶者は税額軽減で0なので引く先にならない）
+    expect(pay(e, "c1")).toBe(2_887_500);
+    // g1：算出 82,500、控除130万 → 不足 1,217,500 を兄 g2（2,805,000）から → 1,587,500
+    expect(pay(e, "g1")).toBe(0);
+    expect(pay(e, "g2")).toBe(1_587_500);
+  });
+  it("特別障害者の母：控除しきれない分を父と全血の兄弟から引き、半血の兄・配偶者からは引かない", () => {
+    const ms = [mem("s", "spouse", "1978-01-01"), fa, mem("mo", "parent", "1950-01-01", { disability: "special" }), sFull, sHalf];
+    const deps = [cash("d1", 100_000_000), cash("d2", 30_000_000), cash("d3", 2_000_000), cash("d4", 10_000_000), cash("d5", 10_000_000)];
+    const e = expected(scen(ms, deps, { d1: [["s", 1, 1]], d2: [["fa", 1, 1]], d3: [["mo", 1, 1]], d4: [["sf", 1, 1]], d5: [["sh", 1, 1]] }));
+    // 総額 17,999,800。半血の兄は 17,999,800×10/152 = 1,184,197 ×1.2 → 1,421,036 → 1,421,000（振替なし）
+    expect(e.totalTax).toBe(17_999_800);
+    expect(pay(e, "sh")).toBe(1_421_000);
+    expect(pay(e, "mo")).toBe(0);
+    // 母の不足 1,800,000 − 236,839 = 1,563,161 を父（3,552,592）と全血の兄弟（1,421,036）が相続税額の比で
+    expect(pay(e, "fa") + pay(e, "sf")).toBeLessThanOrEqual(3_552_592 + 1_421_036 - 1_563_161);
+    expect(pay(e, "fa") + pay(e, "sf")).toBeGreaterThan(3_552_592 + 1_421_036 - 1_563_161 - 200);
+    expect(pay(e, "sf")).toBeLessThan(1_421_000);
+  });
+});
+
+describe("前の相続でも受けた未成年者控除・障害者控除（19条の3第3項・19条の4第3項、相基通19の3-5）", () => {
+  const two = (m2: Member): Scenario =>
+    scen([mem("a", "child"), m2], [cash("d", 100_000_000)], { d: [["a", 1, 2], [m2.id, 1, 2]] });
+  // 基礎控除4,200万 → 5,800万、各2,900万 → 385万。総額770万、各人の算出税額 385万
+  it("前の相続で最初の控除額（9歳→90万円）を使い切った → 今回は0円", () => {
+    const e = expected(two(mem("m", "child", "2014-03-01", { priorMinorCredit: { date: "2023-04-10", amount: 900_000 } })));
+    expect(pay(e, "m")).toBe(3_850_000);
+  });
+  it("一部だけ使った：最初の控除額 − 控除済み の残りまで（今回の60万円より少なければ残り）", () => {
+    expect(pay(expected(two(mem("m", "child", "2014-03-01"))), "m")).toBe(3_250_000);
+    expect(pay(expected(two(mem("m", "child", "2014-03-01", { priorMinorCredit: { date: "2023-04-10", amount: 300_000 } }))), "m")).toBe(3_250_000);
+    expect(pay(expected(two(mem("m", "child", "2014-03-01", { priorMinorCredit: { date: "2023-04-10", amount: 500_000 } }))), "m")).toBe(3_450_000);
+  });
+  it("前の相続が令和4年3月以前でも、今回の相続が令和4年4月以後なら18歳までの年数で計算（相基通19の3-5（注）(2)）", () => {
+    // 2021-09-15 に8歳 → 10万×(18−8)=100万 − 控除済み65万 = 35万（今回の控除額50万より少ない）
+    const e = expected(two(mem("m", "child", "2013-03-01", { priorMinorCredit: { date: "2021-09-15", amount: 650_000 } })));
+    expect(pay(e, "m")).toBe(3_500_000);
+  });
+  it("障害者控除：前の相続（44歳）の最初の控除額410万円 − 控除済み200万円 = 210万円まで", () => {
+    const e = expected(two(mem("m", "child", "1975-08-01", { disability: "general", priorDisabilityCredit: { date: "2020-03-01", amount: 2_000_000 } })));
+    expect(pay(e, "m")).toBe(1_750_000);
+  });
+});
+
+describe("一部が空室の貸付事業用宅地等（貸している部分だけ）", () => {
+  it("国税庁の例：自用地4,000万円・借地権割合0.7・賃貸割合0.9 → 貸している部分 2,844万円、減額 1,422万円、課税価格に入る額 1,822万円", () => {
+    const land = landR("l", [{ position: "front", price: 200_000, depth: 16, frontage: 12.5, leaseLetter: "C" }], 200, {
+      use: "rentedHouse",
+      rentRatio: 0.9,
+      smallLand: { kind: "rental", acquirer: "a" },
+    });
+    const e = expected(scen([mem("a", "child")], [land], { l: [["a", 1, 1]] }));
+    // 評価額 4,000万×(1−0.7×0.3×0.9) = 3,244万。空室の部分 400万（自用地）は特例の外
+    expect(tp(e, "a")).toBe(18_220_000);
+  });
+  it("賃貸中のマンション（賃貸割合0.5）：敷地の貸している部分 = 敷地利用権 × 0.5 × (1−0.6×0.3)", () => {
+    const condo: EstateItem = {
+      id: "m",
+      type: "condo",
+      label: "マンション",
+      landValue: 20_000_000,
+      buildingFixedAssetValue: 5_000_000,
+      builtYears: 20,
+      builtMonths: 0,
+      totalFloors: 2,
+      floor: 1,
+      landShareSqm: 30,
+      exclusiveAreaSqm: 60,
+      rented: true,
+      smallLand: { kind: "rental", acquirer: "a" },
+    };
+    Object.assign(condo, { leaseRatio: 0.6, rentRatio: 0.5 });
+    const e = expected(scen([mem("a", "child")], [condo], { m: [["a", 1, 1]] }));
+    // 建物 425万、敷地 2,000万×(1−0.09) = 1,820万、貸している部分 820万 → 減額 410万
+    expect(tp(e, "a")).toBe(4_250_000 + 18_200_000 - 4_100_000);
+  });
+  it("貸家建付借地権（評基通28）：自用地×借地権割合×(1−0.3×賃貸割合)、貸付事業用は 自用地×借地権割合×賃貸割合×0.7（200㎡まで）", () => {
+    const land = landR("l", [{ position: "front", price: 300_000, depth: 20, frontage: 15, leaseLetter: "D" }], 300, {
+      use: "rentedLeasehold",
+      rentRatio: 0.8,
+      smallLand: { kind: "rental", acquirer: "a" },
+    });
+    const e = expected(scen([mem("a", "child")], [land], { l: [["a", 1, 1]] }));
+    // 9,000万×0.6×(1−0.24) = 4,104万。貸している部分 9,000万×0.6×0.8×0.7 = 3,024万（240㎡）→ 200㎡分 2,520万の50% = 1,260万
+    expect(tp(e, "a")).toBe(41_040_000 - 12_600_000);
+  });
+});
+
+describe("一部未分割（穴埋め方式）", () => {
+  it("自宅を配偶者が取得、残りの未分割は 法定相続分×合計 − 取得額 の不足分の割合で", () => {
+    const ms = [mem("s", "spouse"), mem("a", "child"), mem("b", "child", "1972-01-01")];
+    const sc = scen(ms, [cash("d1", 60_000_000), cash("d2", 20_000_000), cash("d3", 40_000_000)], { d1: [["s", 1, 1]], d2: [["b", 1, 1]] });
+    if (sc.division.kind === "agreed") sc.division.partlyUndivided = true;
+    const e = expected(sc);
+    // T=1.2億：配偶者 6,000万−6,000万=0、a 3,000万−0、b 3,000万−2,000万=1,000万 → 未分割4,000万を 3:1
+    expect(tp(e, "s")).toBe(60_000_000);
+    expect(tp(e, "a")).toBe(30_000_000);
+    expect(tp(e, "b")).toBe(30_000_000);
+    expect(pay(e, "a")).toBe(2_400_000);
+    expect(pay(e, "s")).toBe(0);
+  });
+  it("1つの財産の持分の一部だけ決まった：残りの持分を不足分の割合で（法定相続分を超えた人は0）", () => {
+    const ms = [mem("a", "child"), mem("b", "child", "1972-01-01"), mem("c", "child", "1974-01-01")];
+    const sc = scen(ms, [cash("d1", 50_000_000), cash("d2", 30_000_000)], { d1: [["a", 1, 2]], d2: [["b", 1, 1]] });
+    if (sc.division.kind === "agreed") sc.division.partlyUndivided = true;
+    const e = expected(sc);
+    // T=8,000万、各1/3：a 1/3×8,000万−2,500万、b は超えるので0、c 1/3×8,000万 → 2,500万を 5:80
+    expect(tp(e, "a")).toBe(26_470_000);
+    expect(tp(e, "b")).toBe(30_000_000);
+    expect(tp(e, "c")).toBe(23_529_000);
+  });
+});
+
+describe("相続時精算課税の贈与税の還付と⑰の端数", () => {
+  it("基礎控除以下でも、精算課税の贈与税が戻るときは申告が要る", () => {
+    const e = expected(
+      scen([mem("a", "child")], [cash("d", 5_000_000)], { d: [["a", 1, 1]] }, { gifts: [{ to: "a", date: "2019-06-01", amount: 28_000_000, giftTaxPaid: 600_000, settlement: true }] }),
+    );
+    expect(e.totalTaxablePrice).toBe(33_000_000);
+    expect(e.totalTax).toBe(0);
+    expect(ref(e, "a")).toBe(600_000);
+    expect(e.filingRequired).toBe(true);
+  });
+  it("⑰ 精算課税分の贈与税額控除は100円未満を切り捨てる", () => {
+    const e = expected(
+      scen([mem("a", "child")], [cash("d", 5_000_000)], { d: [["a", 1, 1]] }, { gifts: [{ to: "a", date: "2019-06-01", amount: 28_000_000, giftTaxPaid: 600_050, settlement: true }] }),
+    );
+    expect(ref(e, "a")).toBe(600_000);
+  });
+  it("還付がなく基礎控除以下なら申告は要らない", () => {
+    const e = expected(scen([mem("a", "child")], [cash("d", 30_000_000)], { d: [["a", 1, 1]] }));
+    expect(e.filingRequired).toBe(false);
+  });
+});
+
+describe("代償分割（相基通11の2-10）", () => {
+  const land: EstateItem = { id: "l", type: "land", label: "土地", areaSqm: 200, landUse: "宅地", valuation: { kind: "multiplier", fixedAssetValue: 20_000_000, rate: 1 }, use: "self" };
+  it("代償金を土地の時価をもとに決めた：代償金×評価額÷時価", () => {
+    const sc = scen([mem("a", "child"), mem("b", "child", "1972-01-01")], [land, cash("d", 10_000_000)], { l: [["a", 1, 1]], d: [["a", 1, 1]] });
+    if (sc.division.kind === "agreed") sc.division.compensation = [{ from: "a", to: "b", amount: 15_000_000, basis: { item: "l", marketValue: 30_000_000 } }];
+    const e = expected(sc);
+    // 1,500万 × 2,000万 ÷ 3,000万 = 1,000万
+    expect(tp(e, "a")).toBe(20_000_000);
+    expect(tp(e, "b")).toBe(10_000_000);
+  });
+  it("時価をもとにしていなければ額面", () => {
+    const sc = scen([mem("a", "child"), mem("b", "child", "1972-01-01")], [land, cash("d", 10_000_000)], { l: [["a", 1, 1]], d: [["a", 1, 1]] });
+    if (sc.division.kind === "agreed") sc.division.compensation = [{ from: "a", to: "b", amount: 15_000_000 }];
+    expect(tp(expected(sc), "b")).toBe(15_000_000);
+  });
+  it("代償金を払う人が分割で遺産を取得していない → 計算の対象外（税理士に相談）", () => {
+    const ms = [mem("a", "child"), mem("b", "child", "1972-01-01"), mem("c", "child", "1974-01-01")];
+    const sc = scen(ms, [cash("d", 40_000_000), { id: "i", type: "insurance", label: "保険", amount: 20_000_000, recipient: "b" }], { d: [["a", 1, 1]] });
+    if (sc.division.kind === "agreed") sc.division.compensation = [{ from: "b", to: "c", amount: 5_000_000 }];
+    const e = expected(sc);
+    expect(e.computable).toBe(false);
+    expect(e.outOfScope).toContain("代償金");
+  });
+});
+
+describe("正面路線の判定（路線価×奥行価格補正率が同じとき）", () => {
+  it("間口の長い方を正面にする（質疑応答事例「正面路線の判定(1)」）。並べ方によらない", () => {
+    const roads = [
+      { position: "front" as const, price: 200_000, depth: 25, frontage: 12, leaseLetter: "D" as const },
+      { position: "side" as const, price: 194_000, depth: 12, frontage: 25, leaseLetter: "D" as const },
+    ];
+    const r = rosenkaUnitPrice("普通住宅地区", roads);
+    // 194,000（正面）+ 200,000×0.97×0.03 = 199,820。間口25m・奥行12mなので間口狭小・奥行長大なし
+    expect(r.front.price).toBe(194_000);
+    expect(r.unit).toBe(199_820);
+    expect(rosenkaUnitPrice("普通住宅地区", [...roads].reverse()).unit).toBe(199_820);
+  });
+  it("間口も同じなら路線価の高い方（借地権割合もその路線の記号）", () => {
+    const r = rosenkaUnitPrice("普通住宅地区", [
+      { position: "front", price: 194_000, depth: 12, frontage: 20, leaseLetter: "D" },
+      { position: "side", price: 200_000, depth: 25, frontage: 20, leaseLetter: "C" },
+    ]);
+    expect(r.front.leaseLetter).toBe("C");
+    expect(r.unit).toBe(199_820);
+  });
+  it("すべて同じなら入力の順（正面・側方・裏面の順）", () => {
+    const r = rosenkaUnitPrice("普通住宅地区", [
+      { position: "back", price: 250_000, depth: 20, frontage: 15, leaseLetter: "D" },
+      { position: "front", price: 250_000, depth: 20, frontage: 15, leaseLetter: "C" },
+    ]);
+    expect(r.front.leaseLetter).toBe("C");
+    expect(r.unit).toBe(255_000);
+  });
+});
+
+describe("税理士に確かめた補正率", () => {
+  const one = (land: EstateItem) => expected(scen([mem("a", "child")], [land], { l: [["a", 1, 1]] }));
+  const narrow = [{ position: "front" as const, price: 200_000, depth: 30, frontage: 5, leaseLetter: "D" as const }];
+  it("不整形地：不整形地補正率だけを掛け、間口狭小・奥行長大は重ねない（評基通20-4・付表5（注）3）", () => {
+    // 200,000×0.95 = 190,000 × 0.81 = 153,900 × 150㎡（間口狭小0.94・奥行長大0.92 は掛けない）
+    const e = one(landR("l", narrow, 150, { needsReduction: "irregular", advisorRate: 0.81 }));
+    expect(e.computable).toBe(true);
+    expect(tp(e, "a")).toBe(23_085_000);
+  });
+  it("不整形地で補正率1（減額なし）も確かめた答え", () => {
+    const e = one(landR("l", narrow, 150, { needsReduction: "irregular", advisorRate: 1 }));
+    expect(e.computable).toBe(true);
+    expect(tp(e, "a")).toBe(28_500_000);
+  });
+  it("補正率がなければ計算の対象外のまま", () => {
+    expect(one(landR("l", narrow, 150, { needsReduction: "irregular" })).computable).toBe(false);
+    expect(one(landR("l", narrow, 150, { needsReduction: "setback", advisorRate: 0.9 })).computable).toBe(false);
+  });
+  it("地積規模の大きな宅地：規模格差補正率は奥行長大の補正のあとに掛ける。補正率1も確かめた答え", () => {
+    const roads = [{ position: "front" as const, price: 95_000, depth: 52.5, frontage: 20, leaseLetter: "E" as const }];
+    // 95,000×0.88 = 83,600 → 奥行長大（52.5/20=2.6）0.98 → 81,928 → ×0.78 = 63,903 × 1,050㎡
+    expect(tp(one(landR("l", roads, 1050, { needsReduction: "largeLot", advisorRate: 0.78 })), "a")).toBe(Math.floor(67_098_150 / 1000) * 1000);
+    expect(tp(one(landR("l", roads, 1050, { needsReduction: "largeLot", advisorRate: 1 })), "a")).toBe(Math.floor((81_928 * 1050) / 1000) * 1000);
+  });
+});

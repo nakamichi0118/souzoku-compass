@@ -8,7 +8,7 @@ import type { Asset, AssetKind, Person } from "@/domain/types";
 import { newId, useCase } from "@/lib/store";
 import { usePlan } from "@/lib/planStore";
 import { AssetIcon } from "@/components/my/icons";
-import { LandEditor, LeaseRatioSelect, RentRatioField, SmallResidential, resetSmallOnKindChange } from "./LandEditor";
+import { type DivisionInput, LandEditor, LeaseRatioSelect, RentRatioField, SmallResidential, resetSmallOnKindChange } from "./LandEditor";
 import type { Interview } from "@/domain/procedures/interview";
 
 const KINDS: { kind: AssetKind; label: string }[] = [
@@ -269,7 +269,7 @@ export function AssetsStep() {
                     <Field label="名称">
                       <TextInput value={a.label} onChange={(e) => patch(a.id, { label: e.target.value })} placeholder={PLACEHOLDER[a.kind]} />
                     </Field>
-                    <AssetEditor living={living} asset={a} patch={(p) => patch(a.id, p)} />
+                    <AssetEditor living={living} asset={a} patch={(p) => patch(a.id, p)} division={data} />
                   </div>
                   {line && line.valuation.steps.length > 0 && (
                     <details className="text-sm text-stone-600">
@@ -339,14 +339,20 @@ export function AssetsStep() {
   );
 }
 
-function AssetEditor({
+/** 家賃をもらわずに貸しているもの（使用貸借）は「貸している」にあたらないことの短い案内（くわしくは土地の Tips） */
+const FREE_LENDING_HINT = "家族に無料（固定資産税くらいの負担だけ）で貸しているときは、チェックしません。";
+
+export function AssetEditor({
   living,
   asset: a,
   patch,
+  division,
 }: {
   living: Person[];
   asset: Asset;
   patch: (p: Partial<Asset>) => void;
+  /** 遺産の分け方（小規模宅地等の特例の案内に使う） */
+  division?: DivisionInput;
 }) {
   switch (a.kind) {
     case "deposit":
@@ -399,9 +405,10 @@ function AssetEditor({
           <Field label="固定資産税評価額" hint="固定資産税の課税明細書に記載。家屋の評価額は固定資産税評価額×1.0です">
             <YenInput value={a.fixedAssetValue} onChange={(v) => patch({ fixedAssetValue: v })} />
           </Field>
-          <div className="sm:col-span-2">
-            {/* 貸している家屋（貸家）は、借りている人の権利の分だけ低く評価する。やめたら賃貸割合は残さない */}
-            <Check checked={!!a.rented} onChange={(v) => patch({ rented: v || undefined, rentRatio: v ? a.rentRatio : undefined })} label="人に貸している" />
+          <div className="space-y-1 sm:col-span-2">
+            {/* 家賃をもらって貸している家屋（貸家）は、借りている人の権利の分だけ低く評価する。無料で貸している（使用貸借）なら自用家屋。やめたら賃貸割合は残さない */}
+            <Check checked={!!a.rented} onChange={(v) => patch({ rented: v || undefined, rentRatio: v ? a.rentRatio : undefined })} label="家賃をもらって人に貸している" />
+            <p className="text-xs text-stone-500">{FREE_LENDING_HINT}</p>
           </div>
           {a.rented && <RentRatioField value={a.rentRatio} onChange={(v) => patch({ rentRatio: v })} />}
         </>
@@ -475,7 +482,7 @@ function AssetEditor({
             />
             <p className="text-xs text-stone-500">二世帯住宅などで当てはまる場合は、区分所有補正をしません。当てはまるか分からない場合は、税理士に確認してください。</p>
           </div>
-          <div className="sm:col-span-2">
+          <div className="space-y-1 sm:col-span-2">
             <Check
               checked={!!a.rented}
               onChange={(v) => {
@@ -483,8 +490,9 @@ function AssetEditor({
                 const p = { rented: v || undefined, rentRatio: v ? a.rentRatio : undefined };
                 patch({ ...p, ...resetSmallOnKindChange(a, p) });
               }}
-              label="人に貸している"
+              label="家賃をもらって人に貸している"
             />
+            <p className="text-xs text-stone-500">{FREE_LENDING_HINT}</p>
           </div>
           {a.rented && (
             <>
@@ -492,10 +500,10 @@ function AssetEditor({
               <LeaseRatioSelect value={a.leaseRatio} onChange={(v) => patch({ leaseRatio: v })} hint="マンションの敷地の路線価の記号です（例：420D の D）。倍率地域は評価倍率表の「借地権割合」の欄" />
             </>
           )}
-          <SmallResidential living={living} a={a} patch={patch} />
+          <SmallResidential living={living} a={a} patch={patch} division={division} />
         </>
       );
     case "land":
-      return <LandEditor living={living} a={a} patch={patch} />;
+      return <LandEditor living={living} a={a} patch={patch} division={division} />;
   }
 }

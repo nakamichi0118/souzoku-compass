@@ -381,7 +381,10 @@ function LandWizard() {
     const frontage = Math.round(f.frontage * 100) / 100;
     return [{ edge: e, price: parseRouteNotation(n)?.routePrice ?? 0, depth: depthFor(f, areaForDepth), notation: n || undefined, ...(frontage > 0 ? { frontage } : {}) }];
   });
-  const evaluation = evaluateRoads(district, roadInputs);
+  // 形がいびつな土地で税理士に確認した補正率（不整形地補正率）を入れてあれば、間口が狭い・奥行が長い補正はしない（土地の画面・評価の計算と同じ）
+  const prevRate = land?.method.type === "rosenka" ? land.method.otherCorrection : undefined;
+  const irregularRate = land?.condition === "irregular" && prevRate != null && prevRate > 0 && prevRate <= 1;
+  const evaluation = evaluateRoads(district, roadInputs, { irregular: irregularRate });
   const duplicated = classes.some((c) => c === null);
   /** 計算に入れるすべての道路に路線価と奥行がある */
   const roadsComplete = roadInputs.length > 0 && roadInputs.every((r) => r.price > 0 && r.depth > 0);
@@ -1000,7 +1003,10 @@ function LandWizard() {
                     )}
                   </div>
                   <Note tone="info">
-                    間口が狭い・奥行が長い土地の補正はしています。角地の加算率を使い、形がいびつ・がけ地などの減額はしていないため、高めに出ることがあります。下げられるかは税理士に確認できます。
+                    {irregularRate
+                      ? "形がいびつな土地なので、間口が狭い・奥行が長い補正はせず、土地の画面で入れた税理士に確認した補正率を使います。角地の加算率を使い、がけ地などの減額はしていないため、高めに出ることがあります。"
+                      : "間口が狭い・奥行が長い土地の補正はしています。角地の加算率を使い、形がいびつ・がけ地などの減額はしていないため、高めに出ることがあります。"}
+                    下げられるかは税理士に確認できます。
                     <span className="mt-2 block">
                       <ConsultLink topic="土地の評価" />
                     </span>
@@ -1029,8 +1035,9 @@ function LandWizard() {
               onApply={(method, areaSqm, lease) => {
                 // 地積が入っていないときは、「地積」の確認待ちを消さない
                 const rest = land.pending?.filter((x) => !/路線価|奥行|倍率|固定資産税評価額/.test(x) && !(/地積/.test(x) && areaSqm > 0));
-                // 評価倍率表の行を確かめたときは、その行の借地権割合を使う（読めない行なら空にして、土地の画面で選んでもらう）
-                patchLand({ method, areaSqm, pending: rest?.length ? rest : undefined, ...(lease ? { leaseRatio: lease.ratio } : {}) });
+                // 評価倍率表の行を確かめて借地権割合が読めたときは、その割合を使う。読めない行なら、土地の画面で選んだ割合をそのまま使う
+                // （「3.」の評価も同じ割合で見せている。ratioStep3）
+                patchLand({ method, areaSqm, pending: rest?.length ? rest : undefined, ...(lease?.ratio != null ? { leaseRatio: lease.ratio } : {}) });
                 router.push(`/case/assets?asset=${land.id}&applied=1`);
               }}
             />

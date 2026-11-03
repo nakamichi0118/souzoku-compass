@@ -2,8 +2,12 @@
 
 import { useState } from "react";
 import { Button, Card, Note } from "@/components/ui";
+import { civilHeirIds } from "@/domain/heirs";
+import type { TaxResult } from "@/domain/tax/engine";
+import type { Case } from "@/domain/types";
 import { buildDivisionDoc } from "@/documents/division";
 import { formsNotGenerated } from "@/forms/filing";
+import { divisionStatus } from "@/forms/schedule11";
 import { useCase } from "@/lib/store";
 import { markCompleted } from "@/lib/progress";
 import { usePlan } from "@/lib/planStore";
@@ -19,20 +23,40 @@ async function download(url: string, body: unknown, filename: string) {
   saveBlob(await res.blob(), filename);
 }
 
+/** 相続コンパスで聞いていないため、申告書で空欄にしている欄（印刷後に手で書く） */
+export function handFilledBlanks(result: TaxResult | null): string[] {
+  return [
+    "マイナンバー（個人番号）欄",
+    ...(result?.persons.some((p) => p.successiveCredit > 0) ? ["第7表の前の相続で亡くなった方の氏名・続柄・申告書を出した税務署"] : []),
+    ...(result?.assets.some((l) => l.small?.kind === "business" && l.reduction > 0) ? ["第11・11の2表の付表1の事業内容（お店や工場などの事業の種類）"] : []),
+    // 全部または一部の分け方が決まっているときは、第11表に分割の日を書く
+    ...(result && divisionStatus(result) !== "3" ? ["第11表の分割の日（遺産分割協議がまとまった日）"] : []),
+  ];
+}
+
+/** 遺産分割協議書を作れないときの理由（作れるときは null）。協議は相続人どうしで行うため、相続人がいなければ作れない */
+export function divisionDocUnavailable(c: Case): string | null {
+  let heirs: Set<string>;
+  try {
+    heirs = civilHeirIds(c.persons);
+  } catch {
+    return null; // 入力途中（下の確認で知らせる）
+  }
+  if (heirs.size > 0) return null;
+  return c.persons.length === 0 ? "先に「相続人」で家族を登録してください。" : "相続人がいない（全員が相続を放棄したなど）ため、遺産分割協議書は作れません。";
+}
+
 export function DocumentsStep() {
   const { data, result, update } = useCase();
   const plan = usePlan();
   const missing = result ? formsNotGenerated(data, result) : [];
-  // 相続コンパスで聞いていないため、申告書で空欄にしている欄
-  const blanks = [
-    "マイナンバー（個人番号）欄",
-    ...(result?.persons.some((p) => p.successiveCredit > 0) ? ["第7表の前の相続で亡くなった方の氏名・続柄・申告書を出した税務署"] : []),
-    ...(result?.assets.some((l) => l.small?.kind === "business" && l.reduction > 0) ? ["第11・11の2表の付表1の事業内容（お店や工場などの事業の種類）"] : []),
-  ];
+  const blanks = handFilledBlanks(result);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
+  const noDivisionDoc = divisionDocUnavailable(data);
   const division = (() => {
+    if (noDivisionDoc) return { warnings: [] };
     try {
       return buildDivisionDoc(data);
     } catch {
@@ -94,9 +118,10 @@ export function DocumentsStep() {
             <Note tone="warn">{w}</Note>
           </div>
         ))}
-        <Button onClick={() => run("division", "/api/division", "遺産分割協議書.pdf")} disabled={busy !== null}>
+        <Button onClick={() => run("division", "/api/division", "遺産分割協議書.pdf")} disabled={busy !== null || !!noDivisionDoc}>
           {busy === "division" ? "作成中…" : "遺産分割協議書PDFをダウンロード"}
         </Button>
+        {noDivisionDoc && <p className="mt-2 text-xs text-stone-600">{noDivisionDoc}</p>}
       </Card>
       {err && <Note tone="stop">{err}</Note>}
       <FilingGuide missing={missing} />

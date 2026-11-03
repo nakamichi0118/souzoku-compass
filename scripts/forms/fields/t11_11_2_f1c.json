@@ -1,0 +1,502 @@
+{
+ "page": "t11_11_2_f1c",
+ "title": "第11・11の2表の付表1（続）",
+ "fields": [
+  {
+   "id": "d.name",
+   "seed": [
+    2056,
+    422
+   ],
+   "size": 11
+  },
+  {
+   "id": "agree0",
+   "seed": [
+    681,
+    695
+   ],
+   "size": 10
+  },
+  {
+   "id": "agree1",
+   "seed": [
+    1281,
+    695
+   ],
+   "size": 10
+  },
+  {
+   "id": "agree2",
+   "seed": [
+    1981,
+    695
+   ],
+   "size": 10
+  },
+  {
+   "id": "agree3",
+   "seed": [
+    681,
+    762
+   ],
+   "size": 10
+  },
+  {
+   "id": "agree4",
+   "seed": [
+    1281,
+    762
+   ],
+   "size": 10
+  },
+  {
+   "id": "agree5",
+   "seed": [
+    1981,
+    762
+   ],
+   "size": 10
+  },
+  {
+   "id": "b0.kind",
+   "seed": [
+    361,
+    1581
+   ],
+   "size": 12,
+   "align": "center"
+  },
+  {
+   "id": "b0.acquirer",
+   "seed": [
+    706,
+    1501
+   ],
+   "size": 10
+  },
+  {
+   "id": "b0.business",
+   "seed": [
+    1171,
+    1495
+   ],
+   "size": 9
+  },
+  {
+   "id": "b0.location",
+   "seed": [
+    881,
+    1568
+   ],
+   "size": 9,
+   "lines": 1
+  },
+  {
+   "id": "b0.area",
+   "seed": [
+    881,
+    1638
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b0.value",
+   "seed": [
+    881,
+    1706
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b0.selArea",
+   "seed": [
+    1856,
+    1476
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b0.selValue",
+   "seed": [
+    1856,
+    1568
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b0.reduction",
+   "seed": [
+    1856,
+    1638
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b0.taxable",
+   "seed": [
+    1856,
+    1706
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b1.kind",
+   "seed": [
+    361,
+    1908
+   ],
+   "size": 12,
+   "align": "center"
+  },
+  {
+   "id": "b1.acquirer",
+   "seed": [
+    706,
+    1828
+   ],
+   "size": 10
+  },
+  {
+   "id": "b1.business",
+   "seed": [
+    1171,
+    1822
+   ],
+   "size": 9
+  },
+  {
+   "id": "b1.location",
+   "seed": [
+    881,
+    1895
+   ],
+   "size": 9,
+   "lines": 1
+  },
+  {
+   "id": "b1.area",
+   "seed": [
+    881,
+    1965
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b1.value",
+   "seed": [
+    881,
+    2033
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b1.selArea",
+   "seed": [
+    1856,
+    1803
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b1.selValue",
+   "seed": [
+    1856,
+    1895
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b1.reduction",
+   "seed": [
+    1856,
+    1965
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b1.taxable",
+   "seed": [
+    1856,
+    2033
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b2.kind",
+   "seed": [
+    361,
+    2235
+   ],
+   "size": 12,
+   "align": "center"
+  },
+  {
+   "id": "b2.acquirer",
+   "seed": [
+    706,
+    2155
+   ],
+   "size": 10
+  },
+  {
+   "id": "b2.business",
+   "seed": [
+    1171,
+    2149
+   ],
+   "size": 9
+  },
+  {
+   "id": "b2.location",
+   "seed": [
+    881,
+    2222
+   ],
+   "size": 9,
+   "lines": 1
+  },
+  {
+   "id": "b2.area",
+   "seed": [
+    881,
+    2292
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b2.value",
+   "seed": [
+    881,
+    2360
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b2.selArea",
+   "seed": [
+    1856,
+    2130
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b2.selValue",
+   "seed": [
+    1856,
+    2222
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b2.reduction",
+   "seed": [
+    1856,
+    2292
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b2.taxable",
+   "seed": [
+    1856,
+    2360
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b3.kind",
+   "seed": [
+    361,
+    2562
+   ],
+   "size": 12,
+   "align": "center"
+  },
+  {
+   "id": "b3.acquirer",
+   "seed": [
+    706,
+    2482
+   ],
+   "size": 10
+  },
+  {
+   "id": "b3.business",
+   "seed": [
+    1171,
+    2476
+   ],
+   "size": 9
+  },
+  {
+   "id": "b3.location",
+   "seed": [
+    881,
+    2549
+   ],
+   "size": 9,
+   "lines": 1
+  },
+  {
+   "id": "b3.area",
+   "seed": [
+    881,
+    2619
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b3.value",
+   "seed": [
+    881,
+    2687
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b3.selArea",
+   "seed": [
+    1856,
+    2457
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b3.selValue",
+   "seed": [
+    1856,
+    2549
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b3.reduction",
+   "seed": [
+    1856,
+    2619
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b3.taxable",
+   "seed": [
+    1856,
+    2687
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b4.kind",
+   "seed": [
+    361,
+    2889
+   ],
+   "size": 12,
+   "align": "center"
+  },
+  {
+   "id": "b4.acquirer",
+   "seed": [
+    706,
+    2809
+   ],
+   "size": 10
+  },
+  {
+   "id": "b4.business",
+   "seed": [
+    1171,
+    2803
+   ],
+   "size": 9
+  },
+  {
+   "id": "b4.location",
+   "seed": [
+    881,
+    2876
+   ],
+   "size": 9,
+   "lines": 1
+  },
+  {
+   "id": "b4.area",
+   "seed": [
+    881,
+    2946
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b4.value",
+   "seed": [
+    881,
+    3014
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b4.selArea",
+   "seed": [
+    1856,
+    2784
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b4.selValue",
+   "seed": [
+    1856,
+    2876
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b4.reduction",
+   "seed": [
+    1856,
+    2946
+   ],
+   "size": 10,
+   "align": "right"
+  },
+  {
+   "id": "b4.taxable",
+   "seed": [
+    1856,
+    3014
+   ],
+   "size": 10,
+   "align": "right"
+  }
+ ]
+}

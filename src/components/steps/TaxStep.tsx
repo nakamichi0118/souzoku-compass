@@ -4,13 +4,17 @@ import Link from "next/link";
 import { Button, Card, Note, fmt } from "@/components/ui";
 import { useAsk } from "@/components/compass/AskCompass";
 import { toString as fracText } from "@/domain/fraction";
-import { type PersonTax, RATE_TABLE, rateFor } from "@/domain/tax/engine";
+import { type PersonTax, RATE_TABLE, type TaxResult, rateFor } from "@/domain/tax/engine";
 import { Markdown } from "@/components/compass/Markdown";
 import { jpDate, monthsDeadline, nextOpenDay } from "@/domain/procedures/dates";
 import { relationLabel } from "@/forms/filing";
 import { unallocatedAssets } from "@/lib/progress";
 import { useCase } from "@/lib/store";
 import { summarizeForAssistant } from "@/lib/summary";
+
+/** 引ききれない未成年者控除・障害者控除を差し引ける人（扶養義務者。相続税法1条の2・民法877条） */
+export const SUPPORTER_TIP =
+  "未成年者控除・障害者控除のうち、本人の相続税から引ききれない分は、本人の扶養義務者（本人の配偶者・直系血族（親・子・祖父母・孫）・兄弟姉妹）の相続税から差し引けます（相続税法19条の3・19条の4）。おじ・おばなどで本人と生計を一にしていた人の分は、税理士にご相談ください。";
 
 /** ほかの人の引ききれなかった未成年者控除・障害者控除を、扶養義務者として差し引いた額の合計 */
 const transfersInTotal = (p: PersonTax) => p.transfersIn.reduce((s, t) => s + t.amount, 0);
@@ -25,6 +29,17 @@ function Row({ label, value, sub, strong }: { label: React.ReactNode; value: num
       <p className={`shrink-0 tabular-nums ${strong ? "text-lg font-bold text-teal-800" : ""}`}>{typeof value === "number" ? `${fmt(value)}円` : value}</p>
     </div>
   );
+}
+
+/** 申告がいるか：相続税がかかる・特例を使う、または相続時精算課税で納めた贈与税を返してもらう（還付は申告しないと受けられない。相続税法33条の2） */
+export const filingNeeded = (r: Pick<TaxResult, "needsFiling" | "totalRefund">) => r.needsFiling || r.totalRefund > 0;
+
+/** 家族全体の税額の下に出す、申告がいるかどうかの一言 */
+export function filingMessage(r: Pick<TaxResult, "needsFiling" | "totalRefund" | "totalPayable" | "totalTax">): string {
+  if (!filingNeeded(r)) return "相続税はかからず、申告も原則いりません。";
+  if (r.totalPayable > 0) return "それぞれが自分の分を、申告期限までに納めます。";
+  if (r.totalRefund > 0) return `${r.totalTax > 0 ? "納める税金は0円です" : "相続税はかかりません"}が、相続時精算課税で納めた贈与税を返してもらうには、申告が必要です。`;
+  return "特例を使うので納める税金は0円ですが、申告は必要です。";
 }
 
 const EXPLAIN_QUESTION = "この計算結果を、相続税に詳しくない家族にも分かるように説明してください。なぜこの税額になるのか、配偶者の税額軽減などの効果も含めて。";
@@ -89,16 +104,12 @@ export function TaxStep() {
           <span className="ml-1 text-xl">円</span>
         </p>
         <p className="mt-2 text-sm text-stone-700">
-          {!r.needsFiling
-            ? r.totalRefund > 0
-              ? "相続税はかかりませんが、申告すると納めた贈与税が戻ってきます。"
-              : "相続税はかからず、申告も原則いりません。"
-            : r.totalPayable > 0
-              ? "それぞれが自分の分を、申告期限までに納めます。"
-              : r.totalRefund > 0
-                ? "納める税金は0円ですが、申告は必要です。"
-                : "特例を使うので納める税金は0円ですが、申告は必要です。"}
-          {r.needsFiling && deadline && <span className="ml-1 font-semibold">申告・納税の期限：{jpDate(deadline)}</span>}
+          {filingMessage(r)}
+          {filingNeeded(r) && deadline && (
+            <span className="ml-1 font-semibold">
+              申告{r.totalPayable > 0 ? "・納税" : ""}の期限：{jpDate(deadline)}
+            </span>
+          )}
         </p>
         {r.totalRefund > 0 && (
           <p className="mt-1 text-sm text-stone-700">
@@ -298,12 +309,10 @@ export function TaxStep() {
                 </li>
               ))}
             </ul>
-            {r.persons.some((p) => transfersInTotal(p) > 0) && (
+            {r.persons.some((p) => transfersInTotal(p) > 0 || p.minorExcess > 0 || p.disabilityExcess > 0) && (
               <details className="mt-2 text-xs text-stone-600">
                 <summary className="cursor-pointer text-teal-800">Tips：扶養義務者として差し引いた控除</summary>
-                <p className="mt-2 leading-relaxed">
-                  未成年者控除・障害者控除のうち、本人の相続税から引ききれない分は、本人を養う立場の家族（配偶者・父母・子など。扶養義務者）の相続税から差し引けます（相続税法19条の3・19条の4）。
-                </p>
+                <p className="mt-2 leading-relaxed">{SUPPORTER_TIP}</p>
               </details>
             )}
           </section>

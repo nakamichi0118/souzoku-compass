@@ -45,6 +45,19 @@ export interface Member {
   diedAfter?: string;
   /** 亡くなった時点で胎児（生まれた日を birthDate に書く） */
   unborn?: boolean;
+  /**
+   * 前の相続でも未成年者控除を受けた（相続税法19条の3第3項）。
+   * date：最初に控除を受けた前の相続が始まった日、amount：これまでに控除を受けた金額の合計（扶養義務者から引いた分を含む）
+   */
+  priorMinorCredit?: PriorCredit;
+  /** 前の相続でも障害者控除を受けた（相続税法19条の4第3項）。前の相続のときも今と同じ区分（一般・特別）だったものとする */
+  priorDisabilityCredit?: PriorCredit;
+}
+
+/** 前の相続で受けた未成年者控除・障害者控除 */
+export interface PriorCredit {
+  date: string;
+  amount: number;
 }
 
 /** 道路1本（路線価方式） */
@@ -75,6 +88,7 @@ export type LandUse =
   | "rentedHouse" // 貸家（アパート等）の敷地＝貸家建付地
   | "leasedLand" // 人に土地を貸して建物を建ててもらっている＝貸宅地（底地）
   | "leasehold" // 人の土地を借りて家を建てている＝借地権
+  | "rentedLeasehold" // 人の土地を借りてアパート・貸家を建て、家賃をもらって貸している＝貸家建付借地権（評基通28）
   | "parking"; // 青空駐車場（自用地として評価）
 
 /** 小規模宅地等の特例の種類 */
@@ -96,7 +110,7 @@ export type EstateItem =
       landUse: "宅地" | "田" | "畑" | "山林" | "雑種地";
       valuation: LandValuation;
       use: LandUse;
-      /** 貸家建付地・貸家の賃貸割合（0〜1、既定1） */
+      /** 貸家建付地・貸家建付借地権の賃貸割合（0〜1、既定1） */
       rentRatio?: number;
       /** 小規模宅地等の特例を使う */
       smallLand?: { kind: SmallLandKind; acquirer: string };
@@ -104,6 +118,13 @@ export type EstateItem =
       spouseResidenceRight?: boolean;
       /** 地積規模の大きな宅地などの補正の対象（アプリでは評価しない減額） */
       needsReduction?: "largeLot" | "irregular" | "setback";
+      /**
+       * 税理士に確かめてもらった補正率（路線価方式の土地だけ）。
+       * irregular：不整形地補正率（間口狭小補正率を含めた最終の率。評基通20・付表5（注）3）。間口狭小・奥行長大の補正はしない。
+       * largeLot：規模格差補正率（評基通20-2）。地積規模の大きな宅地に当たらないと確かめたときは 1。
+       * これがあると、その補正をした価額が正しい答え（計算できる）になる。setback と倍率方式の土地には付けない
+       */
+      advisorRate?: number;
       foreign?: boolean;
     }
   | { id: string; type: "building"; label: string; fixedAssetValue: number; rented?: boolean; rentRatio?: number }
@@ -142,9 +163,30 @@ export interface ScenarioGift {
   settlement?: boolean;
 }
 
+/** 代償金（代償分割） */
+export interface ScenarioCompensation {
+  from: string;
+  to: string;
+  amount: number;
+  /**
+   * 代償金の額を、特定の財産（item）の時価（marketValue、通常の取引価額）をもとに決めた（相基通11の2-10(2)）。
+   * 課税価格に入れる額は 代償金 × その財産の相続税評価額 ÷ 時価（1円未満切捨て）
+   */
+  basis?: { item: string; marketValue: number };
+}
+
 /** 遺産の分け方 */
 export type Division =
-  | { kind: "agreed"; shares: Record<string, { who: string; n: number; d: number }[]>; compensation?: { from: string; to: string; amount: number }[] }
+  | {
+      kind: "agreed";
+      shares: Record<string, { who: string; n: number; d: number }[]>;
+      compensation?: ScenarioCompensation[];
+      /**
+       * 一部だけ分けた（申告期限までに一部の財産の分け方が決まらない）。shares に無い財産と、持分の合計が1に満たない財産の残りが未分割。
+       * 未分割の部分は 穴埋め方式（各人の法定相続分 × 分割対象の財産の合計 − 分割で取得した額 の不足分の割合）で課税価格を計算する
+       */
+      partlyUndivided?: true;
+    }
   | { kind: "undivided" }; // 申告期限までに分割されていない（法定相続分で課税価格を計算）
 
 export interface Scenario {

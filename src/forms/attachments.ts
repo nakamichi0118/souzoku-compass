@@ -1,6 +1,6 @@
 /**
  * 第6表（未成年者控除額・障害者控除額の計算書）、第7表（相次相続控除額の計算書）、第9表（生命保険金などの明細書）、
- * 第10表（退職手当金などの明細書）、第11・11の2表の付表1（小規模宅地等についての課税価格の計算明細書）。
+ * 第10表（退職手当金などの明細書）、第11・11の2表の付表1（小規模宅地等についての課税価格の計算明細書）と付表1（続）。
  * 金額は計算エンジンの結果をそのまま写す（第7表の各人の按分額だけは、様式の⑨×⑫を整数で計算して書く）。
  */
 import type { AssetLine, PersonTax, TaxResult } from "@/domain/tax/engine";
@@ -239,6 +239,11 @@ function businessText(l: AssetLine): string {
   return a.kind === "land" && a.use === "leasedLand" ? "貸地" : "貸家";
 }
 
+/** 付表1に書ける宅地等の数と同意の氏名の数。書ききれない分は付表1（続）に書く（付表1は3件・6人、付表1（続）は5件・6人） */
+const F1_LOTS = 3;
+const F1C_LOTS = 5;
+const F1_NAMES = 6;
+
 export function buildF1(c: Case, r: TaxResult): PageFill[] {
   const lots = r.assets.filter((l) => l.small && l.reduction > 0);
   if (lots.length === 0) return [];
@@ -247,14 +252,11 @@ export function buildF1(c: Case, r: TaxResult): PageFill[] {
   // ⑩ 種類ごとの「⑤選択した面積」の合計
   const areaOf = (k: SmallLandKind) => sum(lots.filter((l) => l.small!.kind === k).map((l) => l.small!.selectedArea));
   const has = (k: SmallLandKind) => lots.some((l) => l.small!.kind === k);
-  // 同意欄は1枚に6人まで。7人以上なら2枚目以降の付表1に続けて書く（黙って省かない）
-  const lotPages = chunk(lots, 3);
-  const agreePages = chunk(agree, 6);
-  const n = Math.max(lotPages.length, agreePages.length);
-  return Array.from({ length: n }, (_, i) => {
-    const group = lotPages[i] ?? [];
-    const values: PageFill["values"] = { "d.name": c.decedent.name };
-    (agreePages[i] ?? []).forEach((who, j) => (values[`agree${j}`] = who));
+  // 付表1に書ききれない宅地等（4件目から）・同意の氏名（7人目から）は、様式の注意書きどおり付表1（続）に続けて書く（黙って省かない）
+  const restLots = chunk(lots.slice(F1_LOTS), F1C_LOTS);
+  const restNames = chunk(agree.slice(F1_NAMES), F1_NAMES);
+  const fill = (values: PageFill["values"], names: string[], group: AssetLine[]) => {
+    names.forEach((who, j) => (values[`agree${j}`] = who));
     group.forEach((l, j) => {
       const s = l.small!;
       // 減額割合（⑨）は種類ごとに様式に印字済み（80/100・50/100）
@@ -269,20 +271,24 @@ export function buildF1(c: Case, r: TaxResult): PageFill[] {
       values[`b${j}.reduction`] = yen(l.reduction);
       values[`b${j}.taxable`] = yen(s.value - l.reduction);
     });
-    if (i === 0) {
-      // 「限度面積要件」の判定：⑩ 種類ごとの面積の合計、⑪ 貸付事業用宅地等がなければイ、あればロ
-      if (has("residence")) values.area1 = sqm(areaOf("residence"));
-      if (has("business")) values.area2 = sqm(areaOf("business"));
-      if (has("rental")) values.area4 = sqm(areaOf("rental"));
-      if (!has("rental")) {
-        if (has("residence")) values.limitA = sqm(areaOf("residence"));
-        if (has("business")) values.limitA2 = sqm(areaOf("business"));
-      } else {
-        if (has("residence")) values.limitB1 = sqm(areaOf("residence"));
-        if (has("business")) values.limitB2 = sqm(areaOf("business"));
-        values.limitB4 = sqm(areaOf("rental"));
-      }
-    }
-    return { page: "t11_11_2_f1", values };
-  });
+    return values;
+  };
+  const first = fill({ "d.name": c.decedent.name }, agree.slice(0, F1_NAMES), lots.slice(0, F1_LOTS));
+  // 「限度面積要件」の判定（付表1だけにある欄）：⑩ 種類ごとの面積の合計、⑪ 貸付事業用宅地等がなければイ、あればロ
+  if (has("residence")) first.area1 = sqm(areaOf("residence"));
+  if (has("business")) first.area2 = sqm(areaOf("business"));
+  if (has("rental")) first.area4 = sqm(areaOf("rental"));
+  if (!has("rental")) {
+    if (has("residence")) first.limitA = sqm(areaOf("residence"));
+    if (has("business")) first.limitA2 = sqm(areaOf("business"));
+  } else {
+    if (has("residence")) first.limitB1 = sqm(areaOf("residence"));
+    if (has("business")) first.limitB2 = sqm(areaOf("business"));
+    first.limitB4 = sqm(areaOf("rental"));
+  }
+  const pages: PageFill[] = [{ page: "t11_11_2_f1", values: first }];
+  for (let i = 0; i < Math.max(restLots.length, restNames.length); i++) {
+    pages.push({ page: "t11_11_2_f1c", values: fill({ "d.name": c.decedent.name }, restNames[i] ?? [], restLots[i] ?? []) });
+  }
+  return pages;
 }

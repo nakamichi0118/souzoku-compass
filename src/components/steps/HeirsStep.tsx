@@ -1,9 +1,9 @@
 "use client";
 
-import { Button, Card, Check, Field, Note, Select, TextInput, fmt } from "@/components/ui";
+import { Button, Card, Check, Field, Note, Select, TextInput, YenInput, fmt } from "@/components/ui";
 import { type HeirResult, determineHeirs, isSurchargeTarget } from "@/domain/heirs";
 import { toString as fracText } from "@/domain/fraction";
-import type { Person, Relation } from "@/domain/types";
+import type { Person, PriorCredit, Relation } from "@/domain/types";
 import { ageAt, wareki } from "@/forms/format";
 import { newId, useCase } from "@/lib/store";
 import { Choice } from "@/components/plan/inputs";
@@ -186,6 +186,7 @@ export function HeirsStep() {
               )}
               {!p.predeceased && <Check checked={!!p.nonResident} onChange={(v) => patch(p.id, { nonResident: v })} label="海外に住んでいる" />}
             </div>
+            {!p.predeceased && <PriorCredits p={p} age={age} isLegalHeir={tax ? tax.slots.some((x) => x.personIds.includes(p.id)) : undefined} patch={patch} />}
             {p.relation === "adoptedChild" && p.grandchildAdopted && p.alsoSubstituteHeir && !p.predeceased && (
               <div className="mt-3">
                 <Note tone="stop">
@@ -238,6 +239,49 @@ export function HeirsStep() {
           )}
         </Card>
       )}
+    </div>
+  );
+}
+
+type PriorKey = "priorMinorCredit" | "priorDisabilityCredit";
+
+/**
+ * 以前の相続でも受けたかを聞く控除：亡くなった日に18歳未満なら未成年者控除、障害者なら障害者控除。
+ * どちらも法定相続人（放棄した人を含む）だけが受けられるので、相続人でない人・先に亡くなった人には聞かない
+ */
+export function priorCreditKinds(p: Person, age: number | undefined, isLegalHeir = p.relation !== "other"): { key: PriorKey; what: string }[] {
+  if (p.predeceased || !isLegalHeir) return [];
+  return [
+    ...(age != null && age < 18 ? [{ key: "priorMinorCredit" as const, what: "未成年者控除" }] : []),
+    ...(p.disability === "general" || p.disability === "special" ? [{ key: "priorDisabilityCredit" as const, what: "障害者控除" }] : []),
+  ];
+}
+
+/** 以前の相続でも未成年者控除・障害者控除を受けた人：今回の控除はその残りまで（相続税法19条の3第3項・19条の4第3項） */
+function PriorCredits({ p, age, isLegalHeir, patch }: { p: Person; age: number | undefined; isLegalHeir?: boolean; patch: (id: string, p: Partial<Person>) => void }) {
+  const kinds = priorCreditKinds(p, age, isLegalHeir);
+  if (kinds.length === 0) return null;
+  const put = (key: PriorKey, v: PriorCredit | undefined) => patch(p.id, key === "priorMinorCredit" ? { priorMinorCredit: v } : { priorDisabilityCredit: v });
+  return (
+    <div className="mt-3 space-y-2">
+      {kinds.map(({ key, what }) => {
+        const v = p[key];
+        return (
+          <div key={key}>
+            <Check checked={!!v} onChange={(on) => put(key, on ? {} : undefined)} label={`以前の相続でも${what}を受けた`} />
+            {v && (
+              <div className="mt-2 grid gap-3 rounded-lg border border-stone-200 bg-stone-50 p-3 sm:grid-cols-2">
+                <Field label="その相続が始まった日" hint="前に亡くなった方が亡くなった日（2回以上なら最初の日）">
+                  <TextInput type="date" value={v.date ?? ""} onChange={(e) => put(key, { ...v, date: e.target.value || undefined })} />
+                </Field>
+                <Field label="これまでに控除を受けた金額（扶養義務者から引いた分を含む）">
+                  <YenInput value={v.amount} onChange={(n) => put(key, { ...v, amount: n })} />
+                </Field>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

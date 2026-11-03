@@ -58,6 +58,21 @@ export interface Person {
   phone?: string;
   /** 国外に住所がある（非居住者）。自動完結の対象外 */
   nonResident?: boolean;
+  /**
+   * 以前の相続でも未成年者控除を受けた（相続税法19条の3第3項）。
+   * date：その前の相続（最初に控除を受けた相続）が始まった日。amount：これまでの相続で控除を受けた金額の合計（扶養義務者から引いた分を含む）
+   */
+  priorMinorCredit?: PriorCredit;
+  /** 以前の相続でも障害者控除を受けた（相続税法19条の4第3項）。中身は priorMinorCredit と同じ */
+  priorDisabilityCredit?: PriorCredit;
+}
+
+/** 以前の相続で受けた未成年者控除・障害者控除 */
+export interface PriorCredit {
+  /** 最初に控除を受けた相続が始まった日 */
+  date?: ISODate;
+  /** これまでに控除を受けた金額の合計（本人と扶養義務者の分の合計） */
+  amount?: number;
 }
 
 export interface Decedent {
@@ -188,7 +203,7 @@ export interface LandAsset extends AssetBase {
   rosenkaSheet?: RosenkaSheet;
   /** 土地の使い方（評価が変わる）。未設定は "self"（自分で使っている＝自用地） */
   use?: LandUse;
-  /** 貸家建付地の賃貸割合（0より大きく1以下。未設定は1＝全部貸している） */
+  /** 貸家建付地・貸家建付借地権の賃貸割合（0より大きく1以下。未設定は1＝全部貸している） */
   rentRatio?: number;
   /**
    * 借地権割合（0より大きく1未満。例 0.6）。貸家建付地・貸宅地・借地権の評価に使う。
@@ -211,7 +226,8 @@ export type LandUse =
   | "self" // 自分で使っている（自宅・空き地・青空駐車場など）
   | "rentedHouse" // アパート・貸家を建てて貸している（貸家建付地）
   | "leasedLand" // 土地を人に貸し、相手が建物を建てている（貸宅地）
-  | "leasehold"; // 人の土地を借りて建物を建てている（借地権）
+  | "leasehold" // 人の土地を借りて建物を建てている（借地権）
+  | "rentedLeasehold"; // 人の土地を借りてアパート・貸家を建て、家賃をもらって貸している（貸家建付借地権。通達28）
 
 /** 小規模宅地等の特例の種類（租税特別措置法69条の4） */
 export type SmallLandKind =
@@ -344,6 +360,11 @@ export interface Compensation {
   fromId: string;
   toId: string;
   amount: number;
+  /**
+   * 代償金の額を、特定の財産の時価（通常の取引価額）をもとに決めた（相続税の申告のしかた・相基通11の2-10(2)）。
+   * このとき課税価格に入れる代償金の額は 代償金 × その財産の相続税評価額 ÷ 時価（1円未満切捨て）
+   */
+  basis?: { assetId: string; marketValue: number };
 }
 
 export interface Case {

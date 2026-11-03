@@ -86,19 +86,39 @@ describe("評価に影響する土地の事情", () => {
 });
 
 describe("税理士に確認した補正率・評価額を入れた土地は計算する", () => {
-  it("形がいびつ・セットバックでも、税理士に確認した補正率（1未満）を入れれば、その補正率で計算する", () => {
+  it("形がいびつ・セットバックでも、税理士に確認した補正率（0より大きく1以下）を入れれば、その補正率で計算する", () => {
     const m = { type: "rosenka" as const, routePrice: 200_000, depthCorrection: 1, otherCorrection: 0.9 };
     expect(valueLand(land({ condition: "irregular" })).needsConsultation).toBeDefined();
     expect(valueLand(land({ condition: "irregular", method: m })).value).toBe(54_000_000); // 20万×0.9×300㎡
     expect(valueLand(land({ condition: "setback", method: m })).needsConsultation).toBeUndefined();
+    // 税理士に「減額なし」と確認した 1 も、確認した答えとして計算する
+    expect(valueLand(land({ condition: "irregular", method: { ...m, otherCorrection: 1 } })).value).toBe(60_000_000);
+    expect(valueLand(land({ condition: "setback", method: { ...m, otherCorrection: 1 } })).value).toBe(60_000_000);
+    // 1を超える・0以下の補正率は確認した答えにならない
+    for (const otherCorrection of [0, -0.5, 1.2, Number.NaN]) expect(valueLand(land({ condition: "irregular", method: { ...m, otherCorrection } })).needsConsultation).toContain("形がいびつ");
   });
   it("広い土地も、税理士に確認した補正率か直接入力の評価額があれば計算する", () => {
     expect(valueLand(land({ areaSqm: 600 })).needsConsultation).toContain("地積規模");
     expect(valueLand(land({ areaSqm: 600, method: { type: "rosenka", routePrice: 200_000, depthCorrection: 1, otherCorrection: 0.8 } })).value).toBe(96_000_000);
     expect(valueLand(land({ areaSqm: 600, method: { type: "manual", value: 90_000_000 } })).value).toBe(90_000_000);
+    // 「地積規模の大きな宅地にあたらない（減額なし）」と確認したら 1 を入れて計算できる
+    expect(valueLand(land({ areaSqm: 600, method: { type: "rosenka", routePrice: 200_000, depthCorrection: 1, otherCorrection: 1 } })).value).toBe(120_000_000);
   });
-  it("配偶者居住権は、補正率では計算せず、直接入力の評価額のときだけ計算する", () => {
-    expect(valueLand(land({ condition: "spouseResidence", method: { type: "rosenka", routePrice: 200_000, depthCorrection: 1, otherCorrection: 0.9 } })).needsConsultation).toContain("配偶者居住権");
-    expect(valueLand(land({ condition: "spouseResidence", method: { type: "manual", value: 30_000_000 } })).value).toBe(30_000_000);
+  it("配偶者居住権は、補正率でも直接入力の評価額でも計算せず、いつも税理士へ（家と土地を4つに分けて評価し、小規模宅地等も変わるため）", () => {
+    for (const method of [
+      { type: "rosenka" as const, routePrice: 200_000, depthCorrection: 1, otherCorrection: 0.9 },
+      { type: "rosenka" as const, routePrice: 200_000, depthCorrection: 1, otherCorrection: 1 },
+      { type: "multiplier" as const, fixedAssetValue: 10_000_000, multiplier: 1.1 },
+      { type: "manual" as const, value: 30_000_000 },
+    ]) {
+      const v = valueLand(land({ condition: "spouseResidence", method }));
+      expect(v.value).toBe(0);
+      expect(v.needsConsultation).toContain("配偶者居住権");
+      expect(v.needsConsultation).toContain("4つに分けて");
+      expect(v.needsConsultation).toContain("小規模宅地等");
+      expect(v.needsConsultation).toContain("税理士にご相談ください");
+      // 直接入力の案内はしない（入れても計算しないため）
+      expect(v.needsConsultation).not.toContain("直接入力");
+    }
   });
 });

@@ -24,6 +24,15 @@ export interface DivisionDoc {
 const kanjiFraction = (n: number, d: number) => (n === d ? "" : `${d}分の${n}`);
 const yen = (n: number) => `金${n.toLocaleString("ja-JP")}円`;
 
+/** 家族が1人も入っていないとき（計算エンジンの止める事項と同じ文） */
+export const NO_PERSONS_MESSAGE = "相続人がまだ入っていません。相続人の画面で、亡くなった方の家族を入れてください。";
+/**
+ * 民法上の相続人がいないとき。最初の文は計算エンジンの止める事項（相続人不存在）と同じ。
+ * 遺産分割協議は相続人どうしで行うもの（民法907条）なので、協議書は作らない（相続財産清算人の手続き。民法952条）
+ */
+export const NO_HEIRS_MESSAGE =
+  "民法上の相続人がいません（全員が相続を放棄した、または相続人になる家族がいない）。遺産分割協議をする相続人がいないため、遺産分割協議書は作れません。家庭裁判所で「相続財産清算人」を選ぶ手続きなどが必要になります。税理士にご相談ください。";
+
 /** 財産を特定する記載 */
 export function describeAsset(a: Asset): string[] {
   switch (a.kind) {
@@ -54,6 +63,8 @@ export function describeAsset(a: Asset): string[] {
 export function buildDivisionDoc(c: Case): DivisionDoc {
   const warnings: string[] = [];
   const civil = civilHeirIds(c.persons);
+  if (c.persons.length === 0) throw new Error(NO_PERSONS_MESSAGE);
+  if (civil.size === 0) throw new Error(NO_HEIRS_MESSAGE);
   const heirs = c.persons.filter((p) => civil.has(p.id));
   const byId = new Map(c.persons.map((p) => [p.id, p]));
   const allocs = new Map(c.allocations.map((a) => [a.assetId, a]));
@@ -116,10 +127,17 @@ export function buildDivisionDoc(c: Case): DivisionDoc {
       warnings.push(`代償金（${i + 1}件目）は、払う人・受け取る人（どちらも相続人）・金額がそろっていないため、協議書に記載していません。遺産の分け方の画面で確かめてください。`);
       return;
     }
-    compensationTo.add(to.id);
+    // 代償金は、遺産を受け継ぐ人がその代わりに払うもの。協議書で遺産を受け継がない人には「遺産を取得する代償として」と書けない
     const k = articleOf.get(from.id);
+    if (!k) {
+      warnings.push(
+        `代償金（${i + 1}件目）は、払う${from.name}さんがこの協議書で遺産を受け継がないため、協議書に記載していません（遺産を受け継がない人が払うお金は、贈与として扱われることがあります）。遺産の分け方の画面で確かめてください。`,
+      );
+      return;
+    }
+    compensationTo.add(to.id);
     articles.push({
-      heading: `第${no++}条　相続人 ${from.name} は、${k ? `第${k}条記載の遺産` : "本協議により遺産"}を取得する代償として、相続人 ${to.name} に対し、${yen(x.amount)}を支払う。`,
+      heading: `第${no++}条　相続人 ${from.name} は、第${k}条記載の遺産を取得する代償として、相続人 ${to.name} に対し、${yen(x.amount)}を支払う。`,
       items: [],
     });
   });

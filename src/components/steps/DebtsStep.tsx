@@ -1,7 +1,7 @@
 "use client";
 
 import { Button, Card, Check, Field, Note, Select, TextInput, YenInput, fmt } from "@/components/ui";
-import type { Debt } from "@/domain/types";
+import type { Case, Debt } from "@/domain/types";
 import { newId, useCase } from "@/lib/store";
 
 /** 申告書（第13表）の「種類」。値は申告書の表記、表示は分かりやすい説明つき */
@@ -12,12 +12,25 @@ const DEBT_TYPES: { value: NonNullable<Debt["debtType"]>; label: string }[] = [
   { value: "その他", label: "その他" },
 ];
 
+/**
+ * 新しい債務・葬式費用。ふだんは最初の人を負担する人にしておく。
+ * 「分け方がまだ決まっていない」ときは負担する人を空けておく（空けたままなら法定相続分で負担したものとして計算する）
+ */
+export function newDebt(c: Case, kind: Debt["kind"], id: string): Debt {
+  const first = c.persons.find((p) => !p.predeceased);
+  return { id, kind, label: "", amount: 0, bearers: !c.undivided && first ? [{ personId: first.id, amount: 0 }] : [] };
+}
+
+/** 金額を変える。負担する人が1人だけなら、その人の負担額も合わせる（「分け方がまだ決まっていない」ときは合わせない） */
+export function withDebtAmount(d: Debt, amount: number, undivided: boolean | undefined): Pick<Debt, "amount" | "bearers"> {
+  return { amount, bearers: !undivided && d.bearers.length === 1 ? [{ ...d.bearers[0], amount }] : d.bearers };
+}
+
 export function DebtsStep() {
   const { data, update, result } = useCase();
   const living = data.persons.filter((p) => !p.predeceased);
   const isLiving = (id: string) => living.some((p) => p.id === id);
-  const add = (kind: Debt["kind"]) =>
-    update((c) => ({ ...c, debts: [...c.debts, { id: newId(), kind, label: "", amount: 0, bearers: living[0] ? [{ personId: living[0].id, amount: 0 }] : [] }] }));
+  const add = (kind: Debt["kind"]) => update((c) => ({ ...c, debts: [...c.debts, newDebt(c, kind, newId())] }));
   const patch = (id: string, p: Partial<Debt>) => update((c) => ({ ...c, debts: c.debts.map((d) => (d.id === id ? { ...d, ...p } : d)) }));
   // 相続時精算課税を選んだ贈与があるときだけ、贈与ごとの「相続時精算課税」の印を出す（印を付けた贈与があるときも出したままにする）
   const settlement = !!data.decedent.settlementGift || data.priorGifts.some((g) => g.settlement);
@@ -36,6 +49,8 @@ export function DebtsStep() {
       </Card>
       {data.debts.map((d) => {
         const borne = d.bearers.reduce((a, b) => a + b.amount, 0);
+        // 分け方が決まっていないときに負担額を入れなければ、法定相続分で負担したものとして計算する（合計が合わなくてもよい）
+        const byLegalShare = !!data.undivided && borne === 0;
         return (
           <Card
             key={d.id}
@@ -57,7 +72,7 @@ export function DebtsStep() {
                 <TextInput value={d.creditorAddress ?? ""} onChange={(e) => patch(d.id, { creditorAddress: e.target.value })} />
               </Field>
               <Field label="金額">
-                <YenInput value={d.amount} onChange={(v) => patch(d.id, { amount: v, bearers: d.bearers.length === 1 ? [{ ...d.bearers[0], amount: v }] : d.bearers })} />
+                <YenInput value={d.amount} onChange={(v) => patch(d.id, withDebtAmount(d, v, data.undivided))} />
               </Field>
               {d.kind === "debt" && (
                 <Field label="種類" hint="申告書（第13表）に記載します">
@@ -70,6 +85,7 @@ export function DebtsStep() {
               )}
             </div>
             <h3 className="mb-2 mt-4 text-sm font-bold text-stone-700">誰が負担しますか</h3>
+            {data.undivided && <p className="mb-2 text-xs text-stone-500">負担する人が決まっていなければ、空欄のままにしてください（法定相続分で負担したものとして計算します）。</p>}
             <div className="space-y-2">
               {d.bearers.map((b, i) => (
                 <div key={i}>
@@ -91,7 +107,7 @@ export function DebtsStep() {
                 ＋ 負担する人を追加
               </Button>
             </div>
-            {borne !== d.amount && (
+            {borne !== d.amount && !byLegalShare && (
               <div className="mt-2">
                 <Note tone="warn">
                   負担額の合計（{fmt(borne)}円）が金額（{fmt(d.amount)}円）と一致していません。
@@ -108,6 +124,12 @@ export function DebtsStep() {
           亡くなる前3年以内に、相続や遺贈で財産を受け取る人へ贈与したお金や物は、相続財産に足して計算します（納めた贈与税は差し引けます）。
           {settlement && <span className="mt-1 block">相続時精算課税を選んだ後の贈与は、3年より前のものも含めて全部入れ、「相続時精算課税」に印を付けてください。</span>}
         </p>
+        <details className="mb-3 text-xs text-stone-600">
+          <summary className="cursor-pointer font-medium text-teal-800">Tips：入れない贈与</summary>
+          <p className="mt-2 leading-relaxed">
+            贈与税の配偶者控除（2,000万円まで）を受けた分と、住宅取得等資金の非課税を受けた分は、相続財産に足さないので入れません。配偶者控除を受けた贈与は、控除を受けた額を引いた残りだけを入れてください。
+          </p>
+        </details>
         <div className="space-y-2">
           {data.priorGifts.map((g, i) => {
             const set = (p: Partial<typeof g>) => update((c) => ({ ...c, priorGifts: c.priorGifts.map((x, j) => (j === i ? { ...x, ...p } : x)) }));

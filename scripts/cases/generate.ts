@@ -20,6 +20,12 @@
  * - 賃貸中のマンションには、scenario.ts にない leaseRatio（敷地の借地権割合）と rentRatio（賃貸割合）を付ける（型 CondoItemExt）。
  * - 3年以内贈与の贈与税額（giftTaxPaid）は、亡くなった方からの贈与だけがあったものとして計算する。
  *   亡くなった年の贈与は贈与税がかからない（相続税法21条の2④・21条の16）ので 0 円。
+ * - 一部未分割（division.partlyUndivided）は、shares に無い財産と持分の合計が1に満たない財産の残りが未分割。
+ *   遺言で遺贈する財産があるときは作らない（遺贈分は分割の対象にならず、穴埋め方式の合計の取り方が分かれるため）。
+ * - 税理士に確かめた補正率（advisorRate）は、路線価方式の不整形地・地積規模の大きな宅地だけに付ける（配偶者居住権のある土地には付けない）。
+ * - 前の相続で受けた障害者控除（priorDisabilityCredit）は、前の相続のときも今と同じ区分だったものとする。
+ * - 乱数のケースで、あとから足した事柄（貸家建付借地権・補正率・一部未分割・代償金の時価・前の相続の控除）は別の乱数列（extra）で決める。
+ *   元からある事柄の乱数列は変わらない。
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -31,7 +37,9 @@ import type {
   LandValuation,
   Member,
   MemberRelation,
+  PriorCredit,
   Scenario,
+  ScenarioCompensation,
   ScenarioDebt,
   ScenarioGift,
   ScenarioRoad,
@@ -356,6 +364,8 @@ export function roughValue(it: EstateItem): number {
       if (it.use === "rentedHouse") base *= 1 - lease * 0.3 * rr;
       else if (it.use === "leasedLand") base *= 1 - lease;
       else if (it.use === "leasehold") base *= lease;
+      else if (it.use === "rentedLeasehold") base *= lease * (1 - 0.3 * rr);
+      if (it.advisorRate !== undefined) base *= it.advisorRate;
       return Math.round(base);
     }
     case "building":
@@ -457,6 +467,9 @@ interface PersonOpts {
   diedAfter?: string;
   /** 胎児：亡くなった日の何日後に生まれたか */
   bornAfterDays?: number;
+  /** 前の相続で受けた未成年者控除・障害者控除 */
+  priorMinorCredit?: PriorCredit;
+  priorDisabilityCredit?: PriorCredit;
 }
 
 interface RosenkaOpts {
@@ -474,7 +487,11 @@ interface RosenkaOpts {
   use?: LandUse;
   rentRatio?: number;
   needsReduction?: LandItem["needsReduction"];
+  /** 税理士に確かめた補正率（不整形地補正率・規模格差補正率） */
+  advisorRate?: number;
   spouseResidenceRight?: boolean;
+  /** 道路を直接書く（正面路線の判定の境界など。price・frontage・depth・side・back より優先） */
+  roads?: ScenarioRoad[];
 }
 
 interface MultOpts {
@@ -538,8 +555,10 @@ export class Builder {
   debts: ScenarioDebt[] = [];
   gifts: DraftGift[] = [];
   shares: Record<string, Share[]> = {};
-  compensation: { from: string; to: string; amount: number }[] = [];
+  compensation: ScenarioCompensation[] = [];
   isUndivided = false;
+  /** 一部だけ分けた（shares に無い財産・持分の合計が1に満たない財産の残りが未分割） */
+  isPartly = false;
   place: Place;
   town: string;
   chome: string;
@@ -642,6 +661,8 @@ export class Builder {
     if (o.nonResident) m.nonResident = true;
     if (o.diedAfter) m.diedAfter = o.diedAfter;
     if (unborn) m.unborn = true;
+    if (o.priorMinorCredit) m.priorMinorCredit = o.priorMinorCredit;
+    if (o.priorDisabilityCredit) m.priorDisabilityCredit = o.priorDisabilityCredit;
     this.members.push(m);
     this.surnameOf.set(id, surname);
     this.maleOf.set(id, male);
@@ -722,10 +743,10 @@ export class Builder {
   landR(o: RosenkaOpts): string {
     const district = o.district ?? "普通住宅地区";
     const letter = o.letter ?? letterFor(o.price, district);
-    const roads: ScenarioRoad[] = [{ position: "front", price: o.price, depth: o.depth, frontage: o.frontage, leaseLetter: letter }];
-    if (o.side) roads.push({ position: "side", price: o.side, depth: o.frontage, frontage: o.depth, leaseLetter: letter });
-    if (o.side2) roads.push({ position: "side", price: o.side2, depth: o.frontage, frontage: o.depth, leaseLetter: letter });
-    if (o.back) roads.push({ position: "back", price: o.back, depth: o.depth, frontage: o.frontage, leaseLetter: letter });
+    const roads: ScenarioRoad[] = o.roads ? o.roads.map((r) => ({ ...r })) : [{ position: "front", price: o.price, depth: o.depth, frontage: o.frontage, leaseLetter: letter }];
+    if (!o.roads && o.side) roads.push({ position: "side", price: o.side, depth: o.frontage, frontage: o.depth, leaseLetter: letter });
+    if (!o.roads && o.side2) roads.push({ position: "side", price: o.side2, depth: o.frontage, frontage: o.depth, leaseLetter: letter });
+    if (!o.roads && o.back) roads.push({ position: "back", price: o.back, depth: o.depth, frontage: o.frontage, leaseLetter: letter });
     const it: LandItem = {
       id: this.nextId("L"),
       type: "land",
@@ -737,6 +758,7 @@ export class Builder {
     };
     if (o.rentRatio !== undefined) it.rentRatio = o.rentRatio;
     if (o.needsReduction) it.needsReduction = o.needsReduction;
+    if (o.advisorRate !== undefined) it.advisorRate = o.advisorRate;
     if (o.spouseResidenceRight) it.spouseResidenceRight = true;
     return this.push(it);
   }
@@ -826,8 +848,17 @@ export class Builder {
   undivided(): void {
     this.isUndivided = true;
   }
-  compensate(from: string, to: string, amount: number): void {
-    this.compensation.push({ from, to, amount });
+  /** 一部未分割にする（give しなかった財産と、持分の合計が1に満たない財産の残りが未分割） */
+  partlyUndivided(): void {
+    this.isPartly = true;
+  }
+  /** 財産の一部の持分だけを決める（残りは未分割。partlyUndivided と一緒に使う） */
+  givePart(itemId: string, parts: Share[]): void {
+    this.item(itemId);
+    this.shares[itemId] = parts.map((x) => ({ ...x }));
+  }
+  compensate(from: string, to: string, amount: number, basis?: { item: string; marketValue: number }): void {
+    this.compensation.push(basis ? { from, to, amount, basis } : { from, to, amount });
   }
   tag(...t: string[]): void {
     for (const x of t) this.tagSet.add(x);
@@ -837,9 +868,12 @@ export class Builder {
     const gifts = fillGiftTaxes(this.gifts, this.members, this.death).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
     const division: Division = this.isUndivided
       ? { kind: "undivided" }
-      : this.compensation.length
-        ? { kind: "agreed", shares: this.shares, compensation: this.compensation }
-        : { kind: "agreed", shares: this.shares };
+      : {
+          kind: "agreed",
+          shares: this.shares,
+          ...(this.compensation.length ? { compensation: this.compensation } : {}),
+          ...(this.isPartly ? { partlyUndivided: true as const } : {}),
+        };
     const s: Scenario = {
       id: this.id,
       title: this.title,
@@ -858,6 +892,20 @@ export class Builder {
 }
 
 // ───────────────────────── タグと題名 ─────────────────────────
+
+/** タグ用：奥行価格補正率（付表1、百分率）。正面路線の判定が同じ額になるかを見るためだけ */
+const DEPTH_UPPER_T = [4, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72, 76, 80, 84, 88, 92, 96, 100];
+const DEPTH_T: Partial<Record<District, number[]>> = {
+  普通住宅地区: [90, 92, 95, 97, 100, 100, 100, 100, 100, 97, 95, 93, 92, 91, 90, 89, 88, 87, 86, 85, 84, 83, 83, 82, 82, 81, 81, 81, 80],
+  "普通商業・併用住宅地区": [90, 92, 95, 97, 99, 100, 100, 100, 100, 100, 100, 97, 95, 93, 91, 89, 88, 87, 86, 85, 84, 83, 82, 81, 80, 80, 80, 80, 80],
+};
+function depthPct(district: District, depth: number): number {
+  const t = DEPTH_T[district];
+  if (!t) return 100 + depth; // ほかの地区はタグに使わない（同じ額とみなさない値）
+  let i = DEPTH_UPPER_T.findIndex((u) => depth < u);
+  if (i < 0) i = DEPTH_UPPER_T.length;
+  return t[i];
+}
 
 const DIRECT_DESC: MemberRelation[] = ["child", "adoptedChild", "grandchild", "greatGrandchild"];
 
@@ -929,6 +977,8 @@ export function autoTags(s: Scenario): string[] {
     if (m.unborn) t.add("胎児");
     if (!m.unborn && !m.predeceased && DIRECT_DESC.includes(m.relation) && ageAt(m.birthDate, death) < 18 && h.shares.has(m.id)) t.add("未成年者");
     if (m.relation === "other") t.add("受遺者（相続人以外）");
+    if (m.priorMinorCredit) t.add("前の相続でも未成年者控除");
+    if (m.priorDisabilityCredit) t.add("前の相続でも障害者控除");
   }
   const adoptedNormal = ms.filter((m) => m.relation === "adoptedChild" && !m.adoptedCountsAsBiological && !(m.grandchildAdopted && m.substituteOf));
   const bio = ms.filter((m) => m.relation === "child" || (m.relation === "adoptedChild" && m.adoptedCountsAsBiological));
@@ -979,6 +1029,7 @@ export function autoTags(s: Scenario): string[] {
         t.add("マンション");
         if (it.totalFloors <= 2) t.add("マンション（2階建て以下）");
         if (it.rented) t.add("賃貸中のマンション");
+        if (it.rented && ((it as CondoItemExt).rentRatio ?? 1) < 1) t.add("空室のある貸付");
         if (it.smallLand) smallKinds.add(it.smallLand.kind);
         if (it.smallLand?.kind === "residence") residenceArea += it.landShareSqm;
         break;
@@ -992,6 +1043,8 @@ export function autoTags(s: Scenario): string[] {
           if (sides) t.add("角地（側方路線）");
           if (backs) t.add("二方路線（裏面路線）");
           if (v.roads.length >= 3) t.add("三方・四方路線");
+          const sc = v.roads.map((r) => r.price * depthPct(v.district, r.depth));
+          if (sc.some((x, i) => sc.some((y, j) => i !== j && x === y))) t.add("正面路線の判定（同じ額）");
         } else {
           t.add("倍率地域");
         }
@@ -1000,7 +1053,10 @@ export function autoTags(s: Scenario): string[] {
         if (it.use === "rentedHouse") t.add("貸家建付地");
         if (it.use === "leasedLand") t.add("貸宅地（底地）");
         if (it.use === "leasehold") t.add("借地権");
+        if (it.use === "rentedLeasehold") t.add("貸家建付借地権");
         if (it.use === "parking") t.add("駐車場");
+        if ((it.use === "rentedHouse" || it.use === "rentedLeasehold") && (it.rentRatio ?? 1) < 1) t.add("空室のある貸付");
+        if (it.advisorRate !== undefined) t.add(it.advisorRate === 1 ? "税理士に確かめた補正率（1）" : "税理士に確かめた補正率");
         if (it.needsReduction === "largeLot") t.add("地積規模の大きな宅地");
         if (it.needsReduction === "irregular") t.add("不整形地");
         if (it.needsReduction === "setback") t.add("セットバック");
@@ -1048,7 +1104,9 @@ export function autoTags(s: Scenario): string[] {
   // 分け方
   if (s.division.kind === "undivided") t.add("未分割");
   else {
+    if (s.division.partlyUndivided) t.add("一部未分割");
     if (s.division.compensation?.length) t.add("代償分割");
+    if (s.division.compensation?.some((c) => c.basis)) t.add("代償金（時価をもとに決めた）");
     const got = roughAcquired(s);
     if (h.spouse) {
       const spv = got.get(h.spouse) ?? 0;
@@ -1088,6 +1146,7 @@ export function autoTitle(s: Scenario): string {
   if (has((it) => it.type === "land" && it.use === "leasehold")) parts.push("借地権");
   if (has((it) => it.type === "condo")) parts.push("マンション");
   if (has((it) => it.type === "land" && it.use === "rentedHouse")) parts.push("アパート");
+  if (has((it) => it.type === "land" && it.use === "rentedLeasehold")) parts.push("借地のアパート");
   if (has((it) => it.type === "land" && it.use === "leasedLand")) parts.push("貸宅地");
   if (has((it) => it.type === "land" && (it.landUse === "田" || it.landUse === "畑" || it.landUse === "山林"))) parts.push("田畑・山林");
   if (has((it) => it.type === "deposit")) parts.push("預貯金");
@@ -1097,6 +1156,7 @@ export function autoTitle(s: Scenario): string {
   if (has((it) => it.type === "retirement")) parts.push("死亡退職金");
   const notes: string[] = [];
   if (s.division.kind === "undivided") notes.push("未分割");
+  if (s.division.kind === "agreed" && s.division.partlyUndivided) notes.push("一部未分割");
   if (s.division.kind === "agreed" && s.division.compensation?.length) notes.push("代償分割");
   if (s.gifts.some((g) => g.settlement)) notes.push("精算課税");
   else if (s.gifts.length) notes.push("生前贈与");
@@ -1112,7 +1172,7 @@ export function autoTitle(s: Scenario): string {
 type EdgeFn = (b: Builder) => void;
 
 /** 自宅（路線価・普通住宅地区）の土地と建物 */
-function home(b: Builder, o: { price?: number; frontage?: number; depth?: number; bldg?: number; district?: District; side?: number; back?: number; use?: LandUse; needsReduction?: LandItem["needsReduction"]; spouseResidenceRight?: boolean } = {}): { L: string; B: string } {
+function home(b: Builder, o: { price?: number; frontage?: number; depth?: number; bldg?: number; district?: District; side?: number; back?: number; use?: LandUse; needsReduction?: LandItem["needsReduction"]; advisorRate?: number; spouseResidenceRight?: boolean; area?: number } = {}): { L: string; B: string } {
   const L = b.landR({
     label: `自宅の土地（${b.homeLocation()}）`,
     price: o.price ?? 250_000,
@@ -1123,7 +1183,9 @@ function home(b: Builder, o: { price?: number; frontage?: number; depth?: number
     back: o.back,
     use: o.use,
     needsReduction: o.needsReduction,
+    advisorRate: o.advisorRate,
     spouseResidenceRight: o.spouseResidenceRight,
+    area: o.area,
   });
   const B = b.building(o.bldg ?? 4_200_000, { label: "自宅の建物（木造2階建）" });
   return { L, B };
@@ -2704,6 +2766,467 @@ const EDGES: [string, string[], EdgeFn][] = [
     b.funeral(1_200_000, c1);
     b.split({ [c1]: 1, [c2]: 1 });
   }],
+  // ── 一部未分割（穴埋め方式：未分割の部分は「法定相続分×分割対象の合計 − 分割で取得した額」の不足分の割合で） ──
+  ["一部未分割：自宅は配偶者に決まり、大きな預金だけ未分割（穴埋め方式）", ["分け方", "一部未分割", "小規模宅地"], (b) => {
+    b.dec({ age: 80, male: true });
+    const sp = b.spouse({ age: 77 });
+    b.child({ age: 50 });
+    const c2 = b.child({ age: 47 });
+    const h = home(b, { price: 300_000, frontage: 12, depth: 16, bldg: 3_000_000 });
+    b.deposit(60_000_000);
+    const D2 = b.deposit(10_000_000);
+    b.funeral(1_500_000, sp);
+    b.give(h.L, sp);
+    b.give(h.B, sp);
+    b.smallLand(h.L, "residence", sp);
+    b.give(D2, c2);
+    b.partlyUndivided();
+  }],
+  ["一部未分割：配偶者と兄弟姉妹。法定相続分より多く取得した兄には未分割の分を割り当てない（2割加算）", ["分け方", "一部未分割"], (b) => {
+    b.dec({ age: 74, male: true });
+    const sp = b.spouse({ age: 71 });
+    const b1 = b.sibling({ age: 72 });
+    b.sibling({ age: 69 });
+    const D1 = b.deposit(90_000_000);
+    const L = b.landM({ label: `郷里の土地（${b.farLocation()}）`, area: 450, fixedAssetValue: 30_000_000, rate: 1.1 });
+    b.listed(10_000, { close: 3_050, monthAvg: 3_000, prevMonthAvg: 2_980, prev2MonthAvg: 3_100 });
+    b.funeral(1_600_000, sp);
+    b.give(D1, sp);
+    b.give(L, b1);
+    b.partlyUndivided();
+  }],
+  ["一部未分割：預金の半分だけ分け方が決まった（子3人）", ["分け方", "一部未分割"], (b) => {
+    b.dec({ age: 86, male: false });
+    b.spouse({ age: 88, predeceased: true });
+    const c1 = b.child({ age: 60 });
+    const c2 = b.child({ age: 57 });
+    b.child({ age: 54 });
+    const D1 = b.deposit(50_000_000);
+    const D2 = b.deposit(30_000_000);
+    b.funeral(1_300_000, c1);
+    b.givePart(D1, [{ who: c1, n: 1, d: 2 }]);
+    b.give(D2, c2);
+    b.partlyUndivided();
+  }],
+  // ── 扶養義務者（配偶者・直系血族・兄弟姉妹）への控除不足額の振替 ──
+  ["障害者控除が引ききれない：特別障害者の配偶者（子なし）。亡くなった方の兄弟姉妹は扶養義務者でない", ["障害者", "控除不足額", "扶養義務者"], (b) => {
+    b.dec({ age: 72, male: true });
+    const sp = b.spouse({ age: 70, disability: "special" });
+    const b1 = b.sibling({ age: 69 });
+    const b2 = b.sibling({ age: 66 });
+    const D1 = b.deposit(96_000_000);
+    const D2 = b.deposit(24_000_000);
+    b.funeral(1_500_000, sp);
+    b.give(D1, sp);
+    b.give(D2, { [b1]: 1, [b2]: 1 });
+  }],
+  ["未成年の代襲相続人（5歳）の控除不足：同じ親の兄から引き、おじ（亡くなった方の子）からは引かない", ["未成年者", "控除不足額", "扶養義務者"], (b) => {
+    b.dec({ age: 72, male: true });
+    const sp = b.spouse({ age: 69 });
+    const c1 = b.child({ age: 46 });
+    const c2 = b.child({ age: 43, predeceased: true });
+    const g1 = b.grandchild(c2, { age: 5 });
+    const g2 = b.grandchild(c2, { age: 19 });
+    const D1 = b.deposit(70_000_000);
+    const D2 = b.deposit(35_000_000);
+    const D3 = b.deposit(1_000_000);
+    const D4 = b.deposit(34_000_000);
+    b.funeral(1_500_000, sp);
+    b.give(D1, sp);
+    b.give(D2, c1);
+    b.give(D3, g1);
+    b.give(D4, g2);
+  }],
+  ["未成年の代襲相続人の控除不足：1億6千万円を超えて取得した祖母（配偶者）から引き、おじ・いとこからは引かない", ["未成年者", "控除不足額", "扶養義務者"], (b) => {
+    b.dec({ age: 79, male: true });
+    const sp = b.spouse({ age: 76 });
+    const c1 = b.child({ age: 52 });
+    const c2 = b.child({ age: 48, predeceased: true });
+    const g1 = b.grandchild(c2, { age: 6 });
+    const g3 = b.grandchild(c1, { age: 22 });
+    const D1 = b.deposit(300_000_000);
+    const D2 = b.deposit(140_000_000);
+    const D3 = b.deposit(2_000_000);
+    b.insurance(6_000_000, g3, "死亡保険金（受取人は孫）");
+    b.funeral(2_000_000, sp);
+    b.give(D1, sp);
+    b.give(D2, c1);
+    b.give(D3, g1);
+  }],
+  ["未成年の甥の控除不足：同じ親のきょうだい（甥）から引き、おじ・いとこにあたる人からは引かない", ["未成年者", "控除不足額", "扶養義務者"], (b) => {
+    b.dec({ age: 70, male: false });
+    const b1 = b.sibling({ age: 68 });
+    const b2 = b.sibling({ age: 64, predeceased: true });
+    const n1 = b.nephew(b2, { age: 10 });
+    const n2 = b.nephew(b2, { age: 26 });
+    const b3 = b.sibling({ age: 66, predeceased: true });
+    const n3 = b.nephew(b3, { age: 35 });
+    const D1 = b.deposit(40_000_000);
+    const D2 = b.deposit(1_000_000);
+    const D3 = b.deposit(39_000_000);
+    const D4 = b.deposit(40_000_000);
+    b.funeral(1_400_000, b1);
+    b.give(D1, b1);
+    b.give(D2, n1);
+    b.give(D3, n2);
+    b.give(D4, n3);
+  }],
+  ["特別障害者の母の控除不足：父と全血の兄弟から引き、半血の兄・亡くなった方の配偶者からは引かない", ["障害者", "控除不足額", "扶養義務者"], (b) => {
+    b.dec({ age: 50, male: true });
+    const sp = b.spouse({ age: 48 });
+    const fa = b.parent(true, { age: 79 });
+    const mo = b.parent(false, { age: 76, disability: "special" });
+    const s1 = b.sibling({ age: 47 });
+    const s2 = b.sibling({ age: 55, halfBlood: true });
+    const D1 = b.deposit(100_000_000);
+    const D2 = b.deposit(30_000_000);
+    const D3 = b.deposit(2_000_000);
+    const D4 = b.deposit(10_000_000, "定期預金（遺言で弟に遺贈）");
+    const D5 = b.deposit(10_000_000, "定期預金（遺言で兄に遺贈）");
+    b.funeral(1_500_000, sp);
+    b.give(D1, sp);
+    b.give(D2, fa);
+    b.give(D3, mo);
+    b.give(D4, s1);
+    b.give(D5, s2);
+  }],
+  ["半血の兄弟姉妹（障害者）の控除不足：全血の兄弟から引き、半血どうしでは引かない", ["障害者", "控除不足額", "扶養義務者", "家族の形"], (b) => {
+    b.dec({ age: 80, male: true });
+    const s1 = b.sibling({ age: 75, halfBlood: true, disability: "general" });
+    const s2 = b.sibling({ age: 78, halfBlood: true });
+    const s3 = b.sibling({ age: 82 });
+    const D1 = b.deposit(3_000_000);
+    const D2 = b.deposit(40_000_000);
+    const D3 = b.deposit(80_000_000);
+    b.funeral(1_300_000, s3);
+    b.give(D1, s1);
+    b.give(D2, s2);
+    b.give(D3, s3);
+  }],
+  ["特別障害者の配偶者の控除不足：子から引き、亡くなった方の母（受遺者）・知人（受遺者）からは引かない", ["障害者", "控除不足額", "扶養義務者"], (b) => {
+    b.dec({ age: 60, male: true });
+    const sp = b.spouse({ age: 58, disability: "special" });
+    const c1 = b.child({ age: 30 });
+    const c2 = b.child({ age: 27 });
+    const mo = b.parent(false, { age: 84 });
+    const o1 = b.other({ age: 55 });
+    const D1 = b.deposit(70_000_000);
+    const D2 = b.deposit(30_000_000);
+    const D3 = b.deposit(30_000_000);
+    const D4 = b.deposit(10_000_000, "定期預金（遺言で母に遺贈）");
+    const D5 = b.deposit(5_000_000, "定期預金（遺言で知人に遺贈）");
+    b.funeral(1_500_000, sp);
+    b.give(D1, sp);
+    b.give(D2, c1);
+    b.give(D3, c2);
+    b.give(D4, mo);
+    b.give(D5, o1);
+  }],
+  // ── 一部が空室の貸付事業用宅地等（貸している部分だけ：自用地 × 賃貸割合 × (1 − 借地権割合 × 0.3)） ──
+  ["貸付事業用：一部が空室のアパート（国税庁の例：自用地4,000万円・借地権割合0.7・賃貸割合0.9）", ["小規模宅地", "空室のある貸付"], (b) => {
+    b.dec({ age: 81, male: true });
+    b.spouse({ age: 79, predeceased: true });
+    const c1 = b.child({ age: 52 });
+    const c2 = b.child({ age: 49 });
+    const L = b.landR({ label: `アパートの土地（${b.location()}）`, price: 200_000, frontage: 12.5, depth: 16, letter: "C", use: "rentedHouse", rentRatio: 0.9 });
+    const B = b.building(15_000_000, { label: "アパート（10室中9室賃貸）", rented: true, rentRatio: 0.9 });
+    b.deposit(40_000_000);
+    b.funeral(1_400_000, c1);
+    b.give(L, c1);
+    b.give(B, c1);
+    b.smallLand(L, "rental", c1);
+    b.split({ [c2]: 1 });
+  }],
+  ["貸付事業用：一部が空室の賃貸マンション（区分所有補正のあとの敷地のうち貸している部分だけ）", ["小規模宅地", "マンション", "空室のある貸付"], (b) => {
+    b.dec({ age: 76, male: false });
+    const sp = b.spouse({ age: 79 });
+    const c1 = b.child({ age: 48 });
+    const h = home(b, { price: 260_000, frontage: 11, depth: 15, bldg: 3_400_000 });
+    const M = b.condo({ label: `賃貸中のマンション（${b.location()}）`, landValue: 18_000_000, buildingFixedAssetValue: 9_000_000, builtYears: 8, builtMonths: 3, totalFloors: 14, floor: 9, landShareSqm: 24.5, exclusiveAreaSqm: 96.4, rented: true, leaseRatio: 0.7, rentRatio: 0.5 });
+    b.deposit(42_000_000);
+    b.funeral(1_500_000, sp);
+    b.give(h.L, sp);
+    b.give(h.B, sp);
+    b.give(M, c1);
+    b.smallLand(M, "rental", c1);
+    b.split({ [sp]: 1, [c1]: 1 });
+  }],
+  ["貸付事業用：空室のあるアパートを兄弟で共有（持分のうち貸している部分、200㎡まで）", ["小規模宅地", "空室のある貸付", "小規模宅地（共有取得）"], (b) => {
+    b.dec({ age: 84, male: true });
+    b.spouse({ age: 82, predeceased: true });
+    const c1 = b.child({ age: 56 });
+    const c2 = b.child({ age: 53 });
+    const L = b.landR({ label: `アパートの土地（${b.location()}）`, price: 260_000, frontage: 19.2, depth: 25, use: "rentedHouse", rentRatio: 0.9 });
+    const B = b.building(32_000_000, { label: "アパート（20室中18室賃貸）", rented: true, rentRatio: 0.9 });
+    b.deposit(30_000_000);
+    b.debt(20_000_000, { [c1]: 1, [c2]: 1 }, "アパートローン");
+    b.funeral(1_600_000, c1);
+    b.give(L, { [c1]: 1, [c2]: 1 });
+    b.give(B, { [c1]: 1, [c2]: 1 });
+    b.smallLand(L, "rental", c1);
+    b.split({ [c1]: 1, [c2]: 1 });
+  }],
+  // ── 貸家建付借地権（人の土地を借りてアパートを建てて貸している。評基通28） ──
+  ["貸家建付借地権（借りた土地にアパート、満室、貸付事業用）", ["土地の使い方", "小規模宅地"], (b) => {
+    b.dec({ age: 77, male: true });
+    const sp = b.spouse({ age: 74 });
+    const c1 = b.child({ age: 47 });
+    const h = home(b, { price: 280_000, frontage: 11, depth: 15, bldg: 3_200_000 });
+    const L = b.landR({ label: `借地に建てたアパートの借地権（${b.location()}）`, price: 320_000, frontage: 14, depth: 18, letter: "D", use: "rentedLeasehold", rentRatio: 1 });
+    const B = b.building(20_000_000, { label: "アパート（借地上、6室）", rented: true, rentRatio: 1 });
+    b.deposit(45_000_000);
+    b.funeral(1_600_000, sp);
+    b.give(h.L, sp);
+    b.give(h.B, sp);
+    b.smallLand(h.L, "residence", sp);
+    b.give(L, c1);
+    b.give(B, c1);
+    b.smallLand(L, "rental", c1);
+    b.split({ [sp]: 1, [c1]: 1 });
+  }],
+  ["貸家建付借地権（倍率地域、空室あり賃貸割合0.8、貸付事業用は貸している部分だけ）", ["土地の使い方", "小規模宅地", "空室のある貸付"], (b) => {
+    b.moveRural();
+    b.dec({ age: 83, male: false });
+    const c1 = b.child({ age: 57 });
+    const c2 = b.child({ age: 54 });
+    const L = b.landM({ label: `借地に建てたアパートの借地権（${b.location()}）`, area: 280, fixedAssetValue: 12_000_000, rate: 1.1, leaseRatio: 0.6, use: "rentedLeasehold", rentRatio: 0.8 });
+    const B = b.building(16_000_000, { label: "アパート（借地上、10室中8室賃貸）", rented: true, rentRatio: 0.8 });
+    b.deposit(38_000_000);
+    b.funeral(1_300_000, c1);
+    b.give(L, c1);
+    b.give(B, c1);
+    b.smallLand(L, "rental", c1);
+    b.split({ [c2]: 1 });
+  }],
+  ["貸家建付借地権（空室あり賃貸割合0.75、特例なし）", ["土地の使い方", "空室のある貸付"], (b) => {
+    b.dec({ age: 88, male: true });
+    const sp = b.spouse({ age: 84 });
+    const c1 = b.child({ age: 58 });
+    const c2 = b.child({ age: 55 });
+    const L = b.landR({ label: `借地に建てた貸家の借地権（${b.location()}）`, price: 410_000, frontage: 10, depth: 20, use: "rentedLeasehold", rentRatio: 0.75 });
+    const B = b.building(9_000_000, { label: "貸家（4戸中3戸賃貸）", rented: true, rentRatio: 0.75 });
+    b.deposit(60_000_000);
+    b.funeral(1_700_000, sp);
+    b.give(L, c2);
+    b.give(B, c2);
+    b.split({ [sp]: 2, [c1]: 1, [c2]: 1 });
+  }],
+  // ── 前の相続でも未成年者控除・障害者控除を受けた（19条の3第3項・19条の4第3項） ──
+  ["前の相続でも未成年者控除を受けた（父の相続で使い切り、今回は0円）", ["未成年者", "前の相続でも未成年者控除", "相次相続"], (b) => {
+    b.dec({ age: 44, male: false, deathDate: "2026-06-20", prior: { yearsAgo: 3, prevTax: 2_800_000, prevAcquired: 60_000_000 } });
+    b.spouse({ age: 46, predeceased: true });
+    const c1 = b.child({ age: 19 });
+    const c2 = b.child({ birthDate: "2014-03-01", priorMinorCredit: { date: "2023-06-20", amount: 900_000 } });
+    b.deposit(64_000_000);
+    b.funeral(1_200_000, c1);
+    b.split({ [c1]: 1, [c2]: 1 });
+  }],
+  ["前の相続でも未成年者控除を受けた（一部だけ使った残りまで）", ["未成年者", "前の相続でも未成年者控除", "相次相続"], (b) => {
+    b.dec({ age: 47, male: false, deathDate: "2026-09-05", prior: { yearsAgo: 2, prevTax: 1_500_000, prevAcquired: 45_000_000 } });
+    b.spouse({ age: 49, predeceased: true });
+    const c1 = b.child({ age: 22 });
+    const c2 = b.child({ birthDate: "2014-05-01", priorMinorCredit: { date: "2024-09-05", amount: 300_000 } });
+    b.deposit(70_000_000);
+    b.funeral(1_300_000, c1);
+    b.split({ [c1]: 1, [c2]: 1 });
+  }],
+  ["前の相続（令和3年）でも未成年者控除を受けた（今回の相続では18歳までの年数で計算）", ["未成年者", "前の相続でも未成年者控除"], (b) => {
+    b.dec({ age: 45, male: true, deathDate: "2026-06-20" });
+    const sp = b.spouse({ age: 43 });
+    const c1 = b.child({ birthDate: "2013-03-01", priorMinorCredit: { date: "2021-09-15", amount: 650_000 } });
+    b.deposit(80_000_000);
+    b.funeral(1_300_000, sp);
+    b.split({ [sp]: 1, [c1]: 1 });
+  }],
+  ["前の相続でも障害者控除を受けた（一般障害者、残りだけ控除し、引ききれない分は兄から）", ["障害者", "前の相続でも障害者控除", "控除不足額"], (b) => {
+    b.dec({ age: 79, male: false, deathDate: "2026-05-12" });
+    b.spouse({ age: 82, predeceased: true });
+    const c1 = b.child({ birthDate: "1975-08-01", disability: "general", priorDisabilityCredit: { date: "2020-03-01", amount: 2_000_000 } });
+    const c2 = b.child({ age: 53 });
+    const D1 = b.deposit(8_000_000);
+    const D2 = b.deposit(62_000_000);
+    b.funeral(1_400_000, c2);
+    b.give(D1, c1);
+    b.give(D2, c2);
+  }],
+  // ── 精算課税の贈与税の還付（基礎控除以下でも申告が要る） ──
+  ["相続時精算課税の贈与税が戻る（遺産は基礎控除以下でも申告が要る）", ["精算課税", "基礎控除"], (b) => {
+    b.dec({ age: 84, male: true });
+    b.spouse({ age: 86, predeceased: true });
+    const c1 = b.child({ age: 56 });
+    const c2 = b.child({ age: 53 });
+    b.deposit(5_000_000);
+    b.funeral(1_200_000, c2);
+    b.gift(c1, "2019-06-01", 28_000_000, { settlement: true });
+    b.split({ [c2]: 1 });
+  }],
+  ["相続時精算課税の贈与税（100円未満の端数のある入力）が戻る（控除額は100円未満切捨て）", ["精算課税", "基礎控除"], (b) => {
+    b.dec({ age: 79, male: false });
+    const sp = b.spouse({ age: 81 });
+    const c1 = b.child({ age: 51 });
+    b.deposit(12_000_000);
+    b.funeral(1_300_000, sp);
+    b.gift(c1, "2024-07-01", 30_000_000, { settlement: true, giftTaxPaid: 780_050 });
+    b.split({ [sp]: 1 });
+  }],
+  // ── 代償金を特定の財産の時価をもとに決めた（相基通11の2-10(2)） ──
+  ["代償分割：代償金をマンションの時価をもとに決めた（評価額÷時価で調整）", ["分け方", "代償分割"], (b) => {
+    b.dec({ age: 83, male: false });
+    b.spouse({ age: 85, predeceased: true });
+    const c1 = b.child({ age: 55 });
+    const c2 = b.child({ age: 52 });
+    const M = b.condo({ landValue: 22_000_000, buildingFixedAssetValue: 9_500_000, builtYears: 12, builtMonths: 2, totalFloors: 15, floor: 10, landShareSqm: 20.4, exclusiveAreaSqm: 78.2 });
+    b.deposit(30_000_000);
+    b.funeral(1_500_000, c1);
+    b.give(M, c1);
+    b.smallLand(M, "residence", c1);
+    b.split({ [c1]: 1, [c2]: 1 });
+    b.compensate(c1, c2, 30_000_000, { item: M, marketValue: 60_000_000 });
+  }],
+  ["代償分割：代償金を自宅の土地の時価をもとに決めた（小規模宅地の前の評価額で調整）", ["分け方", "代償分割", "小規模宅地"], (b) => {
+    b.dec({ age: 87, male: true });
+    b.spouse({ age: 84, predeceased: true });
+    const c1 = b.child({ age: 59 });
+    const c2 = b.child({ age: 56 });
+    const c3 = b.child({ age: 52 });
+    const h = home(b, { price: 380_000, frontage: 13, depth: 17, bldg: 2_600_000 });
+    b.deposit(24_000_000);
+    b.funeral(1_600_000, c1);
+    b.give(h.L, c1);
+    b.give(h.B, c1);
+    b.smallLand(h.L, "residence", c1);
+    b.split({ [c1]: 1, [c2]: 1, [c3]: 1 });
+    b.compensate(c1, c2, 20_000_000, { item: h.L, marketValue: 105_000_000 });
+    b.compensate(c1, c3, 20_000_000, { item: h.L, marketValue: 105_000_000 });
+  }],
+  ["代償金を払う人が遺産を取得していない（生命保険金から払う。税理士に相談）", ["分け方", "代償分割"], (b) => {
+    b.dec({ age: 79, male: true });
+    const sp = b.spouse({ age: 76 });
+    const c1 = b.child({ age: 50 });
+    const c2 = b.child({ age: 47 });
+    const h = home(b, { price: 260_000, frontage: 12, depth: 15, bldg: 3_000_000 });
+    b.deposit(40_000_000);
+    b.insurance(30_000_000, c1);
+    b.funeral(1_500_000, sp);
+    b.give(h.L, sp);
+    b.give(h.B, sp);
+    b.smallLand(h.L, "residence", sp);
+    b.split({ [sp]: 1, [c2]: 1 });
+    b.compensate(c1, c2, 8_000_000);
+  }],
+  // ── 正面路線の判定：路線価×奥行価格補正率が同じとき ──
+  ["正面路線の判定：奥行価格補正後の額が同じなら間口の長い方（側方路線を正面にして奥行長大なし）", ["路線", "正面路線の判定（同じ額）"], (b) => {
+    b.dec({ age: 81, male: true });
+    const sp = b.spouse({ age: 78 });
+    const c1 = b.child({ age: 50 });
+    const h = home(b, { price: 200_000, side: 194_000, frontage: 12, depth: 25, bldg: 3_100_000 });
+    b.deposit(32_000_000);
+    b.funeral(1_500_000, sp);
+    b.give(h.L, sp);
+    b.give(h.B, sp);
+    b.split({ [c1]: 1 });
+  }],
+  ["正面路線の判定：間口も同じなら路線価の高い方（借地権割合はその路線の記号）", ["路線", "正面路線の判定（同じ額）", "土地の使い方"], (b) => {
+    b.dec({ age: 85, male: false });
+    const c1 = b.child({ age: 58 });
+    const c2 = b.child({ age: 55 });
+    const L = b.landR({
+      label: `貸している土地（${b.location()}）`,
+      price: 194_000,
+      frontage: 20,
+      depth: 12,
+      area: 300,
+      use: "leasedLand",
+      roads: [
+        { position: "front", price: 194_000, depth: 12, frontage: 20, leaseLetter: "D" },
+        { position: "side", price: 200_000, depth: 25, frontage: 20, leaseLetter: "C" },
+      ],
+    });
+    b.deposit(40_000_000);
+    b.funeral(1_400_000, c1);
+    b.give(L, c2);
+    b.split({ [c1]: 1 });
+  }],
+  ["正面路線の判定：二方路線で路線価・奥行・間口がすべて同じ（入力の順で正面を決める）", ["路線", "正面路線の判定（同じ額）", "土地の使い方"], (b) => {
+    b.dec({ age: 78, male: true });
+    const sp = b.spouse({ age: 75 });
+    const c1 = b.child({ age: 49 });
+    const L = b.landR({
+      label: `アパートの土地（${b.location()}）`,
+      price: 250_000,
+      frontage: 15,
+      depth: 20,
+      use: "rentedHouse",
+      rentRatio: 1,
+      roads: [
+        { position: "front", price: 250_000, depth: 20, frontage: 15, leaseLetter: "C" },
+        { position: "back", price: 250_000, depth: 20, frontage: 15, leaseLetter: "D" },
+      ],
+    });
+    const B = b.building(18_000_000, { label: "アパート（木造2階建・6室）", rented: true, rentRatio: 1 });
+    b.deposit(30_000_000);
+    b.funeral(1_500_000, sp);
+    b.give(L, c1);
+    b.give(B, c1);
+    b.split({ [sp]: 1 });
+  }],
+  // ── 税理士に確かめた補正率（不整形地は間口狭小・奥行長大を重ねない。補正率1も確かめた答え） ──
+  ["不整形地：税理士に確かめた不整形地補正率0.81（間口狭小・奥行長大の補正は重ねない）", ["補正が必要な土地", "小規模宅地"], (b) => {
+    b.dec({ age: 82, male: false });
+    const c1 = b.child({ age: 54 });
+    const c2 = b.child({ age: 51 });
+    const L = b.landR({ label: `自宅の土地（旗竿地、${b.homeLocation()}）`, price: 200_000, frontage: 5, depth: 30, needsReduction: "irregular", advisorRate: 0.81 });
+    const B = b.building(2_400_000);
+    b.deposit(36_000_000);
+    b.funeral(1_300_000, c1);
+    b.give(L, c1);
+    b.give(B, c1);
+    b.smallLand(L, "residence", c1);
+    b.split({ [c2]: 1 });
+  }],
+  ["不整形地（間口の狭い角地）：税理士に確かめた不整形地補正率0.90", ["補正が必要な土地", "路線"], (b) => {
+    b.dec({ age: 77, male: true });
+    const sp = b.spouse({ age: 74 });
+    const c1 = b.child({ age: 46 });
+    const L = b.landR({ label: `空き地（三角形の土地、${b.location()}）`, price: 180_000, frontage: 6.5, depth: 28, side: 150_000, needsReduction: "irregular", advisorRate: 0.9 });
+    home(b, { price: 240_000, frontage: 12, depth: 15, bldg: 3_000_000 });
+    b.deposit(40_000_000);
+    b.funeral(1_500_000, sp);
+    b.give(L, c1);
+    b.split({ [sp]: 1 });
+  }],
+  ["不整形地：税理士に確かめたら補正なし（補正率1）", ["補正が必要な土地"], (b) => {
+    b.dec({ age: 84, male: false });
+    const c1 = b.child({ age: 57 });
+    b.landR({ label: `自宅の土地（${b.homeLocation()}）`, price: 230_000, frontage: 7, depth: 22, needsReduction: "irregular", advisorRate: 1 });
+    b.building(2_200_000);
+    b.deposit(30_000_000);
+    b.funeral(1_200_000, c1);
+    b.split({ [c1]: 1 });
+  }],
+  ["地積規模の大きな宅地に当たらないと税理士に確かめた（補正率1）", ["補正が必要な土地"], (b) => {
+    b.dec({ age: 86, male: true });
+    const c1 = b.child({ age: 58 });
+    const c2 = b.child({ age: 55 });
+    const h = home(b, { price: 110_000, frontage: 30, depth: 35, bldg: 2_800_000, needsReduction: "largeLot", advisorRate: 1 });
+    b.deposit(28_000_000);
+    b.funeral(1_500_000, c1);
+    b.give(h.L, c1);
+    b.give(h.B, c1);
+    b.split({ [c2]: 1 });
+  }],
+  ["地積規模の大きな宅地：税理士に確かめた規模格差補正率0.78（奥行長大の補正のあとに掛ける）", ["補正が必要な土地", "小規模宅地"], (b) => {
+    b.dec({ age: 83, male: true });
+    const sp = b.spouse({ age: 80 });
+    const c1 = b.child({ age: 53 });
+    const h = home(b, { price: 95_000, frontage: 20, depth: 52.5, bldg: 3_300_000, needsReduction: "largeLot", advisorRate: 0.78 });
+    b.deposit(35_000_000);
+    b.funeral(1_500_000, sp);
+    b.give(h.L, sp);
+    b.give(h.B, sp);
+    b.smallLand(h.L, "residence", sp);
+    b.split({ [c1]: 1 });
+  }],
 ];
 
 function edgeScenarios(seed: number): Scenario[] {
@@ -2756,7 +3279,11 @@ interface RandCtx {
   funeral?: number;
 }
 
-function randomScenario(id: string, rng: Rng): Scenario {
+/**
+ * 乱数のケースを1件作る。rng は元からある事柄、extra はあとから足した事柄（貸家建付借地権・税理士に確かめた補正率・
+ * 一部未分割・代償金の時価・前の相続で受けた控除）に使う別の乱数列。extra を分けたので、足した事柄のない部分は前と同じになる
+ */
+function randomScenario(id: string, rng: Rng, extra: Rng): Scenario {
   const famType = rng.weighted<FamType>([
     ["spouseChildren", 55], ["childrenOnly", 30], ["siblings", 6], ["parents", 3], ["grandSub", 3], ["other", 3],
   ]);
@@ -2949,6 +3476,8 @@ function randomScenario(id: string, rng: Rng): Scenario {
         back: twoWay ? roundTo(price * rng.range(0.6, 0.95), 1000) : undefined,
         use: leasehold ? "leasehold" : "self",
         needsReduction: needsRed,
+        // 配偶者居住権のある土地はいつも税理士に相談するので、補正率は付けない
+        advisorRate: (needsRed === "irregular" || needsRed === "largeLot") && !spouseRight ? advisorRateOf(extra, needsRed) : undefined,
         spouseResidenceRight: spouseRight,
       });
     }
@@ -2972,13 +3501,17 @@ function randomScenario(id: string, rng: Rng): Scenario {
     const area = round2(rng.logNormalIn(260, 0.35, 120, 700));
     const rentRatio = rng.chance(0.6) ? 1 : rng.pick([0.5, 0.625, 0.75, 0.8, 0.875, 0.9]);
     const explicit = rentRatio !== 1 || rng.chance(0.5);
+    // 人の土地を借りてアパートを建てている（貸家建付借地権）こともある
+    const onLease = extra.chance(0.14);
+    const use: LandUse = onLease ? "rentedLeasehold" : "rentedHouse";
+    const lLabel = onLease ? "借地に建てたアパートの借地権" : "アパートの土地";
     let L: string;
     if (rng.chance(0.15) || rural) {
-      L = b.landM({ label: `アパートの土地（${b.location()}）`, area, fixedAssetValue: Math.round(area * clamp(rng.logNormal(30_000, 0.3), 5_000, 150_000)), rate: rng.pick([1.0, 1.1, 1.1, 1.2]), leaseRatio: rng.pick([0.4, 0.5, 0.6]), use: "rentedHouse", rentRatio: explicit ? rentRatio : undefined });
+      L = b.landM({ label: `${lLabel}（${b.location()}）`, area, fixedAssetValue: Math.round(area * clamp(rng.logNormal(30_000, 0.3), 5_000, 150_000)), rate: rng.pick([1.0, 1.1, 1.1, 1.2]), leaseRatio: rng.pick([0.4, 0.5, 0.6]), use, rentRatio: explicit ? rentRatio : undefined });
     } else {
       const district: District = rng.chance(0.7) ? "普通住宅地区" : "普通商業・併用住宅地区";
       const { frontage, depth } = lotDims(area);
-      L = b.landR({ label: `アパートの土地（${b.location()}）`, district, price: rosenkaPrice(230_000), frontage, depth, side: rng.chance(0.2) ? rosenkaPrice(180_000) : undefined, use: "rentedHouse", rentRatio: explicit ? rentRatio : undefined });
+      L = b.landR({ label: `${lLabel}（${b.location()}）`, district, price: rosenkaPrice(230_000), frontage, depth, side: rng.chance(0.2) ? rosenkaPrice(180_000) : undefined, use, rentRatio: explicit ? rentRatio : undefined });
     }
     const bf = roundTo(clamp(rng.logNormal(25_000_000, 0.6), 5_000_000, 150_000_000), 100);
     const B = b.building(bf, { label: rng.pick(["アパート（木造2階建）", "アパート（軽量鉄骨2階建）", "賃貸マンション（RC造）"]), rented: true, rentRatio: explicit ? rentRatio : undefined });
@@ -3005,7 +3538,8 @@ function randomScenario(id: string, rng: Rng): Scenario {
     if (kind === "vacant" || kind === "parking") {
       const area = round2(rng.logNormalIn(180, 0.4, 60, 600));
       const { frontage, depth } = lotDims(area);
-      ctx.extras.push(b.landR({ label: kind === "vacant" ? `空き地（${b.location()}）` : `月極駐車場（${b.location()}）`, price: rosenkaPrice(170_000), frontage, depth, landUse: kind === "vacant" ? "宅地" : "雑種地", use: kind === "vacant" ? "self" : "parking", needsReduction: !needsRed && rng.chance(0.05) ? "irregular" : undefined }));
+      const irr = !needsRed && rng.chance(0.05);
+      ctx.extras.push(b.landR({ label: kind === "vacant" ? `空き地（${b.location()}）` : `月極駐車場（${b.location()}）`, price: rosenkaPrice(170_000), frontage, depth, landUse: kind === "vacant" ? "宅地" : "雑種地", use: kind === "vacant" ? "self" : "parking", needsReduction: irr ? "irregular" : undefined, advisorRate: irr ? advisorRateOf(extra, "irregular") : undefined }));
     } else {
       const area = kind === "山林" ? roundTo(rng.range(3_000, 30_000), 1) : roundTo(rng.range(400, 4_000), 1);
       const perSqm = kind === "山林" ? rng.range(8, 40) : rng.range(40, 160);
@@ -3086,6 +3620,8 @@ function randomScenario(id: string, rng: Rng): Scenario {
     const prevAcquired = roundTo(rng.logNormalIn(80_000_000, 0.6, 20_000_000, 400_000_000), 1000);
     b.decedent.priorInheritance = { yearsAgo: rng.int(0, 9), prevTax: floorTo(prevAcquired * rng.range(0.03, 0.2), 100), prevAcquired };
   }
+  // 前の相続（祖父母・もう一人の親など）でも未成年者控除・障害者控除を受けていた
+  addPriorCredits(b, extra, heirIds());
   // 債務
   for (const r of ctx.rentals) if (r.loan) ctx.debts.push({ amount: r.loan, label: "アパートローン", tie: "rental", rental: ctx.rentals.indexOf(r) });
   if (rng.chance(0.21)) {
@@ -3141,11 +3677,41 @@ function randomScenario(id: string, rng: Rng): Scenario {
   }
 
   // ── 分け方 ──
-  randomDivision(b, ctx);
+  randomDivision(b, ctx, extra);
   return b.build();
 }
 
-function randomDivision(b: Builder, ctx: RandCtx): void {
+/** 税理士に確かめた補正率（不整形地補正率・規模格差補正率）。確かめていない（相談で止まる）こともある */
+function advisorRateOf(extra: Rng, kind: "irregular" | "largeLot"): number | undefined {
+  if (!extra.chance(0.55)) return undefined;
+  if (kind === "irregular") return extra.chance(0.12) ? 1 : round2(extra.range(0.78, 0.98));
+  return extra.chance(0.5) ? 1 : round2(extra.range(0.7, 0.85));
+}
+
+/** 未成年者・障害者の相続人が、前の相続でも控除を受けていたことにする（受けた額は最初の控除額以下） */
+function addPriorCredits(b: Builder, extra: Rng, heirs: string[]): void {
+  const cands = heirs.filter((id) => {
+    const m = b.member(id);
+    return !m.unborn && (ageAt(m.birthDate, b.death) < 18 || !!m.disability);
+  });
+  if (!cands.length || !extra.chance(0.3)) return;
+  const pi = b.decedent.priorInheritance;
+  const date = pi && pi.yearsAgo >= 1 ? addYears(b.death, -pi.yearsAgo) : addDays(addYears(b.death, -extra.int(1, 8)), -extra.int(0, 200));
+  for (const id of cands) {
+    const m = b.member(id);
+    if (m.birthDate >= date) continue;
+    const a0 = ageAt(m.birthDate, date);
+    if (ageAt(m.birthDate, b.death) < 18 && a0 < 18) {
+      const first = 100_000 * (18 - a0);
+      m.priorMinorCredit = { date, amount: roundTo(first * extra.range(0.2, 1.0), 10_000) };
+    } else if (m.disability && a0 < 85) {
+      const first = (m.disability === "special" ? 200_000 : 100_000) * (85 - a0);
+      m.priorDisabilityCredit = { date, amount: roundTo(first * extra.range(0.1, 0.9), 10_000) };
+    }
+  }
+}
+
+function randomDivision(b: Builder, ctx: RandCtx, extra: Rng): void {
   const rng = b.rng;
   const info = heirInfo(b.members);
   const legal = info.shares;
@@ -3177,9 +3743,14 @@ function randomDivision(b: Builder, ctx: RandCtx): void {
   if (rng.chance(0.053) && heirs.length >= 2 && childHeirs.length >= 1 && !ctx.spouseRight) {
     const payer = eldest;
     for (const it of divisible) if (!b.shares[it.id]) b.give(it.id, payer);
+    // 代償金の額を自宅（土地かマンション）の時価をもとに決めることもある（相基通11の2-10(2)）
+    const basisItem = ctx.homeLand ?? ctx.condo;
+    const basis = basisItem && extra.chance(0.5) ? { item: basisItem, marketValue: roundTo(roughValue(b.item(basisItem)) * extra.range(1.1, 1.7), 100_000) } : undefined;
     for (const id of heirs) {
       if (id === payer) continue;
-      b.compensate(payer, id, roundTo(V * legal.get(id)! * rng.range(0.5, 1.0), 100_000));
+      let amount = roundTo(V * legal.get(id)! * rng.range(0.5, 1.0), 100_000);
+      if (basis) amount = roundTo(basis.marketValue * legal.get(id)! * extra.range(0.6, 1.0), 100_000);
+      b.compensate(payer, id, amount, basis);
     }
     const site = ctx.homeLand ?? ctx.condo;
     if (site) {
@@ -3296,6 +3867,25 @@ function randomDivision(b: Builder, ctx: RandCtx): void {
     }
     return rng.chance(0.6) && pool.includes(homeAcq) ? homeAcq : weightsOf(pool);
   }, funeralBearer);
+
+  // 一部未分割：申告期限までに、預貯金・株式などの一部の分け方が決まらない（未分割の部分は穴埋め方式で計算）
+  // （遺言で遺贈する財産があるときは作らない：遺贈分は分割の対象にならず、穴埋め方式の合計の取り方が分かれるため）
+  if (heirs.length >= 2 && !ctx.bequest && extra.chance(0.06)) {
+    const liquid = b.estate
+      .filter((it) => (it.type === "deposit" || it.type === "listedStock" || it.type === "cash" || it.type === "other") && !("foreign" in it && it.foreign) && b.shares[it.id])
+      .sort((a, c) => roughValue(c) - roughValue(a));
+    const k = Math.min(liquid.length, extra.chance(0.6) ? 1 : 2);
+    const keepsSome = b.estate.filter(isDivisible).length > k;
+    if (k > 0 && keepsSome) {
+      for (let i = 0; i < k; i++) {
+        const it = liquid[i];
+        const sh = b.shares[it.id];
+        if (i === 0 && sh.length === 1 && extra.chance(0.35)) b.givePart(it.id, [{ who: sh[0].who, n: 1, d: 2 }]);
+        else delete b.shares[it.id];
+      }
+      b.partlyUndivided();
+    }
+  }
 }
 
 // ───────────────────────── 公開 API ─────────────────────────
@@ -3307,7 +3897,7 @@ export function generateScenarios(n = 1000, seed = 20261108): Scenario[] {
   const out = [...edges];
   for (let i = 1; out.length < n; i++) {
     const id = `R${String(i).padStart(4, "0")}`;
-    out.push(randomScenario(id, new Rng(mixSeed(seed, i))));
+    out.push(randomScenario(id, new Rng(mixSeed(seed, i)), new Rng(mixSeed(seed ^ 0x5bd1e995, i))));
   }
   return out;
 }
@@ -3326,6 +3916,17 @@ function sumIsOne(sh: Share[]): boolean {
     den = den * BigInt(x.d);
   }
   return num === den;
+}
+
+/** 分数の和が 1 を超えるか */
+function sumOver1(sh: Share[]): boolean {
+  let num = 0n;
+  let den = 1n;
+  for (const x of sh) {
+    num = num * BigInt(x.d) + BigInt(x.n) * den;
+    den = den * BigInt(x.d);
+  }
+  return num > den;
 }
 
 /** 1件のシナリオの整合性を確かめる（問題があれば文の配列を返す） */
@@ -3349,6 +3950,7 @@ export function validateScenario(s: Scenario): string[] {
     if (!Number.isInteger(p.prevTax) || !Number.isInteger(p.prevAcquired) || p.prevTax < 0 || p.prevTax >= p.prevAcquired) err("相次相続の金額");
   }
   const decAge = ageAt(d.birthDate, death);
+  const isInt = (x: number) => Number.isInteger(x);
   const alive = (id: string) => {
     const m = byId.get(id);
     return !!m && !m.predeceased;
@@ -3373,6 +3975,13 @@ export function validateScenario(s: Scenario): string[] {
     if (m.relation === "adoptedChild" && !(m.birthDate > d.birthDate)) err(`${m.id} 養子が年長`);
     if (m.relation === "adoptedChild" && m.grandchildAdopted && gapYears < 36) err(`${m.id} 孫養子の年齢差 ${gapYears}`);
     if (m.relation === "spouse" && age < 18) err(`${m.id} 配偶者が18歳未満`);
+    for (const [k, pc] of [["未成年者控除", m.priorMinorCredit], ["障害者控除", m.priorDisabilityCredit]] as const) {
+      if (!pc) continue;
+      if (!isDate(pc.date) || pc.date >= death || pc.date <= m.birthDate) err(`${m.id} 前の${k}の日付 ${pc.date}`);
+      if (!isInt(pc.amount) || pc.amount < 0) err(`${m.id} 前の${k}の額 ${pc.amount}`);
+      if (k === "未成年者控除" && isDate(pc.date) && ageAt(m.birthDate, pc.date) >= 18) err(`${m.id} 前の相続のとき未成年でない`);
+      if (k === "障害者控除" && !m.disability) err(`${m.id} 障害者でないのに前の障害者控除`);
+    }
     if (m.relation === "parent" && (ageAt(m.birthDate, d.birthDate) < 16 || ageAt(m.birthDate, d.birthDate) > 50)) err(`${m.id} 父母の年齢差`);
     if (m.relation === "grandparent" && ageAt(m.birthDate, d.birthDate) < 32) err(`${m.id} 祖父母の年齢差`);
     if (m.relation === "sibling" && Math.abs(decAge - age) > 25) err(`${m.id} 兄弟姉妹の年齢差`);
@@ -3393,7 +4002,6 @@ export function validateScenario(s: Scenario): string[] {
   }
 
   const itemIds = new Set<string>();
-  const isInt = (x: number) => Number.isInteger(x);
   for (const it of s.estate) {
     if (itemIds.has(it.id)) err(`財産の id が重複 ${it.id}`);
     itemIds.add(it.id);
@@ -3437,11 +4045,17 @@ export function validateScenario(s: Scenario): string[] {
           if (v.leaseRatio !== undefined && !(v.leaseRatio > 0 && v.leaseRatio < 1)) err(`${it.id} 借地権割合`);
         }
         if (it.rentRatio !== undefined && !(it.rentRatio > 0 && it.rentRatio <= 1)) err(`${it.id} 賃貸割合`);
-        if (it.rentRatio !== undefined && it.use !== "rentedHouse") err(`${it.id} 貸家建付地でないのに賃貸割合`);
+        if (it.rentRatio !== undefined && it.use !== "rentedHouse" && it.use !== "rentedLeasehold") err(`${it.id} 貸家建付地・貸家建付借地権でないのに賃貸割合`);
+        if (it.advisorRate !== undefined) {
+          if (!(it.advisorRate > 0 && it.advisorRate <= 1)) err(`${it.id} 補正率 ${it.advisorRate}`);
+          if (it.spouseResidenceRight) err(`${it.id} 配偶者居住権のある土地に補正率`);
+          if (it.needsReduction !== "irregular" && it.needsReduction !== "largeLot") err(`${it.id} 不整形地・地積規模の大きな宅地でないのに補正率`);
+          if (v.kind !== "rosenka") err(`${it.id} 倍率方式の土地に補正率`);
+        }
         if (it.needsReduction === "largeLot" && it.areaSqm < 500) err(`${it.id} 地積規模の大きな宅地なのに500㎡未満`);
         if (it.needsReduction === "largeLot" && it.areaSqm < 1000 && !METRO_PREFS.has(it.label.match(/（(?:[^（）、]*、)?(.{2,3}?[都道府県])/)?.[1] ?? ""))
           err(`${it.id} 三大都市圏の外で地積規模の大きな宅地なのに1,000㎡未満`);
-        if (it.smallLand?.kind === "rental" && it.use !== "rentedHouse" && it.use !== "leasedLand" && it.use !== "parking") err(`${it.id} 貸付事業用なのに貸していない`);
+        if (it.smallLand?.kind === "rental" && it.use !== "rentedHouse" && it.use !== "rentedLeasehold" && it.use !== "leasedLand" && it.use !== "parking") err(`${it.id} 貸付事業用なのに貸していない`);
         if (it.smallLand?.kind === "residence" && it.use !== "self" && it.use !== "leasehold") err(`${it.id} 特定居住用なのに自用でない`);
         break;
       }
@@ -3482,7 +4096,7 @@ export function validateScenario(s: Scenario): string[] {
       const it = s.estate.find((x) => x.id === id);
       if (!it) err(`分け方に存在しない財産 ${id}`);
       else if (!isDivisible(it)) err(`保険金・退職金 ${id} が分け方にある`);
-      if (!sumIsOne(sh)) err(`${id} の持分の合計が1でない ${JSON.stringify(sh)}`);
+      if (div.partlyUndivided ? sumOver1(sh) : !sumIsOne(sh)) err(`${id} の持分の合計が${div.partlyUndivided ? "1を超える" : "1でない"} ${JSON.stringify(sh)}`);
       for (const x of sh) {
         const m = byId.get(x.who);
         if (!m) err(`${id} の取得者 ${x.who} がいない`);
@@ -3490,13 +4104,23 @@ export function validateScenario(s: Scenario): string[] {
         if (!isInt(x.n) || !isInt(x.d) || x.n <= 0 || x.d <= 0 || x.n > x.d) err(`${id} 持分 ${x.n}/${x.d}`);
       }
     }
-    for (const it of s.estate) if (isDivisible(it) && !div.shares[it.id]) err(`${it.id} の分け方がない`);
+    if (!div.partlyUndivided) for (const it of s.estate) if (isDivisible(it) && !div.shares[it.id]) err(`${it.id} の分け方がない`);
+    if (div.partlyUndivided) {
+      const divisible = s.estate.filter(isDivisible);
+      if (!divisible.some((it) => !div.shares[it.id] || !sumIsOne(div.shares[it.id]))) err("一部未分割なのに未分割の財産がない");
+      if (!divisible.some((it) => div.shares[it.id])) err("一部未分割なのに分けた財産がない");
+    }
     for (const c of div.compensation ?? []) {
       for (const who of [c.from, c.to]) {
         const m = byId.get(who);
         if (!m || m.predeceased || m.renounced) err(`代償金の ${who} がいない・先に死亡・放棄`);
       }
       if (c.from === c.to || !isInt(c.amount) || c.amount <= 0) err(`代償金 ${JSON.stringify(c)}`);
+      if (c.basis) {
+        const it = s.estate.find((x) => x.id === c.basis!.item);
+        if (!it || !isDivisible(it)) err(`代償金のもとにした財産 ${c.basis.item} がない`);
+        if (!isInt(c.basis.marketValue) || c.basis.marketValue <= 0) err(`代償金のもとにした時価 ${c.basis.marketValue}`);
+      }
     }
   }
   return e;

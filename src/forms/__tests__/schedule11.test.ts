@@ -3,7 +3,7 @@ import { demoCase } from "@/data/demo";
 import { calculate } from "@/domain/tax/engine";
 import { buildFilingPages } from "../filing";
 import { layout } from "../render";
-import { buildSchedule11, scheduleTotals, splitLocation } from "../schedule11";
+import { buildSchedule11, scheduleTotals, siteRightRatio, splitLocation } from "../schedule11";
 
 describe("第11表と付表", () => {
   const r = calculate(demoCase);
@@ -16,7 +16,7 @@ describe("第11表と付表", () => {
   it("マンションは敷地利用権と区分所有建物の2行に分け、合計は評価額と一致する", () => {
     const { items } = scheduleTotals(demoCase, r);
     const condo = r.assets.find((l) => l.asset.kind === "condo")!;
-    const rows = items.filter((i) => i.values.note === "敷地権" || i.values.note === "区分所有");
+    const rows = items.filter((i) => i.part === "site" || i.part === "building");
     expect(rows).toHaveLength(2);
     expect(rows[0].value + rows[1].value).toBe(condo.valuation.value);
   });
@@ -30,7 +30,7 @@ describe("第11表と付表", () => {
     );
     const rc = calculate(c);
     const { items, byPerson } = scheduleTotals(c, rc);
-    const rows = items.filter((i) => i.values.note === "敷地権" || i.values.note === "区分所有");
+    const rows = items.filter((i) => i.part === "site" || i.part === "building");
     expect(rows).toHaveLength(2);
     for (const row of rows) expect(row.acquirers.reduce((s, a) => s + a.amount, 0)).toBe(row.value);
     for (const p of rc.persons) expect(byPerson.get(p.person.id) ?? 0).toBe(p.acquired);
@@ -41,6 +41,75 @@ describe("第11表と付表", () => {
     const f1 = pages.find((p) => p.page === "t11_f1")!;
     const land = r.assets.find((l) => l.asset.id === "home-land")!;
     expect(f1.values["i0.value"]).toBe((land.valuation.value - land.reduction).toLocaleString("ja-JP"));
+  });
+
+  it("小規模宅地等の特例で減額した土地は「特例」欄に特例番号1を書き、備考には書かない", () => {
+    const f1 = buildSchedule11(demoCase, r).find((p) => p.page === "t11_f1")!;
+    const rows = [0, 1, 2, 3, 4, 5, 6, 7].filter((j) => f1.values[`i${j}.no`] !== undefined);
+    const home = rows.find((j) => f1.values[`i${j}.town`] === "架空町一丁目" && f1.values[`i${j}.kind`] === "宅地")!;
+    expect(f1.values[`i${home}.special`]).toBe("1");
+    expect(f1.values[`i${home}.note`] ?? "").toBe("");
+    // 特例を使わない家屋・マンションには書かない
+    for (const j of rows) if (j !== home) expect(f1.values[`i${j}.special`] ?? "").toBe("");
+    expect(Object.values(f1.values)).not.toContain("小規模宅地等");
+  });
+
+  it("マンションの敷地利用権の行の備考には、登記簿の敷地権の割合を書く", () => {
+    const f1 = buildSchedule11(demoCase, r).find((p) => p.page === "t11_f1")!;
+    const notes = Object.entries(f1.values).filter(([k]) => k.endsWith(".note")).map(([, v]) => v);
+    expect(notes).toContain("10000分の169");
+    expect(notes).not.toContain("敷地権");
+    // 特例を使うマンションは、敷地利用権の行に特例番号1を書く（家屋の行には書かない）
+    const c = structuredClone(demoCase);
+    c.assets = c.assets.map((a) =>
+      a.id === "home-land" && a.kind === "land" ? { ...a, smallResidential: undefined } : a.kind === "condo" ? { ...a, smallResidential: { applies: true, acquirerId: "hanako", check: { ownHome: "yes" as const, special: "no" as const } } } : a,
+    );
+    c.allocations = c.allocations.map((a) => (a.assetId === "condo" ? { ...a, shares: [{ personId: "hanako", numerator: 1, denominator: 1 }] } : a));
+    const rc = calculate(c);
+    expect(rc.blockers).toEqual([]);
+    const condo = rc.assets.find((l) => l.asset.kind === "condo")!;
+    expect(condo.reduction).toBeGreaterThan(0);
+    const items = scheduleTotals(c, rc).items;
+    expect(items.find((i) => i.part === "site")!.values).toMatchObject({ special: "1", note: "10000分の169" });
+    expect(items.find((i) => i.part === "building")!.values.special).toBeUndefined();
+    expect(items.find((i) => i.part === "building")!.values.note).toBe("区分所有");
+  });
+
+  it("敷地権の割合は「10000分の169」の形で取り出す", () => {
+    expect(siteRightRatio("所有権　10000分の169")).toBe("10000分の169");
+    expect(siteRightRatio("所有権 １００００分の２１５")).toBe("１００００分の２１５");
+    expect(siteRightRatio("賃借権 1,000,000分の12,345")).toBe("1000000分の12345");
+    expect(siteRightRatio("169/10000")).toBe("10000分の169");
+    expect(siteRightRatio("登記簿のとおり")).toBe("登記簿のとおり");
+    expect(siteRightRatio(undefined)).toBe("");
+    expect(siteRightRatio("  ")).toBe("");
+  });
+
+  it("登記簿の敷地権の割合がなければ、マンションの備考は空欄", () => {
+    const c = structuredClone(demoCase);
+    c.assets = c.assets.map((a) => (a.kind === "condo" ? { ...a, registry: { ...a.registry, siteRight: undefined } } : a));
+    const site = scheduleTotals(c, calculate(c)).items.find((i) => i.part === "site")!;
+    expect(site.values.note).toBe("");
+  });
+
+  it("貸家建付借地権の土地の利用区分", () => {
+    const c = structuredClone(demoCase);
+    c.assets.push({
+      id: "lh",
+      kind: "land",
+      label: "借地のアパート",
+      location: "東京都千代田区架空町五丁目1番",
+      areaSqm: 100,
+      landUse: "宅地",
+      use: "rentedLeasehold",
+      leaseRatio: 0.6,
+      method: { type: "rosenka", routePrice: 300_000, depthCorrection: 1.0, district: "普通住宅地区", roads: [{ edge: 0, price: 300_000, depth: 10, notation: "300D" }] },
+    });
+    c.allocations.push({ assetId: "lh", shares: [{ personId: "ichiro", numerator: 1, denominator: 1 }] });
+    const rc = calculate(c);
+    expect(rc.blockers).toEqual([]);
+    const lh = scheduleTotals(c, rc).items.find((i) => i.values.town === "架空町五丁目")!;
+    expect(lh.values.use).toBe("貸家建付借地権");
   });
 
   it("生命保険金は非課税金額を差し引いた額を付表4に記載する", () => {

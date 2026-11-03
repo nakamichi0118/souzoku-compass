@@ -1,19 +1,22 @@
 /**
  * 道路に面する宅地の1㎡当たりの価額（財産評価基本通達15〜18・20-4）。
  *
- * - 正面路線：路線価 × 奥行価格補正率 が最も高い道路（通達16(1)）
+ * - 正面路線：路線価 × 奥行価格補正率 が最も高い道路（通達16(1)）。同じ額なら、道路に接する距離（間口）の長い方
+ *   （国税庁 質疑応答事例「正面路線の判定(1)」）。間口が分からない・同じなら路線価の高い方、さらに同じなら先に入力した方
  * - 側方路線（正面の隣の辺の道路）：その路線価を正面路線とみなして奥行価格補正をした額 × 側方路線影響加算率（付表2）
  * - 裏面路線（正面の向かいの辺の道路）：同じく × 二方路線影響加算率（付表3）
  * - 三方・四方は上を併用（通達18）
  * - 間口狭小・奥行長大（通達20-4）：正面の道路の間口距離が入っていれば、ここまでの1㎡当たりの価額に
  *   間口狭小補正率（付表6）× 奥行長大補正率（付表7。奥行距離 ÷ 間口距離 で決まる）を掛ける（1円未満切捨て）。
- *   ビル街地区で間口8m未満は表に定めがないため 1.00 とする。間口距離が入っていなければ補正しない
+ *   ビル街地区で間口8m未満は表に定めがないため 1.00 とする。間口距離が入っていなければ補正しない。
+ *   不整形地は20-4の対象外（不整形地補正率に間口狭小補正率を含める。付表5（注）3）なので、irregular のときは補正しない
  *
  * 安全側（高め）に評価する：角地と準角地の区別は角地の加算率を使い、側方路線に一部しか接しない場合の
  * 按分や、不整形地などの減額の補正はしない。減額できる場合は税理士への相談を案内する。
  * 出典：https://www.nta.go.jp/law/tsutatsu/kihon/sisan/hyoka_new/02/02.htm（通達15〜18）
  *       https://www.nta.go.jp/law/tsutatsu/kihon/sisan/hyoka_new/02/03.htm（通達20-4）
- *       https://www.nta.go.jp/law/tsutatsu/kihon/sisan/hyoka_new/02/07.htm（付表1〜3・6・7）
+ *       https://www.nta.go.jp/law/tsutatsu/kihon/sisan/hyoka_new/02/07.htm（付表1〜3・5・6・7）
+ *       https://www.nta.go.jp/law/shitsugi/hyoka/03/01.htm（正面路線の判定(1)）
  */
 import { type District, depthCorrection } from "./depth";
 import { frontageRate100, longRate100 } from "./frontage";
@@ -86,15 +89,36 @@ export interface MultiRoadResult {
   steps: string[];
 }
 
-export function evaluateRoads(district: District, roads: RoadInput[]): MultiRoadResult | null {
+/** 間口距離が入っているか（0より大きい数） */
+const hasFrontage = (r: RoadInput): r is RoadInput & { frontage: number } => r.frontage != null && r.frontage > 0;
+
+/**
+ * b を a より正面路線として優先するか。奥行価格補正後の価額が高い方。同額なら、両方の間口が分かっていれば間口の長い方
+ * （正面路線の判定(1)）、それでも決まらなければ路線価の高い方。すべて同じなら先に入力した方（a）のまま
+ */
+function preferAsFront(a: { corrected: number; price: number } & RoadInput, b: { corrected: number; price: number } & RoadInput): boolean {
+  if (b.corrected !== a.corrected) return b.corrected > a.corrected;
+  if (hasFrontage(a) && hasFrontage(b) && b.frontage !== a.frontage) return b.frontage > a.frontage;
+  return b.price > a.price;
+}
+
+export interface EvaluateRoadsOptions {
+  /**
+   * 不整形地（形がいびつな土地）。間口狭小・奥行長大の補正（通達20-4）をしない：
+   * 20-4 は不整形地を除き、不整形地補正率に間口狭小補正率を含める（付表5（注）3）ため
+   */
+  irregular?: boolean;
+}
+
+export function evaluateRoads(district: District, roads: RoadInput[], opts: EvaluateRoadsOptions = {}): MultiRoadResult | null {
   const usable = roads.filter((r) => r.price > 0 && r.depth > 0);
   if (usable.length === 0) return null;
   const withRate = usable.map((r) => {
     const depthRate = depthCorrection(district, r.depth);
     return { ...r, depthRate, corrected: Math.floor((r.price * milli(depthRate)) / 1000) };
   });
-  // 正面路線：奥行価格補正後の価額が最も高い道路（同額なら路線価の高い方、さらに同じなら先に入力した方）
-  const front = withRate.reduce((a, b) => (b.corrected > a.corrected || (b.corrected === a.corrected && b.price > a.price) ? b : a));
+  // 正面路線：奥行価格補正後の価額が最も高い道路（同額なら間口の長い方 → 路線価の高い方 → 先に入力した方）
+  const front = withRate.reduce((a, b) => (preferAsFront(a, b) ? b : a));
   const lines: RoadLine[] = withRate.map((r) => {
     if (r === front) return { ...r, role: "front", addRate: 0, addition: 0 };
     const back = r.edge === (((front.edge + 2) % 4) as Edge);
@@ -119,7 +143,7 @@ export function evaluateRoads(district: District, roads: RoadInput[]): MultiRoad
   const frontLine = lines.find((l) => l.role === "front")!;
   // 間口狭小・奥行長大の補正（通達20-4）。正面の道路の間口距離が入っているときだけ
   const fr = frontLine.frontage;
-  if (!(fr != null && fr > 0)) return { lines, perSqm: basePerSqm, basePerSqm, front: frontLine, steps };
+  if (!(fr != null && fr > 0) || opts.irregular) return { lines, perSqm: basePerSqm, basePerSqm, front: frontLine, steps };
   const table = frontageRate100(district, fr);
   const f100 = table ?? 100; // ビル街地区で間口8m未満は表に定めがないため補正しない
   const l100 = longRate100(district, frontLine.depth, fr);

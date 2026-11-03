@@ -1,9 +1,8 @@
 /**
  * 計算結果を申告書（第1表・第2表・第5表・第6表・第7表・第9表・第10表・第11表と付表・
- * 第11・11の2表の付表1・第13表・第15表）の欄へ割り当てる。
+ * 第11・11の2表の付表1と付表1（続）・第13表・第15表）の欄へ割り当てる。
  */
 import { toString as fracText } from "@/domain/fraction";
-import { floor100 } from "@/domain/rounding";
 import type { PersonTax, TaxResult } from "@/domain/tax/engine";
 import type { Case, Person } from "@/domain/types";
 import { ageAt, wareki, yen, yenOrBlank } from "./format";
@@ -54,9 +53,10 @@ function personHeader(prefix: string, p: Person, deathDate: string) {
 
 /**
  * ⑰ 相続時精算課税分の贈与税額控除額。様式に「00」が印字済み（納めた贈与税は100円未満切捨ての額のため）。
- * 100円未満の端数がある入力は、印字済みの「00」に合わせて切り捨てて書く
+ * エンジンの値（100円未満を切り捨てたもの。⑲㉑㉒もこの額から計算している）をそのまま書く。
+ * ここで別に切り捨てると⑯－⑰と⑲がずれるため、100円単位でない値は yen が止める
  */
-const settlementCreditText = (n: number) => (n > 0 ? yen(floor100(n), "00") : "");
+const settlementCreditText = (n: number) => (n > 0 ? yen(n, "00") : "");
 
 /** ⑲ 小計（⑯－⑰－⑱）。黒字は100円未満切捨て、赤字（精算課税の贈与税を引ききれない）は頭に△を付ける */
 export const subtotal19 = (t: Pick<PersonTax, "payable" | "refund">) => (t.refund > 0 ? -t.refund : t.payable);
@@ -120,7 +120,7 @@ export function buildFilingPages(c: Case, r: TaxResult): PageFill[] {
     r14: r.persons.reduce((a, p) => a + p.otherCredits, 0),
     r15: r.persons.reduce((a, p) => a + p.totalCredits, 0),
     r16: r.persons.reduce((a, p) => a + p.afterCredits, 0),
-    r17: sumOf((p) => (p.settlementCredit > 0 ? floor100(p.settlementCredit) : 0)),
+    r17: sumOf((p) => p.settlementCredit),
     // 合計欄の⑲は各人の⑲の合計（赤字の人の分は差し引く）。㉑は黒字の人の合計、㉒は赤字の人の合計
     r19: sumOf(subtotal19),
     r21: r.totalPayable,
@@ -216,7 +216,7 @@ export function buildFilingPages(c: Case, r: TaxResult): PageFill[] {
   pages.push(...build09(c, r)); // 第9表
   pages.push(...build10(c, r)); // 第10表
   pages.push(...buildSchedule11(c, r)); // 第11表・付表1〜4
-  pages.push(...buildF1(c, r)); // 第11・11の2表の付表1
+  pages.push(...buildF1(c, r)); // 第11・11の2表の付表1・付表1（続）
   pages.push(...build13(c, r)); // 第13表
   pages.push(...build15(c, r)); // 第15表・第15表（続）
   return pages;
@@ -248,7 +248,8 @@ export function formsNotGenerated(c: Case, r: TaxResult): { form: string; reason
   // または貸家建付地・貸している部屋の敷地で賃貸割合が1でないときは、付表1に別表1を添える
   const partlyRented = (l: TaxResult["assets"][number]) => {
     const a = l.asset;
-    const ratio = a.kind === "land" && a.use === "rentedHouse" ? a.rentRatio : a.kind === "condo" && a.rented ? a.rentRatio : undefined;
+    const rentedLand = a.kind === "land" && (a.use === "rentedHouse" || a.use === "rentedLeasehold");
+    const ratio = rentedLand ? a.rentRatio : a.kind === "condo" && a.rented ? a.rentRatio : undefined;
     return ratio !== undefined && ratio < 1;
   };
   const shared = r.assets.some((l) => l.small && l.byPerson.filter((b) => b.amount > 0).length > 1);

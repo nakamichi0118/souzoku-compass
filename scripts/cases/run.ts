@@ -343,9 +343,10 @@ export function stripFeatures(s: Scenario): Scenario {
   const t: Scenario = structuredClone(s);
   for (const it of t.estate) {
     if (it.type === "land") {
-      if (it.use === "rentedHouse" || it.use === "leasedLand" || it.use === "leasehold") it.use = "self";
+      if (it.use === "rentedHouse" || it.use === "leasedLand" || it.use === "leasehold" || it.use === "rentedLeasehold") it.use = "self";
       delete it.rentRatio;
       delete it.needsReduction;
+      delete it.advisorRate;
       delete it.spouseResidenceRight;
       if (it.smallLand && it.smallLand.kind !== "residence") delete it.smallLand;
       if (it.valuation.kind === "rosenka") for (const r of it.valuation.roads) r.frontage = Math.max(28, r.depth);
@@ -467,7 +468,7 @@ export function interviewOf(s: Scenario, c: Case): Interview {
   iv.work = "pension";
   iv.pension = "employees";
   iv.health = age(s.decedent.birthDate) >= 75 ? "kouki" : "kokuho";
-  iv.filedTaxReturn = s.estate.some((it) => (it.type === "land" && (it.use === "rentedHouse" || it.use === "leasedLand" || it.use === "parking")) || (it.type === "building" && !!it.rented));
+  iv.filedTaxReturn = s.estate.some((it) => (it.type === "land" && (it.use === "rentedHouse" || it.use === "rentedLeasehold" || it.use === "leasedLand" || it.use === "parking")) || (it.type === "building" && !!it.rented));
   return iv;
 }
 

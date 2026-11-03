@@ -59,3 +59,77 @@ describe("第13表の債務の種類", () => {
     expect(pg.values["d1.detail"]).toBe("未払医療費（税込）");
   });
 });
+
+describe("第13表 3 債務及び葬式費用の合計額（確定・未確定）", () => {
+  const num = (v: unknown) => Number(String(v ?? "0").replace(/,/g, "") || 0);
+  /** 分け方が決まっておらず（未分割）、債務・葬式費用を負担する人も入れていない事例 */
+  function undividedCase() {
+    const c = structuredClone(demoCase);
+    c.undivided = true;
+    c.allocations = c.allocations.filter((a) => a.assetId !== "dep2");
+    c.debts = c.debts.map((d) => ({ ...d, bearers: [] }));
+    return c;
+  }
+
+  it("負担する人が決まっていない分は②⑤に書き、①④は空欄。③⑥⑦は合計", () => {
+    const c = undividedCase();
+    const r = calculate(c);
+    expect(r.blockers).toEqual([]);
+    const [pg] = build13(c, r);
+    const bearers = r.persons.filter((p) => p.debtOnly > 0 || p.funeralOnly > 0);
+    expect(bearers.length).toBeGreaterThan(1);
+    bearers.forEach((p, i) => {
+      expect(p.debtsUnsettled).toBe(p.debtOnly);
+      expect(p.funeralUnsettled).toBe(p.funeralOnly);
+      expect(pg.values[`p${i}.name`]).toBe(p.person.name);
+      expect(pg.values[`p${i}.r1`]).toBe("");
+      expect(pg.values[`p${i}.r4`]).toBe("");
+      expect(num(pg.values[`p${i}.r2`])).toBe(p.debtsUnsettled);
+      expect(num(pg.values[`p${i}.r5`])).toBe(p.funeralUnsettled);
+      expect(num(pg.values[`p${i}.r3`])).toBe(p.debtOnly);
+      expect(num(pg.values[`p${i}.r6`])).toBe(p.funeralOnly);
+      expect(num(pg.values[`p${i}.r7`])).toBe(p.debts);
+    });
+    expect(pg.values["t.r1"]).toBe("");
+    expect(pg.values["t.r4"]).toBe("");
+    expect(num(pg.values["t.r2"])).toBe(186_400);
+    expect(num(pg.values["t.r5"])).toBe(1_850_000);
+    expect(num(pg.values["t.r3"])).toBe(186_400);
+    expect(num(pg.values["t.r6"])).toBe(1_850_000);
+    expect(num(pg.values["t.r7"])).toBe(r.totalDebts);
+    // 1・2の明細の「負担することが確定した」欄も空欄
+    expect(pg.values["d0.bearer"]).toBeUndefined();
+    expect(pg.values["d0.bearerAmount"]).toBe("");
+  });
+
+  it("負担する人を入れた分は①④、入れていない分は②⑤に分けて書く", () => {
+    const c = undividedCase();
+    // 葬式費用は一郎さんが負担すると決めた。固定資産税は決まっていない
+    c.debts = c.debts.map((d) => (d.kind === "funeral" ? { ...d, bearers: [{ personId: "ichiro", amount: d.amount }] } : d));
+    const r = calculate(c);
+    expect(r.blockers).toEqual([]);
+    const [pg] = build13(c, r);
+    const bearers = r.persons.filter((p) => p.debtOnly > 0 || p.funeralOnly > 0);
+    const i = bearers.findIndex((p) => p.person.id === "ichiro");
+    const ichiro = bearers[i];
+    expect(ichiro.funeralUnsettled).toBe(0);
+    expect(num(pg.values[`p${i}.r4`])).toBe(1_850_000);
+    expect(pg.values[`p${i}.r5`]).toBe("");
+    expect(num(pg.values[`p${i}.r2`])).toBe(ichiro.debtsUnsettled);
+    expect(num(pg.values[`p${i}.r1`]) + num(pg.values[`p${i}.r2`])).toBe(num(pg.values[`p${i}.r3`]));
+    expect(num(pg.values[`p${i}.r3`]) + num(pg.values[`p${i}.r6`])).toBe(num(pg.values[`p${i}.r7`]));
+    expect(num(pg.values["t.r4"])).toBe(1_850_000);
+    expect(pg.values["t.r5"]).toBe("");
+    expect(num(pg.values["t.r2"])).toBe(186_400);
+    expect(num(pg.values["t.r7"])).toBe(r.totalDebts);
+  });
+
+  it("分け方が決まっていれば、これまでどおり①④に書く", () => {
+    const r = calculate(demoCase);
+    const [pg] = build13(demoCase, r);
+    expect(num(pg.values["t.r1"])).toBe(186_400);
+    expect(num(pg.values["t.r4"])).toBe(1_850_000);
+    expect(pg.values["t.r2"]).toBe("");
+    expect(pg.values["t.r5"]).toBe("");
+  });
+});

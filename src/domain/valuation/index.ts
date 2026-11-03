@@ -3,12 +3,12 @@
  * 小数は 1/1000 単位（借地権割合・賃貸割合は 1/10000 単位）の整数で扱い、浮動小数点の誤差を持ち込まない。
  *
  * 土地は、まず自分で使っている土地（自用地）としての評価額を出し（路線価方式・倍率方式・直接入力）、
- * そのあと土地の使い方で、貸家建付地・貸宅地・借地権の評価にする（財産評価基本通達25〜27）。
+ * そのあと土地の使い方で、貸家建付地・貸宅地・借地権・貸家建付借地権の評価にする（財産評価基本通達25〜28）。
  * 家屋・マンションの部屋は、人に貸していれば貸家として評価する（通達93）。
- * 形がいびつ・セットバックが必要・配偶者居住権・地積規模の大きな宅地（通達20-2）にあたる土地は、
- * 評価を下げる計算をしていないため、税理士への相談を案内する。
+ * 形がいびつ・セットバックが必要・地積規模の大きな宅地（通達20-2）にあたる土地は、評価を下げる計算をしていないため、
+ * 税理士への相談を案内する（税理士に確認した補正率・評価額を入れれば計算する）。配偶者居住権を設定した土地は、いつも税理士への相談を案内する。
  */
-import type { Asset, CondoAsset, LandAsset, LandUse } from "../types";
+import type { Asset, CondoAsset, LandAsset, LandMethod, LandUse } from "../types";
 import type { District } from "./depth";
 import {
   LEASE_RATIO_BY_LETTER,
@@ -21,13 +21,16 @@ import {
   ratioText,
   rentedBuilding,
   rentedHouseLand,
+  rentedHouseLandPart,
+  rentedLeaseholdPart,
+  rentedLeaseholdRight,
   validLease4,
   validRent4,
 } from "./lease";
 import { evaluateRoads } from "./roads";
 
 /** 第11表の利用区分 */
-export type Usage = "自用地" | "貸家建付地" | "貸宅地" | "借地権" | "自用家屋" | "貸家";
+export type Usage = "自用地" | "貸家建付地" | "貸宅地" | "借地権" | "貸家建付借地権" | "自用家屋" | "貸家";
 
 export interface Valuation {
   value: number;
@@ -44,6 +47,13 @@ export interface Valuation {
   usage?: Usage;
   /** 評価に使った借地権割合（貸家建付地・貸宅地・借地権・貸しているマンションの敷地） */
   leaseRatio?: number;
+  /**
+   * 貸付事業用宅地等の対象になる「貸している部分」の土地（または土地の上の権利）の評価額（持分100%・土地全体で計算）。
+   * 賃貸割合が1未満の貸家建付地・貸家建付借地権・貸しているマンションの敷地利用権のときだけ設定する。
+   * 国税庁「貸家建付地等の一部が空室の場合の小規模宅地等の特例」：貸している部分＝自用地価額×賃貸割合×(1−借地権割合×借家権割合)、
+   * 空いている部分は自用地（借地権）として評価し特例の対象外。マンションは区分所有補正後・建物分を除く敷地利用権だけ。
+   */
+  rentedLandPart?: number;
 }
 
 const thou = (x: number) => Math.round(x * 1000); // 小数3桁までの値を整数化
@@ -108,31 +118,91 @@ export function condoCorrection(c: Pick<
   return { years, A, B, C, D, narrowness, ratio, correction, note };
 }
 
-/** 税理士に確認した補正率・評価額を入れたときの案内（事情がある土地でも、これを入れれば計算する） */
-const ADVISOR_HINT_RATE = "税理士に補正率を確認したら、土地の画面の「税理士に確認した補正率」に入れると、その補正率で計算します。";
-const ADVISOR_HINT_VALUE = "税理士に評価額を出してもらったら、評価方法を「評価額を直接入力」にして入れると計算します。";
+/**
+ * 税理士に確認した補正率を入れたときの案内。「税理士に確認した補正率」の欄は路線価方式の画面にしかないので、路線価方式のときだけ使う。
+ * 減額なし（当てはまらない）と言われたときは 1 を入れれば計算する
+ */
+export const ADVISOR_HINT_RATE =
+  "税理士に補正率を確認したら、土地の画面の「税理士に確認した補正率」に入れると、その補正率で計算します（減額なしと言われたら 1 を入れてください）。";
 
-/** 評価に影響する土地の事情ごとの案内（相続コンパスでは評価しない） */
-const CONDITION_MESSAGE: Record<NonNullable<LandAsset["condition"]>, string> = {
-  irregular:
-    "形がいびつな土地（旗竿地・三角形・L字など）は、形に合わせて評価を下げられます（不整形地の補正）。相続コンパスではこの計算をしていないため、税理士にご相談ください。" + ADVISOR_HINT_RATE,
-  setback:
-    "前の道路の幅が4m未満で、建て替えのときに道路にするため下がる部分（セットバック）がある土地は、その部分の評価を下げられます。相続コンパスではこの計算をしていないため、税理士にご相談ください。" + ADVISOR_HINT_RATE,
-  spouseResidence:
-    "配偶者居住権（配偶者が亡くなるまでその家に住み続けられる権利）を設定した土地は、配偶者居住権の分とそれ以外の分に分けて評価します。相続コンパスではこの計算をしていないため、税理士にご相談ください。" +
-    ADVISOR_HINT_VALUE +
-    "配偶者居住権の分は「その他の財産」として配偶者の財産に入れてください。",
+/**
+ * 人に貸している・人の土地を借りている土地で、評価額を直接入力するときの注意。
+ * 直接入力の額は自用地としての評価額として扱い、貸家建付地・貸宅地・借地権などの計算はこのあとする（二重に下げないため）
+ */
+export const SELF_USE_VALUE_NOTE =
+  "入れるのは、その土地を自分で持って自分で使っているとした場合の評価額（自用地としての評価額）です。貸している分・借りている分の計算は、このあと相続コンパスがします。";
+
+/** 税理士に評価額を出してもらったときの案内（倍率方式・直接入力の土地）。人に貸している・借りている土地は自用地としての額を入れる */
+export function advisorHintValue(use: LandUse | undefined): string {
+  return "税理士に評価額を出してもらったら、評価方法を「評価額を直接入力」にして入れると計算します。" + (use && use !== "self" ? SELF_USE_VALUE_NOTE : "");
+}
+
+/** 評価方法に合わせた、税理士に確認した値の入れ方の案内 */
+const advisorHint = (method: LandMethod["type"], use: LandUse | undefined) => (method === "rosenka" ? ADVISOR_HINT_RATE : advisorHintValue(use));
+
+type Condition = NonNullable<LandAsset["condition"]>;
+
+/** 補正率（評価額）を入れれば計算する事情 */
+const CONDITION_BODY: Record<Exclude<Condition, "spouseResidence">, { text: string; what: string }> = {
+  irregular: {
+    text: "形がいびつな土地（旗竿地・三角形・L字など）は、形に合わせて評価を下げられます（不整形地の補正）。",
+    what: "形の補正",
+  },
+  setback: {
+    text: "前の道路の幅が4m未満で、建て替えのときに道路にするため下がる部分（セットバック）がある土地は、その部分の評価を下げられます。",
+    what: "セットバックの補正",
+  },
 };
 
 /**
- * 税理士に確認した値で評価する土地か（事情がある土地・広い土地でも、この値で計算する）。
- * 評価額を直接入力した土地、または税理士に確認した補正率（0より大きく1未満）を入れた路線価方式の土地。配偶者居住権は評価額の直接入力だけ
+ * 配偶者居住権を設定した土地は、評価方法にかかわらずいつも相談を案内する。
+ * 家と土地を、配偶者居住権・居住建物の所有権・敷地利用権・敷地の所有権の4つに分けて評価し（相続税法23条の2）、小規模宅地等の特例の計算も変わるため
  */
-function advisorValued(a: LandAsset, condition: LandAsset["condition"] | "largeLot"): boolean {
-  const m = a.method;
-  if (m.type === "manual") return true;
+const SPOUSE_RESIDENCE_MESSAGE =
+  "配偶者居住権を設定した家と土地は、「配偶者居住権」「家の所有権」「土地を使う権利」「土地の所有権」の4つに分けて評価し、小規模宅地等の特例の計算も変わります。相続コンパスではこの計算をしていないため、税理士にご相談ください。";
+
+const NOT_CALCULATED = "相続コンパスではこの計算をしていないため、税理士にご相談ください。";
+
+/** 古いデータなどで知らない事情が入っていても止まらないよう、知っている事情だけを扱う */
+const isCondition = (c: unknown): c is Condition => c === "irregular" || c === "setback" || c === "spouseResidence";
+
+/**
+ * 評価に影響する土地の事情ごとの案内（相続コンパスでは評価しない）。
+ * 税理士に確認した値の入れ方は評価方法で変える：路線価方式は「税理士に確認した補正率」、倍率方式・直接入力は評価額の直接入力。
+ * largeLotArea を渡すと（地積規模の大きな宅地にもあたりうるとき）、その案内と、補正率（評価額）に両方の補正を含めることも書く
+ */
+export function conditionMessage(condition: Condition, method: LandMethod["type"], opts: { use?: LandUse; largeLotArea?: 500 | 1000 } = {}): string {
+  if (condition === "spouseResidence") return SPOUSE_RESIDENCE_MESSAGE;
+  const { text, what } = CONDITION_BODY[condition];
+  const t = opts.largeLotArea;
+  if (t == null) return text + NOT_CALCULATED + advisorHint(method, opts.use);
+  return (
+    text +
+    `また、${t.toLocaleString()}㎡以上の広い宅地は「地積規模の大きな宅地」として評価額が下がることがあります（財産評価基本通達20-2）。` +
+    NOT_CALCULATED +
+    (method === "rosenka"
+      ? `税理士に確認する補正率は、${what}と地積規模の大きな宅地の補正（規模格差補正率）の両方を含めたものにしてください。`
+      : `税理士に出してもらう評価額は、${what}と地積規模の大きな宅地の補正の両方を反映したものにしてください。`) +
+    advisorHint(method, opts.use)
+  );
+}
+
+/** 税理士に確認した補正率（0より大きく1以下。1は「減額なし」と確認したもの）。入っていなければ undefined */
+function advisorRate(m: LandMethod): number | undefined {
+  if (m.type !== "rosenka") return undefined;
+  const oc = m.otherCorrection;
+  return oc != null && oc > 0 && oc <= 1 ? oc : undefined;
+}
+
+/**
+ * 税理士に確認した値で評価する土地か（事情がある土地・広い土地でも、この値で計算する）。
+ * 評価額を直接入力した土地、または税理士に確認した補正率（0より大きく1以下）を入れた路線価方式の土地。
+ * 配偶者居住権はいつも相談（直接入力でも計算しない）
+ */
+function advisorValued(a: LandAsset, condition: Condition | "largeLot"): boolean {
   if (condition === "spouseResidence") return false;
-  return m.type === "rosenka" && m.otherCorrection != null && m.otherCorrection > 0 && m.otherCorrection < 1;
+  if (a.method.type === "manual") return true;
+  return advisorRate(a.method) != null;
 }
 
 /** 都道府県（所在の先頭から読む） */
@@ -167,27 +237,38 @@ export function largeLotThreshold(location: string | undefined): 500 | 1000 {
 /** 地積規模の大きな宅地の対象になりうる地区（路線価方式）。倍率方式の宅地も対象になりうる */
 const LARGE_LOT_DISTRICTS: readonly District[] = ["普通住宅地区", "普通商業・併用住宅地区"];
 
-/** 地積規模の大きな宅地にあたりうるとき、その案内。あたらなければ null */
-function largeLotNotice(a: LandAsset): string | null {
+/** 地積規模の大きな宅地にあたりうるとき、その面積の基準（500㎡・1,000㎡）。あたらなければ null。直接入力の土地は見ない */
+function largeLotArea(a: LandAsset): 500 | 1000 | null {
   if (a.landUse !== "宅地") return null;
   const m = a.method;
   const target = m.type === "multiplier" || (m.type === "rosenka" && LARGE_LOT_DISTRICTS.includes(m.district ?? "普通住宅地区"));
   if (!target) return null;
   const t = largeLotThreshold(a.location);
-  if (!(Math.round(a.areaSqm * 100) >= t * 100)) return null;
+  return Math.round(a.areaSqm * 100) >= t * 100 ? t : null;
+}
+
+/** 地積規模の大きな宅地にあたりうるときの案内 */
+function largeLotMessage(t: 500 | 1000, method: LandMethod["type"], use: LandUse | undefined): string {
   return (
     `${t.toLocaleString()}㎡以上の広い宅地は、「地積規模の大きな宅地」として評価額が下がることがあります（財産評価基本通達20-2。広い土地は分けて売るときに道路などが必要になり、そのぶん安くなるため）。` +
     "下がるかどうかは場所・用途地域・容積率などで決まり、相続コンパスではこの計算をしていないため、税理士にご相談ください。" +
-    (m.type === "rosenka" ? ADVISOR_HINT_RATE : ADVISOR_HINT_VALUE)
+    advisorHint(method, use)
   );
 }
 
 /** 土地の使い方ごとの利用区分と説明 */
 const USE_LABEL: Record<Exclude<LandUse, "self">, { usage: Usage; note: string }> = {
-  rentedHouse: { usage: "貸家建付地", note: "アパート・貸家の敷地は、借りている人の権利の分だけ低く評価します" },
-  leasedLand: { usage: "貸宅地", note: "人に貸して相手が建物を建てている土地は、相手の借地権の分を引いて評価します" },
+  rentedHouse: { usage: "貸家建付地", note: "家賃をもらって貸しているアパート・貸家の敷地は、借りている人の権利の分だけ低く評価します" },
+  leasedLand: { usage: "貸宅地", note: "地代をもらって人に貸し、相手が建物を建てている土地は、相手の借地権の分を引いて評価します" },
   leasehold: { usage: "借地権", note: "人の土地を借りて建物を建てている権利は、土地の評価額に借地権割合を掛けて評価します" },
+  rentedLeasehold: {
+    usage: "貸家建付借地権",
+    note: "人の土地を借りて建てたアパート・貸家を貸しているときの借地権は、借地権の評価額から借りている人の権利の分を引いて評価します",
+  },
 };
+
+/** 賃貸割合を使う土地の使い方（貸家建付地・貸家建付借地権） */
+const usesRentRatio = (use: LandUse) => use === "rentedHouse" || use === "rentedLeasehold";
 
 const LEASE_RATIO_MISSING =
   "借地権割合が分かりません。土地の画面で借地権割合を選んでください。路線価図では路線価の数字のあとの記号（A＝90%・B＝80%・C＝70%・D＝60%・E＝50%・F＝40%・G＝30%）、倍率地域では評価倍率表の「借地権割合」の欄に書いてあります。";
@@ -196,22 +277,28 @@ const LEASE_RATIO_INVALID = "借地権割合が正しくありません。借地
 export function valueLand(a: LandAsset): Valuation {
   const quantity = `${a.areaSqm}㎡`;
   const consult = (needsConsultation: string): Valuation => ({ value: 0, quantity, steps: [], needsConsultation });
-  // 評価を下げる事情がある土地は、下げない評価額で確定させない
-  if (a.condition && CONDITION_MESSAGE[a.condition] && !advisorValued(a, a.condition)) return consult(CONDITION_MESSAGE[a.condition]);
-  const big = advisorValued(a, "largeLot") ? null : largeLotNotice(a);
-  if (big) return consult(big);
-  const { valuation: self, notation } = selfUseLand(a);
   const use = a.use ?? "self";
+  // 評価を下げる事情がある土地は、下げない評価額で確定させない。広い宅地にもあたりうるなら、その案内もいっしょに出す
+  const big = largeLotArea(a);
+  if (isCondition(a.condition) && !advisorValued(a, a.condition))
+    return consult(conditionMessage(a.condition, a.method.type, { use, largeLotArea: big ?? undefined }));
+  if (big != null && !advisorValued(a, "largeLot")) return consult(largeLotMessage(big, a.method.type, use));
+  const { valuation: self, notation } = selfUseLand(a);
   if (self.needsConsultation || (a.method.type === "manual" && a.method.publicPrivateRoad)) return self;
   // 古いデータなどで知らない使い方が入っていても止まらないよう、自用地として扱う
   const label = use === "self" ? undefined : USE_LABEL[use];
   if (!label) return { ...self, usage: "自用地" };
   const yen = (n: number) => n.toLocaleString("ja-JP");
   const { usage, note } = label;
-  // 賃貸割合（貸家建付地だけ使う）
+  // 賃貸割合（貸家建付地・貸家建付借地権だけ使う）
   const rent4 = ratio4(a.rentRatio ?? 1);
-  if (use === "rentedHouse" && !validRent4(rent4))
-    return consult(`${RENT_RATIO_MESSAGE}まったく貸していなければ、土地の使い方で「自分で使っている」を選んでください。`);
+  if (usesRentRatio(use) && !validRent4(rent4))
+    return consult(
+      RENT_RATIO_MESSAGE +
+        (use === "rentedLeasehold"
+          ? "建物をまったく貸していなければ、土地の使い方で「人の土地を借りて、自宅などの建物を建てている（借地権）」を選んでください。"
+          : "まったく貸していなければ、土地の使い方で「自分で使っている」を選んでください。"),
+    );
   // 借地権割合：入力があればそれを、なければ路線価図の記号から（路線価方式のとき）
   let lease4: number | undefined;
   let from = "";
@@ -230,9 +317,16 @@ export function valueLand(a: LandAsset): Valuation {
   const L = ratioText(lease4);
   let value: number;
   let formula: string;
+  // 貸付事業用宅地等の対象になる、貸している部分の評価額（一部が空いているときだけ）
+  let rentedLandPart: number | undefined;
   if (use === "rentedHouse") {
     value = rentedHouseLand(S, lease4, rent4);
     formula = `自用地の評価額 ${yen(S)}円 ×（1 − 借地権割合 ${L}${from} × 借家権割合 ${RENTAL_RIGHT_RATIO} × 賃貸割合 ${ratioText(rent4)}）`;
+    if (rent4 < 10000) rentedLandPart = rentedHouseLandPart(S, lease4, rent4);
+  } else if (use === "rentedLeasehold") {
+    value = rentedLeaseholdRight(S, lease4, rent4);
+    formula = `自用地の評価額 ${yen(S)}円 × 借地権割合 ${L}${from} ×（1 − 借家権割合 ${RENTAL_RIGHT_RATIO} × 賃貸割合 ${ratioText(rent4)}）`;
+    if (rent4 < 10000) rentedLandPart = rentedLeaseholdPart(S, lease4, rent4);
   } else if (use === "leasedLand") {
     value = leasedLand(S, lease4);
     formula = `自用地の評価額 ${yen(S)}円 ×（1 − 借地権割合 ${L}${from}）`;
@@ -246,9 +340,14 @@ export function valueLand(a: LandAsset): Valuation {
     usage,
     selfUseValue: S,
     leaseRatio: lease4 / 10000,
+    ...(rentedLandPart != null ? { rentedLandPart } : {}),
     steps: [...self.steps, `${usage}（${note}）：${formula} = ${yen(value)}円`],
   };
 }
+
+/** 不整形地で税理士に確認した補正率を使うときの説明（通達20-4は不整形地を除く。付表5（注）3） */
+const IRREGULAR_RATE_STEP =
+  "形がいびつな土地（不整形地）なので、間口が狭い・奥行が長い補正はせず、税理士に確認した補正率（不整形地補正率。間口が狭い分を含む）を使います（財産評価基本通達20-4・付表5（注）3）";
 
 /** 自用地としての評価額（路線価方式・倍率方式・直接入力）。notation は借地権割合の記号を読む路線価の表記 */
 function selfUseLand(a: LandAsset): { valuation: Valuation; notation?: string } {
@@ -269,8 +368,15 @@ function selfUseLand(a: LandAsset): { valuation: Valuation; notation?: string } 
     const oc = m.otherCorrection != null && m.otherCorrection > 0 ? m.otherCorrection : 1;
     if (oc > 1) return consult(`税理士に確認した補正率（${m.otherCorrection}）が1を超えています。補正率は0より大きく1以下の数です。土地の画面で正しい補正率に直すか、空欄にしてください（空欄なら補正なしで計算します）。`);
     const ocStep = oc !== 1 ? ` × 補正 ${oc}` : "";
+    // 広い宅地で税理士に確認した補正率を使うときは、その率に地積規模の大きな宅地の補正も含めたものとして扱う
+    const bigStep =
+      advisorRate(m) != null && largeLotArea(a) != null
+        ? [`税理士に確認した補正率 ${oc} は、地積規模の大きな宅地の補正（規模格差補正率。財産評価基本通達20-2）も含めた率として使います`]
+        : [];
     if (m.roads?.length) {
-      const r = evaluateRoads(m.district ?? "普通住宅地区", m.roads)!;
+      // 不整形地は間口狭小・奥行長大の補正（通達20-4）をせず、税理士に確認した不整形地補正率だけを掛ける（二重に下げない）
+      const irregular = a.condition === "irregular" && advisorRate(m) != null;
+      const r = evaluateRoads(m.district ?? "普通住宅地区", m.roads, { irregular })!;
       const per = Math.floor((r.perSqm * thou(oc)) / 1000);
       const value = perSqmTimesArea(per, a.areaSqm);
       return {
@@ -280,6 +386,8 @@ function selfUseLand(a: LandAsset): { valuation: Valuation; notation?: string } 
           quantity,
           steps: [
             ...r.steps,
+            ...(irregular ? [IRREGULAR_RATE_STEP] : []),
+            ...bigStep,
             ...(ocStep ? [`${r.perSqm.toLocaleString()}円/㎡${ocStep} = ${per.toLocaleString()}円/㎡`] : []),
             `${per.toLocaleString()}円/㎡ × ${a.areaSqm}㎡ = ${value.toLocaleString()}円`,
           ],
@@ -296,6 +404,7 @@ function selfUseLand(a: LandAsset): { valuation: Valuation; notation?: string } 
         unitPrice: per,
         quantity,
         steps: [
+          ...bigStep,
           `路線価 ${m.routePrice.toLocaleString()}円 × 奥行価格補正率 ${m.depthCorrection}${ocStep} = ${per.toLocaleString()}円/㎡`,
           `${per.toLocaleString()}円/㎡ × ${a.areaSqm}㎡ = ${value.toLocaleString()}円`,
         ],
@@ -319,16 +428,23 @@ function selfUseLand(a: LandAsset): { valuation: Valuation; notation?: string } 
   }
   // 不特定多数の人が通り抜けに使う私道は評価しない（財産評価基本通達24）。本人がそう選んだときだけ0円にする
   if (m.publicPrivateRoad) return { valuation: { value: 0, quantity, steps: ["誰でも通り抜けできる私道のため評価しない（財産評価基本通達24）"] } };
-  // 直接入力：0円のまま確定すると課税価格が過少になるため止める
-  if (!(m.value > 0)) return consult("土地の評価額が未入力です。評価額を入力してください。誰でも通り抜けできる私道で評価しない土地なら、土地の画面でそのことを選んでください。");
-  return { valuation: { value: Math.floor(m.value), quantity, steps: ["評価額を直接入力"] } };
+  // 直接入力：0円のまま確定すると課税価格が過少になるため止める。
+  // 人に貸している・借りている土地は、入れた額を自用地としての評価額として、このあと貸家建付地などの計算をする
+  const lent = a.use != null && a.use !== "self";
+  if (!(m.value > 0))
+    return consult(
+      "土地の評価額が未入力です。評価額を入力してください。" +
+        (lent ? SELF_USE_VALUE_NOTE : "") +
+        "誰でも通り抜けできる私道で評価しない土地なら、土地の画面でそのことを選んでください。",
+    );
+  return { valuation: { value: Math.floor(m.value), quantity, steps: [lent ? "自用地としての評価額（自分で持って自分で使っているとした場合）を直接入力" : "評価額を直接入力"] } };
 }
 
 /** 貸家：固定資産税評価額 ×（1 − 借家権割合0.3 × 賃貸割合）（財産評価基本通達93） */
 function rentedHouse(fixedAssetValue: number, rentRatio: number | undefined): Valuation {
   const rent4 = ratio4(rentRatio ?? 1);
   if (!validRent4(rent4)) {
-    return { value: 0, steps: [], needsConsultation: `${RENT_RATIO_MESSAGE}まったく貸していなければ「人に貸している」を外してください。` };
+    return { value: 0, steps: [], needsConsultation: `${RENT_RATIO_MESSAGE}まったく貸していなければ「家賃をもらって人に貸している」を外してください。` };
   }
   const self = Math.floor(fixedAssetValue);
   const value = rentedBuilding(self, rent4);
@@ -406,11 +522,11 @@ export function valueAsset(a: Asset): Valuation {
       // 人に貸している部屋：部屋は貸家、敷地利用権は貸家建付地として、区分所有補正のあとの額から計算する（財産評価基本通達26・93）
       let landValue = land;
       let bldgValue = bldg;
-      let rentedPart: Pick<Valuation, "selfUseValue" | "leaseRatio"> = {};
+      const rentedPart: Pick<Valuation, "selfUseValue" | "leaseRatio" | "rentedLandPart"> = {};
       if (a.rented) {
         const rent4 = ratio4(a.rentRatio ?? 1);
         if (!validRent4(rent4)) {
-          return { value: 0, steps: [], needsConsultation: `${RENT_RATIO_MESSAGE}まったく貸していなければ「人に貸している」を外してください。` };
+          return { value: 0, steps: [], needsConsultation: `${RENT_RATIO_MESSAGE}まったく貸していなければ「家賃をもらって人に貸している」を外してください。` };
         }
         const lease4 = a.leaseRatio != null && a.leaseRatio > 0 ? ratio4(a.leaseRatio) : undefined;
         if (lease4 == null) {
@@ -424,12 +540,15 @@ export function valueAsset(a: Asset): Valuation {
         if (!validLease4(lease4)) return { value: 0, steps: [], needsConsultation: LEASE_RATIO_INVALID.replace("土地の画面", "マンションの画面") };
         landValue = rentedHouseLand(land, lease4, rent4);
         bldgValue = rentedBuilding(bldg, rent4);
+        // 一部の部屋が空いているとき：貸付事業用宅地等の対象は、敷地利用権（区分所有補正後・部屋の分を除く）のうち貸している部分だけ
+        if (rent4 < 10000) rentedPart.rentedLandPart = rentedHouseLandPart(land, lease4, rent4);
         const R = ratioText(rent4);
         steps.push(
           `敷地利用権（貸家建付地）：${land.toLocaleString()}円 ×（1 − 借地権割合 ${ratioText(lease4)} × 借家権割合 ${RENTAL_RIGHT_RATIO} × 賃貸割合 ${R}） = ${landValue.toLocaleString()}円`,
           `区分所有権（貸家）：${bldg.toLocaleString()}円 ×（1 − 借家権割合 ${RENTAL_RIGHT_RATIO} × 賃貸割合 ${R}） = ${bldgValue.toLocaleString()}円`,
         );
-        rentedPart = { selfUseValue: land + bldg, leaseRatio: lease4 / 10000 };
+        rentedPart.selfUseValue = land + bldg;
+        rentedPart.leaseRatio = lease4 / 10000;
       }
       return {
         value: landValue + bldgValue,

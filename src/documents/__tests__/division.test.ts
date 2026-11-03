@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { demoCase } from "@/data/demo";
 import { buildRegistrations } from "@/domain/registration";
-import { buildDivisionDoc } from "../division";
+import { calculate } from "@/domain/tax/engine";
+import { NO_HEIRS_MESSAGE, NO_PERSONS_MESSAGE, buildDivisionDoc } from "../division";
 import { propertyLines } from "../propertyLines";
 import { renderDivision } from "../renderDivision";
 
@@ -68,6 +69,34 @@ describe("遺産分割協議書", () => {
     const doc = buildDivisionDoc(c);
     expect(doc.warnings.filter((w) => w.includes("受遺 者"))).toHaveLength(1);
     expect(new Set(doc.warnings).size).toBe(doc.warnings.length);
+  });
+  it("民法上の相続人がいない（全員が放棄した）ときは協議書を作らず、計算と同じ説明で止める", () => {
+    const c = structuredClone(demoCase);
+    c.persons = c.persons.map((p) => ({ ...p, renounced: true }));
+    expect(() => buildDivisionDoc(c)).toThrow(NO_HEIRS_MESSAGE);
+    // 最初の文は計算エンジンの止める事項（相続人不存在）と同じ
+    const first = NO_HEIRS_MESSAGE.split("。")[0];
+    expect(calculate(c).blockers.some((b) => b.startsWith(first))).toBe(true);
+  });
+  it("家族が入っていないときも協議書を作らない", () => {
+    const c = structuredClone(demoCase);
+    c.persons = [];
+    expect(() => buildDivisionDoc(c)).toThrow(NO_PERSONS_MESSAGE);
+    expect(calculate(c).blockers).toContain(NO_PERSONS_MESSAGE);
+  });
+  it("遺産を受け継がない人が払う代償金は「遺産を取得する代償として」と書かず、知らせる", () => {
+    const c = structuredClone(demoCase);
+    // 一郎さんは遺産を受け継がない（保険金だけ受け取る）のに、さくらさんに代償金を払う
+    // 一郎さん・さくらさんの分はすべて花子さんが受け継ぐ（同じ財産の持分は1つにまとめる）
+    c.allocations = c.allocations.map((a) => ({ ...a, shares: [{ personId: "hanako", numerator: 1, denominator: 1 }] }));
+    c.assets = c.assets.map((a) => (a.kind === "insurance" ? { ...a, recipientId: "ichiro" } : a));
+    c.compensation = [{ fromId: "ichiro", toId: "sakura", amount: 1_000_000 }];
+    const doc = buildDivisionDoc(c);
+    expect(JSON.stringify(doc.articles)).not.toContain("代償として");
+    expect(JSON.stringify(doc.articles)).not.toContain("本協議により遺産");
+    expect(doc.warnings.some((w) => w.includes("代償金（1件目）") && w.includes("相続 一郎さん"))).toBe(true);
+    // 協議書に載らない代償金を受け取る人にも、「何も取得しない」の注意を出す
+    expect(doc.warnings.some((w) => w.includes("相続 さくらさんは何も取得しません"))).toBe(true);
   });
   it("PDFを作成できる", async () => {
     const pdf = await renderDivision(d);

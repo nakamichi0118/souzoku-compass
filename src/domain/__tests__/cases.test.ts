@@ -83,7 +83,7 @@ describe("シナリオをアプリの入力に写す（toCase）", () => {
         // 青空駐車場は「自分で使っている」土地として入れる
         const use = it.use === "parking" ? "self" : it.use;
         if ((a.use ?? "self") !== use) bad.push(`${s.id} ${it.id} 使い方 ${a.use}`);
-        if (a.rentRatio !== (use === "rentedHouse" ? it.rentRatio : undefined)) bad.push(`${s.id} ${it.id} 賃貸割合 ${a.rentRatio}`);
+        if (a.rentRatio !== (use === "rentedHouse" || use === "rentedLeasehold" ? it.rentRatio : undefined)) bad.push(`${s.id} ${it.id} 賃貸割合 ${a.rentRatio}`);
         const lease = it.valuation.kind === "multiplier" && use !== "self" ? it.valuation.leaseRatio : undefined;
         if (a.leaseRatio !== lease) bad.push(`${s.id} ${it.id} 借地権割合 ${a.leaseRatio}`);
         const cond = it.needsReduction === "irregular" || it.needsReduction === "setback" ? it.needsReduction : it.spouseResidenceRight ? "spouseResidence" : undefined;
@@ -139,7 +139,8 @@ describe("シナリオをアプリの入力に写す（toCase）", () => {
     let n = 0;
     for (const { s, c } of pairs) {
       if (s.division.kind !== "undivided") {
-        if (c.undivided) bad.push(`${s.id} 分け方が決まっているのに未分割`);
+        // 一部だけ決まっている（partlyUndivided）ときは、決まった分だけ入れて「分け方がまだ決まっていない」を選ぶ
+        if (!!c.undivided !== !!s.division.partlyUndivided) bad.push(`${s.id} 未分割の選び方`);
         continue;
       }
       n++;
@@ -156,7 +157,7 @@ describe("シナリオをアプリの入力に写す（toCase）", () => {
     for (const { s, c } of pairs) {
       const comp = s.division.kind === "agreed" ? (s.division.compensation ?? []) : [];
       const got = c.compensation ?? [];
-      if (comp.length !== got.length || comp.some((x, i) => got[i].fromId !== x.from || got[i].toId !== x.to || got[i].amount !== x.amount)) bad.push(`${s.id} 代償金`);
+      if (comp.length !== got.length || comp.some((x, i) => got[i].fromId !== x.from || got[i].toId !== x.to || got[i].amount !== x.amount || got[i].basis?.assetId !== x.basis?.item || got[i].basis?.marketValue !== x.basis?.marketValue)) bad.push(`${s.id} 代償金`);
       const settle = s.gifts.filter((g) => g.settlement).length;
       if (c.priorGifts.filter((g) => g.settlement).length !== settle || !!c.decedent.settlementGift !== settle > 0) bad.push(`${s.id} 精算課税`);
       if (c.priorGifts.length !== s.gifts.length) bad.push(`${s.id} 贈与の件数`);

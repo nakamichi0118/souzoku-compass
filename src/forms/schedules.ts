@@ -184,12 +184,20 @@ export function build13(c: Case, r: TaxResult): PageFill[] {
   }
   const bearers = r.persons.filter((p) => p.debtOnly > 0 || p.funeralOnly > 0);
   const sum = (f: (p: PersonTax) => number) => r.persons.reduce((a, p) => a + f(p), 0);
-  const sec3 = (k: string, debt: number, funeral: number): Row => ({
-    [`${k}.r1`]: yenOrBlank(debt),
-    [`${k}.r3`]: yenOrBlank(debt),
-    [`${k}.r4`]: yenOrBlank(funeral),
-    [`${k}.r6`]: yenOrBlank(funeral),
-    [`${k}.r7`]: yenOrBlank(debt + funeral),
+  /**
+   * 3 債務及び葬式費用の合計額。負担する人が決まっていないため法定相続分で負担したものとした額（未分割。相基通13-3）は
+   * ②「負担することが確定していない債務」・⑤「負担することが確定していない葬式費用」に、それ以外は①④に書く。
+   * ③＝①＋②、⑥＝④＋⑤、⑦＝③＋⑥（第1表③）
+   */
+  type Sec3 = Pick<PersonTax, "debtOnly" | "funeralOnly" | "debtsUnsettled" | "funeralUnsettled">;
+  const sec3 = (k: string, t: Sec3): Row => ({
+    [`${k}.r1`]: yenOrBlank(t.debtOnly - t.debtsUnsettled),
+    [`${k}.r2`]: yenOrBlank(t.debtsUnsettled),
+    [`${k}.r3`]: yenOrBlank(t.debtOnly),
+    [`${k}.r4`]: yenOrBlank(t.funeralOnly - t.funeralUnsettled),
+    [`${k}.r5`]: yenOrBlank(t.funeralUnsettled),
+    [`${k}.r6`]: yenOrBlank(t.funeralOnly),
+    [`${k}.r7`]: yenOrBlank(t.debtOnly + t.funeralOnly),
   });
 
   const pageCount = Math.max(1, Math.ceil(debtRows.length / 4), Math.ceil(funeralRows.length / 5), Math.ceil(bearers.length / 4));
@@ -207,11 +215,19 @@ export function build13(c: Case, r: TaxResult): PageFill[] {
       const funeralTotal = c.debts.filter((d) => d.kind === "funeral").reduce((a, d) => a + d.amount, 0);
       values["d.total"] = yenOrBlank(debtTotal);
       values["f.total"] = yenOrBlank(funeralTotal);
-      Object.assign(values, sec3("t", sum((p) => p.debtOnly), sum((p) => p.funeralOnly)));
+      Object.assign(
+        values,
+        sec3("t", {
+          debtOnly: sum((p) => p.debtOnly),
+          funeralOnly: sum((p) => p.funeralOnly),
+          debtsUnsettled: sum((p) => p.debtsUnsettled),
+          funeralUnsettled: sum((p) => p.funeralUnsettled),
+        }),
+      );
     }
     bearers.slice(pg * 4, pg * 4 + 4).forEach((p, i) => {
       values[`p${i}.name`] = p.person.name;
-      Object.assign(values, sec3(`p${i}`, p.debtOnly, p.funeralOnly));
+      Object.assign(values, sec3(`p${i}`, p));
     });
     pages.push({ page: "t13", values });
   }

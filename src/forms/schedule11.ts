@@ -7,6 +7,9 @@
  *   付表3 現金・預貯金
  *   付表4 家庭用財産・その他（生命保険金等・退職手当金等の課税部分・代償金を含む）
  *
+ * 付表1の「特例」欄には、小規模宅地等の特例で減額した土地（マンションは敷地利用権の行）に特例番号「1」
+ * （租税特別措置法第69条の4）を書く。マンションの「備考」欄には敷地権の割合（例：10000分の169）を書く。
+ *
  * 分け方が決まっていない（未分割の）部分は、付表の「分割が確定した財産」には書かず、
  * 第11表の合計表の「② 未分割財産の価額」に法定相続分で取得したものとした額を書く。
  */
@@ -21,7 +24,15 @@ const ROWS_PER_PAGE = 8;
 const LAND_CAT: Record<string, number> = { 田: 1, 畑: 2, 宅地: 3, 山林: 4, 雑種地: 5, その他: 5 };
 const ACQ_PER_ROW = 3;
 /** 土地の使い方 → 第11表の利用区分 */
-const LAND_USAGE: Record<LandUse, Usage> = { self: "自用地", rentedHouse: "貸家建付地", leasedLand: "貸宅地", leasehold: "借地権" };
+const LAND_USAGE: Record<LandUse, Usage> = {
+  self: "自用地",
+  rentedHouse: "貸家建付地",
+  leasedLand: "貸宅地",
+  leasehold: "借地権",
+  rentedLeasehold: "貸家建付借地権",
+};
+/** 付表1の「特例」欄の特例番号（申告のしかたの「特例番号表」。1 ＝ 租税特別措置法第69条の4 小規模宅地等の特例） */
+const SMALL_LAND_SPECIAL_NO = "1";
 
 /** 付表の1項目（財産の明細＋分割が確定した取得者） */
 export interface ScheduleItem {
@@ -33,6 +44,8 @@ export interface ScheduleItem {
   acquirers: { personId: string; amount: number }[];
   /** 未分割の部分を法定相続分で取得したものとした価額。付表には書かず、第11表の合計表②と第15表に入れる */
   undivided: { personId: string; amount: number }[];
+  /** マンションを2行に分けたときの、どちらの行か（site 敷地利用権、building 区分所有建物）。付表には書かない */
+  part?: "site" | "building";
 }
 
 type Part = { personId: string; amount: number; undivided: boolean };
@@ -72,6 +85,22 @@ function item(cat: number, value: number, parts: Part[], values: ScheduleItem["v
   return { cat, value, values, acquirers: pick(false), undivided: pick(true) };
 }
 
+/**
+ * 登記簿の「敷地権の種類と割合」（例：所有権　10000分の169）から、割合だけを「10000分の169」の形で取り出す。
+ * 「169/10000」と書いたものも同じ形にする。割合の形でなければ入力のまま、なければ空欄
+ */
+export function siteRightRatio(siteRight: string | undefined): string {
+  const t = (siteRight ?? "").trim();
+  if (!t) return "";
+  const num = "([0-9０-９][0-9０-９,，]*)";
+  const clean = (x: string) => x.replace(/[,，]/g, "");
+  const m = t.match(new RegExp(`${num}\\s*分の\\s*${num}`));
+  if (m) return `${clean(m[1])}分の${clean(m[2])}`;
+  const s = t.match(new RegExp(`${num}\\s*[/／]\\s*${num}`));
+  if (s) return `${clean(s[2])}分の${clean(s[1])}`;
+  return t;
+}
+
 /** 整数 a × b ÷ d（1円未満切捨て）。桁あふれしないよう BigInt で計算する */
 const mulDiv = (a: number, b: number, d: number) => (d > 0 ? Number((BigInt(a) * BigInt(b)) / BigInt(d)) : 0);
 
@@ -90,7 +119,7 @@ function landItems(line: AssetLine): ScheduleItem[] {
         area: a.areaSqm.toLocaleString("ja-JP", { maximumFractionDigits: 2 }),
         unit: m.type === "rosenka" ? yen(line.valuation.unitPrice) : m.type === "multiplier" ? `${m.multiplier}倍` : "",
         fixed: m.type === "multiplier" ? yen(m.fixedAssetValue) : "",
-        note: line.reduction > 0 ? "小規模宅地等" : "",
+        special: line.reduction > 0 ? SMALL_LAND_SPECIAL_NO : "",
       }),
     ];
   }
@@ -133,22 +162,30 @@ function landItems(line: AssetLine): ScheduleItem[] {
       }
     }
     return [
-      item(3, land - line.reduction, landParts, {
-        kind: "宅地",
-        // 人に貸している部屋の敷地利用権は貸家建付地、部屋は貸家
-        use: a.rented ? "貸家建付地" : "自用地",
-        ...loc,
-        area: a.landShareSqm.toLocaleString("ja-JP", { maximumFractionDigits: 2 }),
-        note: line.reduction > 0 ? "敷地権・小規模" : "敷地権",
-      }),
-      item(10, total - land, bldgParts, {
-        kind: "家屋",
-        use: a.rented ? "貸家" : "自用家屋",
-        ...loc,
-        area: a.exclusiveAreaSqm.toLocaleString("ja-JP", { maximumFractionDigits: 2 }),
-        fixed: yen(a.buildingFixedAssetValue),
-        note: "区分所有",
-      }),
+      {
+        ...item(3, land - line.reduction, landParts, {
+          kind: "宅地",
+          // 人に貸している部屋の敷地利用権は貸家建付地、部屋は貸家
+          use: a.rented ? "貸家建付地" : "自用地",
+          ...loc,
+          area: a.landShareSqm.toLocaleString("ja-JP", { maximumFractionDigits: 2 }),
+          special: line.reduction > 0 ? SMALL_LAND_SPECIAL_NO : "",
+          // 区分所有の財産は、備考に敷地利用権（敷地権）の割合を書く。登記簿の割合が入っていなければ空欄（手書きで記入する）
+          note: siteRightRatio(a.registry?.siteRight),
+        }),
+        part: "site" as const,
+      },
+      {
+        ...item(10, total - land, bldgParts, {
+          kind: "家屋",
+          use: a.rented ? "貸家" : "自用家屋",
+          ...loc,
+          area: a.exclusiveAreaSqm.toLocaleString("ja-JP", { maximumFractionDigits: 2 }),
+          fixed: yen(a.buildingFixedAssetValue),
+          note: "区分所有",
+        }),
+        part: "building" as const,
+      },
     ];
   }
   return [];
@@ -228,19 +265,21 @@ function deemedItems(persons: PersonTax[]): ScheduleItem[] {
 /**
  * 代償金（代償分割）。国税庁「相続税の申告のしかた」に従い、第11表の付表4に細目「代償財産」として1件ずつ書く。
  * 価額は「0」、取得財産の価額は、払う人はマイナス（△）、受け取る人はプラスで書く。第15表では「その他」（㉘）に入れる。
- * エンジンと同じ条件（1円以上の整数・払う人と受け取る人が別の、計算に入っている人）のものだけを載せる
+ * 金額はエンジンが課税価格に入れた額（TaxResult.compensation の value）。代償金を土地などの時価をもとに決めたときは
+ * 代償金 × その財産の評価額 ÷ 時価 になり、協議書に書く代償金の額（amount）とは違うことがある（相基通11の2-10(2)）。
+ * エンジンが足し引きしたもの（1円以上・払う人と受け取る人が別の、計算に入っている人）だけを載せる
  */
 function compensationItems(c: Case, r: TaxResult): ScheduleItem[] {
   const ids = new Set(r.persons.map((p) => p.person.id));
   const name = new Map(c.persons.map((p) => [p.id, p.name]));
-  return (c.compensation ?? [])
-    .filter((x) => Number.isSafeInteger(x.amount) && x.amount > 0 && x.fromId !== x.toId && ids.has(x.fromId) && ids.has(x.toId))
+  return r.compensation
+    .filter((x) => Number.isSafeInteger(x.value) && x.value > 0 && x.fromId !== x.toId && ids.has(x.fromId) && ids.has(x.toId))
     .map((x) => ({
       cat: 28,
       value: 0,
       acquirers: [
-        { personId: x.fromId, amount: -x.amount },
-        { personId: x.toId, amount: x.amount },
+        { personId: x.fromId, amount: -x.value },
+        { personId: x.toId, amount: x.value },
       ],
       undivided: [],
       values: { kind: "代償財産", name: "代償金", place: `${name.get(x.fromId) ?? ""}が${name.get(x.toId) ?? ""}に支払うもの` },

@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import { ConsultLink } from "@/components/compass/ConsultLink";
 import { Button, Field, Note, NumInput, YenInput, fmt } from "@/components/ui";
 import type { LandAsset } from "@/domain/types";
-import { valueLand } from "@/domain/valuation";
+import { type Valuation, valueLand } from "@/domain/valuation";
 import type { Sheet } from "./MapView";
 import { fetchSheetPdf } from "./locate";
 import { renderPdfPage } from "./sheet";
@@ -48,6 +48,23 @@ export const tableLeaseRatio = (s: string | null | undefined): number | undefine
   const n = Number(t);
   return n > 0 ? n / 100 : undefined;
 };
+
+/**
+ * 「3. 固定資産税評価額を入れて評価する」の評価と、反映できるか。
+ * 評価倍率表の行を確かめて借地権割合が読めたときは、その借地権割合で評価する（反映するとその割合が土地に入るため）。
+ * 反映は倍率・地積・固定資産税評価額がそろえばできる。広い宅地や事情がある土地などで税理士への相談が必要でも、
+ * 倍率・地積・借地権割合は保存しておけるように止めない（相談の案内は画面に出す）
+ */
+export function ratioStep3(
+  land: LandAsset,
+  input: { fav: number; multiplier: number; area: number; confirmed?: RatioSource; confirmedLease?: { ratio?: number } },
+): { method: MultiplierMethod; valuation: Valuation; canApply: boolean } {
+  const { fav, multiplier, area, confirmed, confirmedLease } = input;
+  const method: MultiplierMethod = { type: "multiplier", fixedAssetValue: fav, multiplier, source: confirmed };
+  const leaseRatio = confirmed && confirmedLease?.ratio != null ? confirmedLease.ratio : land.leaseRatio;
+  const valuation = valueLand({ ...land, areaSqm: area, method, leaseRatio });
+  return { method, valuation, canApply: multiplier > 0 && area > 0 && fav > 0 };
+}
 
 export function RatioPanel({
   step,
@@ -281,8 +298,7 @@ export function RatioPanel({
     );
 
   // 3. 評価額
-  const method: MultiplierMethod = { type: "multiplier", fixedAssetValue: fav, multiplier, source: confirmed };
-  const v = valueLand({ ...land, areaSqm: area, method });
+  const { method, valuation: v, canApply } = ratioStep3(land, { fav, multiplier, area, confirmed, confirmedLease });
   const confirmedWhere = confirmed ? `${confirmed.city}${confirmed.town}${confirmed.area ? `（${confirmed.area}）` : ""}` : "";
   const hasRate = multiplier > 0;
   const hasArea = area > 0;
@@ -303,8 +319,11 @@ export function RatioPanel({
       <Field label="地積" hint="登記簿・課税明細書の面積">
         <NumInput value={area} onChange={setArea} unit="㎡" />
       </Field>
-      {!hasRate ? null : v.needsConsultation ? (
+      {!hasRate ? null : !(fav > 0) ? (
         <p className="text-sm text-stone-500">固定資産税評価額を入れると評価額を計算します。</p>
+      ) : v.needsConsultation ? (
+        // 広い宅地・事情がある土地・借地権割合が分からないなど。倍率と地積は反映しておける
+        <Note tone="warn">{v.needsConsultation}</Note>
       ) : (
         <div className="rounded-lg bg-teal-50 p-3 text-sm text-teal-950">
           {v.steps.map((x, i) => (
@@ -322,7 +341,7 @@ export function RatioPanel({
         </span>
       </Note>
       {!hasArea && <p className="text-xs text-amber-800">地積を入れてください（登記簿や課税明細書に書いてある面積）。</p>}
-      <Button onClick={() => onApply(method, area, confirmed ? confirmedLease : undefined)} disabled={!!v.needsConsultation || !hasRate || !hasArea} className="w-full py-3">
+      <Button onClick={() => onApply(method, area, confirmed ? confirmedLease : undefined)} disabled={!canApply} className="w-full py-3">
         この評価を反映して財産の入力へ戻る
       </Button>
     </div>

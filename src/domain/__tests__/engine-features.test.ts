@@ -64,17 +64,24 @@ describe("未分割（相続税法55条）", () => {
     expect(r.warnings.some((w) => w.includes("申告期限後3年以内の分割見込書") && w.includes("更正の請求"))).toBe(true);
   });
 
-  it("一部だけ決まった財産：決まっていない割合を法定相続分で分け、1円未満の端数は割合がいちばん大きい人に寄せる", () => {
-    // 100,000,001円のうち妻に1/2。残り1/2を 妻1/4・長男1/8・長女1/8 で分ける
-    // 切捨て 50,000,000 + 25,000,000 + 12,500,000 + 12,500,000 = 100,000,000、残り1円は割合1/2（妻の分割分）へ
+  it("一部だけ決まった財産（穴埋め方式）：決まった分も合わせて法定相続分になるよう、足りない人に割り当てる。1円未満の端数は割合がいちばん大きい人に寄せる", () => {
+    // 以前は残り1/2をさらに法定相続分（妻1/4・長男1/8・長女1/8）で分けていたが（積上げ）、相続税法55条の計算は
+    // 「全体×法定相続分 − 分割で取得した額」の穴埋め方式（相基通55-1、税大ジャーナル22号）なので期待値を改めた。
+    // 全体 100,000,001 × 妻1/2 = 50,000,000.5 − 分割分 50,000,000.5 = 0、長男・長女は 25,000,000.25 ずつ足りない
+    // → 残り1/2を長男・長女で 1/4 ずつ。切捨て 50,000,000 + 25,000,000 + 25,000,000、残り1円は割合1/2（妻の分割分）へ
     const r = calculate(mk([spouse, c1, c2], [dep("預金", 100_000_001)], [all("預金", ["s", 1, 2])], { undivided: true }));
     expect(r.blockers).toEqual([]);
     expect(r.assets[0].byPerson).toEqual([
-      { personId: "s", amount: 75_000_001 },
-      { personId: "c1", amount: 12_500_000 },
-      { personId: "c2", amount: 12_500_000 },
+      { personId: "s", amount: 50_000_001 },
+      { personId: "c1", amount: 25_000_000 },
+      { personId: "c2", amount: 25_000_000 },
     ]);
-    expect(of(r, "s").undivided).toBe(25_000_000);
+    expect(r.assets[0].undivided).toEqual([
+      { personId: "c1", amount: 25_000_000 },
+      { personId: "c2", amount: 25_000_000 },
+    ]);
+    expect(of(r, "s").undivided).toBe(0);
+    expect(r.warnings.some((w) => w.includes("すでに分け方が決まった財産も合わせて") && w.includes("遺言で相続分が決められている"))).toBe(true);
   });
 
   it("相続分が同じ人の端数は、家族の一覧で先の人に寄せる", () => {
@@ -86,25 +93,65 @@ describe("未分割（相続税法55条）", () => {
     ]);
   });
 
-  it("小規模宅地等は取得者が受け継ぐと決まった部分だけに使い、配偶者の税額軽減の基は第5表のとおり", () => {
-    // 自宅 200㎡ 6,000万円のうち妻に1/2（3,000万・100㎡）。残り1/2は未分割（妻・長男 1,500万ずつ）。預金1億円は長男
-    // 小規模宅地等：妻の分割分 3,000万×80% = 2,400万を減額 → 妻 3,000万−2,400万+1,500万 = 2,100万、長男 1億+1,500万 = 1億1,500万
+  it("小規模宅地等は取得者が受け継ぐと決まった部分だけに使い、配偶者の税額軽減の基は第5表のとおり（未分割の部分は穴埋め方式）", () => {
+    // 自宅 200㎡ 6,000万円のうち妻に1/2（3,000万・100㎡）。預金1億円は長男。残りの自宅1/2（3,000万）は未分割。
+    // 以前は未分割の部分を法定相続分で 1,500万ずつにしていたが、穴埋め方式（相続税法55条・相基通55-1）に改めた：
+    // 全体 1億6,000万 × 1/2 = 8,000万。妻 8,000万 − 3,000万 = 5,000万足りない、長男 8,000万 − 1億 < 0 → 0。未分割の3,000万は全部妻
+    // 小規模宅地等：妻の分割分 3,000万×80% = 2,400万を減額（未分割の部分には使わない）→ 妻 6,000万−2,400万 = 3,600万、長男 1億
     // 課税価格 1億3,600万 − 4,200万 = 9,400万 → 4,700万×20%−200万 = 740万×2 → 総額 1,480万
-    // 按分（10桁）：妻 0.1544117647 → 2,285,294円、長男 0.8455882353 → 12,514,705円
-    // 第5表：③分割財産 2,100万−1,500万 = 600万、⑤未分割 1,500万、⑥ 0、⑧ 600万 → 1,480万×600万/1億3,600万 = 652,941円
-    // 妻 2,285,294−652,941 = 1,632,353 → 1,632,300円、長男 12,514,700円
+    // 按分（10桁）：妻 0.2647058824 → 3,917,647円、長男 0.7352941176 → 10,882,352円
+    // 第5表：③分割財産 3,600万−3,000万 = 600万、⑤未分割 3,000万、⑥ 0、⑧ 600万 → 1,480万×600万/1億3,600万 = 652,941円
+    // 妻 3,917,647−652,941 = 3,264,706 → 3,264,700円、長男 10,882,300円
     const r = calculate(
       mk([spouse, c1], [land("自宅", 200, 60_000_000, "s"), dep("預金", 100_000_000)], [all("自宅", ["s", 1, 2]), all("預金", ["c1", 1, 1])], { undivided: true }),
     );
     expect(r.blockers).toEqual([]);
+    expect(r.assets[0].byPerson).toEqual([{ personId: "s", amount: 36_000_000 }]);
+    expect(r.assets[0].undivided).toEqual([{ personId: "s", amount: 30_000_000 }]);
     expect(r.assets[0].reduction).toBe(24_000_000);
     expect(r.assets[0].small).toMatchObject({ area: 100, value: 30_000_000, selectedArea: 100, kind: "residence", rate: 80 });
-    expect(of(r, "s").taxable).toBe(21_000_000);
-    expect(of(r, "c1").taxable).toBe(115_000_000);
+    expect(of(r, "s").taxable).toBe(36_000_000);
+    expect(of(r, "c1").taxable).toBe(100_000_000);
     expect(r.totalTax).toBe(14_800_000);
-    expect(r.spouse).toMatchObject({ divided: 6_000_000, debts: 0, undivided: 15_000_000, spouseTaxable: 6_000_000, base: 6_000_000, creditBase: 652_941, credit: 652_941 });
-    expect(of(r, "s").payable).toBe(1_632_300);
-    expect(of(r, "c1").payable).toBe(12_514_700);
+    expect(r.spouse).toMatchObject({ divided: 6_000_000, debts: 0, undivided: 30_000_000, spouseTaxable: 6_000_000, base: 6_000_000, creditBase: 652_941, credit: 652_941 });
+    expect(of(r, "s").computed).toBe(3_917_647);
+    expect(of(r, "s").payable).toBe(3_264_700);
+    expect(of(r, "c1").payable).toBe(10_882_300);
+  });
+
+  it("穴埋め方式：配偶者が分割で多く取得し、残りが未分割なら、未分割の財産は足りない兄弟姉妹へ（2割加算も正しくなる）", () => {
+    // 配偶者・兄。預金A 1.2億は妻（分割済み）、預金B 1.2億は未分割。全体 2.4億 × 妻3/4 = 1.8億 − 1.2億 = 6,000万、兄 2.4億 × 1/4 = 6,000万
+    // → B は 6,000万ずつ（積上げなら 9,000万/3,000万）。課税価格 妻 1.8億・兄 6,000万。課税遺産総額 2.4億 − 4,200万 = 1億9,800万
+    // 妻 1億4,850万 × 40% − 1,700万 = 4,240万、兄 4,950万 × 20% − 200万 = 790万 → 総額 5,030万
+    // 妻：算出税額 5,030万 × 0.75 = 3,772.5万。税額軽減は、法定相続分相当額 1.8億と第5表⑧（分割財産 1.2億）の少ない方 1.2億
+    // → 5,030万 × 1.2億/2.4億 = 2,515万。納付 3,772.5万 − 2,515万 = 1,257.5万
+    // 兄 5,030万 × 0.25 = 1,257.5万 ＋ 2割加算 251.5万 = 1,509万。合計 2,766.5万
+    const w: Person = { id: "w", name: "妻", relation: "spouse" };
+    const b: Person = { id: "b", name: "兄", relation: "sibling" };
+    const r = calculate(mk([w, b], [dep("A", 120_000_000), dep("B", 120_000_000)], [all("A", ["w", 1, 1])], { undivided: true }));
+    expect(r.blockers).toEqual([]);
+    expect(r.assets[1].byPerson).toEqual([
+      { personId: "w", amount: 60_000_000 },
+      { personId: "b", amount: 60_000_000 },
+    ]);
+    expect(r.totalTax).toBe(50_300_000);
+    expect(of(r, "w")).toMatchObject({ taxable: 180_000_000, spouseCredit: 25_150_000, payable: 12_575_000 });
+    expect(of(r, "b")).toMatchObject({ taxable: 60_000_000, surcharge: 2_515_000, payable: 15_090_000 });
+    expect(r.totalPayable).toBe(27_665_000);
+  });
+
+  it("穴埋め方式：法定相続分より多く分割で取得した人には未分割の部分を割り当てず、相続人でない人への分は全体から除く", () => {
+    // 預金A 9,000万は長男、預金B 3,000万を内縁の妻（相続人でない受遺者）、預金C 6,000万は未分割。子2人
+    // 相続人で分ける全体 = 9,000万 + 3,000万 + 6,000万 − 3,000万（内縁の妻）= 1億5,000万、× 1/2 = 7,500万
+    // 長男 7,500万 − 9,000万 < 0 → 0、長女 7,500万 → C 6,000万は全部長女
+    const naien: Person = { id: "n", name: "内縁の妻", relation: "other" };
+    const r = calculate(
+      mk([c1, c2, naien], [dep("A", 90_000_000), dep("B", 30_000_000), dep("C", 60_000_000)], [all("A", ["c1", 1, 1]), all("B", ["n", 1, 1])], { undivided: true }),
+    );
+    expect(r.blockers).toEqual([]);
+    expect(r.assets[2].byPerson).toEqual([{ personId: "c2", amount: 60_000_000 }]);
+    expect(of(r, "c2").undivided).toBe(60_000_000);
+    expect(of(r, "c1").undivided).toBe(0);
   });
 
   it("全部が未分割の宅地には小規模宅地等を使わず、その旨と後から使う方法を知らせる", () => {
@@ -151,7 +198,8 @@ describe("未分割（相続税法55条）", () => {
     expect(over.blockers.some((b) => b.includes("取得割合の合計が1になっていません"))).toBe(true);
   });
 
-  it("全部の財産の分け方が決まっていれば、チェックがあってもなくても結果は同じ", () => {
+  it("全部の財産の分け方が決まっていれば、チェックがあってもなくても結果は同じ。チェックがあるときは、そのことを知らせる", () => {
+    // 「すべて法定相続分どおりにする」を押したあとにチェックが残っていると、分け方が決まったものとして計算される（税額軽減・特例も使う）ので、知らせる
     const assets = [land("自宅", 200, 50_000_000, "s"), dep("預金", 80_000_000)];
     const allocs = [all("自宅", ["s", 1, 1]), all("預金", ["s", 1, 4], ["c1", 3, 4])];
     const a = calculate(mk([spouse, c1], assets, allocs));
@@ -159,7 +207,10 @@ describe("未分割（相続税法55条）", () => {
     expect(b.undivided).toBe(false);
     expect(b.persons.map((p) => [p.taxable, p.spouseCredit, p.payable])).toEqual(a.persons.map((p) => [p.taxable, p.spouseCredit, p.payable]));
     expect(b.spouse).toEqual(a.spouse);
-    expect(b.warnings).toEqual(a.warnings);
+    const notice = (w: string) => w.includes("「分け方がまだ決まっていない」にチェックがありますが、すべての財産の分け方が入っている");
+    expect(b.warnings.filter(notice)).toHaveLength(1);
+    expect(b.warnings.filter((w) => !notice(w))).toEqual(a.warnings);
+    expect(a.warnings.some(notice)).toBe(false);
   });
 });
 
@@ -433,16 +484,30 @@ describe("小規模宅地等の種類（措置法69条の4）", () => {
     expect(r.warnings.some((w) => w.includes("人に貸していた土地") && w.includes("200㎡まで"))).toBe(true);
   });
 
-  it("空き部屋がある貸家の敷地は、貸している部分（面積×賃貸割合）だけが貸付事業用宅地等", () => {
-    // 100㎡、自用地 5,000万（直接入力）、借地権割合 0.6、賃貸割合 0.75
-    // 貸家建付地 = 5,000万 × (1 − 0.6×0.3×0.75) = 5,000万 × 0.865 = 4,325万
-    // 対象 = 100㎡ × 0.75 = 75㎡、価額 4,325万 × 75/100 = 3,243.75万、減額 50% = 1,621.875万 → 16,218,750円
-    const r = calculate(mk([c1], [land("アパート", 100, 50_000_000, "c1", { use: "rentedHouse", leaseRatio: 0.6, rentRatio: 0.75 })], [all("アパート", ["c1", 1, 1])]));
+  it("空き部屋がある貸家の敷地は、貸している部分だけを貸家建付地として評価した額が貸付事業用宅地等（国税庁の設例）", () => {
+    // 国税庁 情報（平成22年7月13日）「貸家建付地等の一部が空室の場合」の設例：200㎡、自用地 4,000万、借地権割合 0.7、賃貸割合 0.9
+    // 全体の評価額 = 4,000万 × (1 − 0.7×0.3×0.9) = 3,244万
+    // 貸している部分 = 4,000万 × 0.9 × (1 − 0.7×0.3) = 2,844万（180㎡）、空いている部分 20㎡ は自用地 400万で特例の対象外
+    // 減額 2,844万 × 50% = 1,422万（180㎡ ≦ 200㎡）、課税価格に入る額 3,244万 − 1,422万 = 1,822万
+    // 以前は全体の評価額を面積で割っていた（3,244万 × 0.9 = 2,919.6万）が、借家権の減額が空いている部分にも配られて特例が大きくなりすぎるので改めた
+    const r = calculate(mk([c1], [land("アパート", 200, 40_000_000, "c1", { use: "rentedHouse", leaseRatio: 0.7, rentRatio: 0.9 })], [all("アパート", ["c1", 1, 1])]));
     const l = r.assets[0];
-    expect(l.valuation.value).toBe(43_250_000);
-    expect(l.small).toMatchObject({ kind: "rental", rate: 50, area: 75, value: 32_437_500, selectedArea: 75, selectedValue: 32_437_500 });
-    expect(l.reduction).toBe(16_218_750);
-    expect(r.warnings.some((w) => w.includes("空き部屋") && w.includes("0.75"))).toBe(true);
+    expect(l.valuation.value).toBe(32_440_000);
+    expect(l.valuation.rentedLandPart).toBe(28_440_000);
+    expect(l.small).toMatchObject({ kind: "rental", rate: 50, area: 180, value: 28_440_000, selectedArea: 180, selectedValue: 28_440_000 });
+    expect(l.reduction).toBe(14_220_000);
+    expect(l.byPerson).toEqual([{ personId: "c1", amount: 18_220_000 }]);
+    expect(r.warnings.some((w) => w.includes("空き部屋") && w.includes("0.9"))).toBe(true);
+  });
+
+  it("空き部屋がある貸家の敷地を持分で取得したときは、貸している部分の評価額×持分", () => {
+    // 上の設例の土地を長男1/2・長女1/2。長男に特例：貸している部分 2,844万 × 1/2 = 1,422万、面積 100㎡ × 0.9 = 90㎡、減額 711万
+    const r = calculate(
+      mk([c1, c2], [land("アパート", 200, 40_000_000, "c1", { use: "rentedHouse", leaseRatio: 0.7, rentRatio: 0.9 })], [all("アパート", ["c1", 1, 2], ["c2", 1, 2])]),
+    );
+    const l = r.assets[0];
+    expect(l.small).toMatchObject({ kind: "rental", area: 90, value: 14_220_000, selectedArea: 90 });
+    expect(l.reduction).toBe(7_110_000);
   });
 
   it("貸付事業用宅地等を含むときは、特定居住用を200/330に換算して合わせて200㎡まで", () => {

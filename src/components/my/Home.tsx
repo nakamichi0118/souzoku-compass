@@ -149,7 +149,7 @@ export function Home() {
                 </>
               ) : verdict === "relief" ? (
                 <>
-                  特例で0円の見込み。<span className="text-orange-600">申告は必要</span>です
+                  納める税額は0円の見込み。<span className="text-orange-600">申告は必要</span>です
                 </>
               ) : verdict === "likely" ? (
                 <>

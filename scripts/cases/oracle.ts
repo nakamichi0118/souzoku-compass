@@ -8,8 +8,9 @@
  *   租税特別措置法 69 条の 4（小規模宅地等）
  *   財産評価基本通達（以下「評基通」）15〜18・20-4・21-2・25・26・27・89・93・169、付表1〜3・6・7
  *   「居住用の区分所有財産の評価について」（令和5年9月28日 法令解釈通達）
- *   相続税法基本通達（以下「相基通」）13-1・13-3・15-3・15-4・17-1・19-3・19の2-3・19の3-1 など
+ *   相続税法基本通達（以下「相基通」）1の2-1・11の2-9・11の2-10・13-1・13-3・15-3・15-4・17-1・19-3・19の2-3・19の3-1〜5・19の4-4 など
  *   国税庁「相続税の申告のしかた（令和7年分以降用）」と申告書第1表〜第15表の記載方法
+ *   国税庁 質疑応答事例「正面路線の判定(1)」、情報「小規模宅地等の特例（貸付事業用宅地等）…一部が空室の場合」（平成22年7月13日 情報 06）
  *
  * 使い方：expected(scenario) → Expected
  * 端数の扱いは、申告書の各欄の書き方に合わせている（どこで切り捨てるかはコメントに書いた）。
@@ -393,23 +394,33 @@ const LEASE_BY_LETTER: Record<ScenarioRoad["leaseLetter"], number> = { A: 90, B:
 
 /**
  * 路線価方式の1㎡当たりの価額（評価明細書 第1表の A〜E 欄）。各欄で円未満切捨て。
- * 正面路線は「路線価×奥行価格補正率」の高い方（評基通16(1)の注）。
+ * 正面路線は「路線価×奥行価格補正率」の高い方（評基通16(1)の注）。同じ額なら路線に接する距離（間口）の長い方
+ * （質疑応答事例「正面路線の判定(1)」）、それも同じなら路線価の高い方、さらに同じなら入力の順（正面・側方・裏面の順、同じ向きは先の方）。
  * 向き：front と back は同じ向き（向かい合う）、side はそれと直交するものとして、
  * 正面を選び直したときの側方・裏面を決める。側方は全て角地として付表2の角地の率。
+ * skipFrontage=true は不整形地（評基通20-4 は「不整形地及び無道路地を除く」）：E 欄の間口狭小・奥行長大の補正をしない。
  */
 export function rosenkaUnitPrice(
   district: District,
   roads: ScenarioRoad[],
+  opts: { skipFrontage?: boolean } = {},
 ): { unit: number; front: ScenarioRoad; steps: string[] } {
   if (roads.length === 0) throw new Error("路線がない");
   const steps: string[] = [];
   const score = (r: ScenarioRoad): number => r.price * depthRate(district, r.depth);
+  const rank = { front: 0, side: 1, back: 2 } as const;
+  const better = (r: ScenarioRoad, cur: ScenarioRoad): boolean => {
+    const a = score(r);
+    const b = score(cur);
+    if (a !== b) return a > b;
+    if (r.frontage !== cur.frontage) return r.frontage > cur.frontage;
+    if (r.price !== cur.price) return r.price > cur.price;
+    return rank[r.position] < rank[cur.position];
+  };
   let front = roads[0];
-  for (const r of roads) {
-    const sc = score(r);
-    const fs = score(front);
-    if (sc > fs || (sc === fs && r.position === "front" && front.position !== "front")) front = r;
-  }
+  for (const r of roads) if (r !== front && better(r, front)) front = r;
+  if (roads.some((r) => r !== front && score(r) === score(front)))
+    steps.push(`路線価×奥行価格補正率が同じ路線があるので、間口の長い方（同じなら路線価の高い方）を正面とした`);
   const axis = (r: ScenarioRoad): number => (r.position === "side" ? 1 : 0);
   const fr = depthRate(district, front.depth);
   // A 欄：正面路線価 × 奥行価格補正率
@@ -426,6 +437,10 @@ export function rosenkaUnitPrice(
     steps.push(`${isSide ? "側方" : "二方"} ${fmt(r.price)}×${(rr / 100).toFixed(2)}×${(add / 100).toFixed(2)}=${fmt(a)}`);
   }
   // E 欄：間口狭小補正率 × 奥行長大補正率（評基通20-4、付表6・7）
+  if (opts.skipFrontage) {
+    steps.push("不整形地なので間口狭小・奥行長大の補正はしない（不整形地補正率に含める。評基通20-4・付表5（注）3）");
+    return { unit, front, steps };
+  }
   let m = frontageRate(district, front.frontage);
   if (m === 0) {
     steps.push("間口狭小補正率表に定めがない（ビル街地区で間口8m未満）→ 1.00 とした");
@@ -568,6 +583,44 @@ interface SmallSel {
 const SMALL_LIMIT: Record<SmallLandKind, number> = { residence: 330, business: 400, rental: 200 };
 const SMALL_RATE: Record<SmallLandKind, Q> = { residence: Qn(80, 100), business: Qn(80, 100), rental: Qn(50, 100) };
 
+/**
+ * q が ben の扶養義務者か（相続税法1条の2・相基通1の2-1：配偶者・直系血族・兄弟姉妹）。
+ * シナリオに書いてある続柄だけで決められる人に限る。亡くなった方の配偶者は、亡くなった方の子全員の親（代襲相続人の祖先）とみなす。
+ * 三親等内の親族で生計を一にする人（おじ・おば、甥姪、配偶者の親族など）は、シナリオに生計の事情がないので含めない。
+ * 相続人でない受遺者（other）・いとこ・姻族も含めない。
+ */
+export function isSupporter(ben: Member, q: Member): boolean {
+  if (q.id === ben.id || q.predeceased || q.relation === "other") return false;
+  // 孫養子は亡くなった方の子（養子）として扱う
+  const isChild = (m: Member): boolean => m.relation === "child" || m.relation === "adoptedChild" || !!m.grandchildAdopted;
+  const isSubstDesc = (m: Member): boolean => (m.relation === "grandchild" || m.relation === "greatGrandchild") && !!m.substituteOf;
+  const ascendant = (m: Member): boolean => m.relation === "parent" || m.relation === "grandparent";
+  switch (isChild(ben) ? "child" : ben.relation) {
+    case "child":
+    case "adoptedChild":
+      // 親（亡くなった方の配偶者）、兄弟姉妹（ほかの子・養子）、祖父母・曾祖父母（亡くなった方の父母・祖父母）
+      return q.relation === "spouse" || isChild(q) || ascendant(q);
+    case "grandchild":
+    case "greatGrandchild":
+      if (!ben.substituteOf) return false;
+      // 祖父母（亡くなった方の配偶者）、兄弟姉妹（同じ親の代襲相続人）、亡くなった方の父母・祖父母
+      return q.relation === "spouse" || q.substituteOf === ben.substituteOf || ascendant(q);
+    case "spouse":
+      // 子と、代襲相続人の孫・ひ孫
+      return isChild(q) || isSubstDesc(q);
+    case "parent":
+      // 配偶者（ほかの父母）と、子（全血の兄弟姉妹）
+      return q.relation === "parent" || (q.relation === "sibling" && !q.halfBlood);
+    case "sibling":
+      // 兄弟姉妹（どちらかが全血なら親を同じくする）、父母（本人が全血のとき）
+      return (q.relation === "sibling" && (!ben.halfBlood || !q.halfBlood)) || (q.relation === "parent" && !ben.halfBlood);
+    case "nephewNiece":
+      return q.relation === "nephewNiece" && !!ben.substituteOf && q.substituteOf === ben.substituteOf;
+    default:
+      return false;
+  }
+}
+
 /** 2割加算（相続税法18条）の対象か */
 function surcharge20(m: Member, heirIds: Set<string>, h: HeirStructure): boolean {
   const isSubstituteHeir = !!m.substituteOf && heirIds.has(m.id);
@@ -617,6 +670,10 @@ export function expected(s: Scenario): Expected {
   const addOos = (r: string): void => {
     if (!oos.includes(r)) oos.push(r);
   };
+  /** 同じメモを2回書かない（小規模宅地等の選び方を試すため、税額の計算は何度も行う） */
+  const noteOnce = (n: string): void => {
+    if (!notes.includes(n)) notes.push(n);
+  };
   const ms = s.members;
   const byId = new Map(ms.map((m) => [m.id, m]));
   const nameOf = (id: string): string => byId.get(id)?.name ?? id;
@@ -652,6 +709,8 @@ export function expected(s: Scenario): Expected {
     value: number;
     area?: Q; // 小規模宅地等の面積の基になる地積
     smallOk: boolean;
+    /** 賃貸割合 1 未満の貸家建付地・貸家建付借地権・賃貸中のマンションの敷地：貸している部分だけの価額（持分100%）と賃貸割合 */
+    rented?: { value: number; ratio: Q };
   }
   const vals: ItemVal[] = [];
   for (const it of s.estate) {
@@ -695,18 +754,29 @@ export function expected(s: Scenario): Expected {
       case "land": {
         if (it.foreign) addOos("国外財産");
         if (it.spouseResidenceRight) addOos("配偶者居住権");
-        if (it.needsReduction) addOos("地積規模の大きな宅地・不整形地・セットバック等の補正が必要な土地");
+        const vv = it.valuation;
+        // 税理士に確かめた補正率があれば、不整形地（評基通20）・地積規模の大きな宅地（20-2）は計算できる（路線価方式だけ）
+        const adv = it.advisorRate;
+        const advisorOk =
+          adv !== undefined && adv > 0 && adv <= 1 && vv.kind === "rosenka" && (it.needsReduction === "irregular" || it.needsReduction === "largeLot");
+        if (it.needsReduction && !advisorOk) addOos("地積規模の大きな宅地・不整形地・セットバック等の補正が必要な土地");
         let selfUse = 0;
         let lease: Q | null = null;
-        const vv = it.valuation;
         const area = decQ(it.areaSqm);
         if (vv.kind === "rosenka") {
           if (it.landUse === "田" || it.landUse === "畑" || it.landUse === "山林")
             addOos("市街地農地・山林等（宅地比準方式・造成費の控除が必要）");
-          const r = rosenkaUnitPrice(vv.district, vv.roads);
-          selfUse = Number(qfloor(qmul(Qn(r.unit), area)));
+          const irregular = advisorOk && it.needsReduction === "irregular";
+          const r = rosenkaUnitPrice(vv.district, vv.roads, { skipFrontage: irregular });
+          let unit = r.unit;
+          if (advisorOk) {
+            // F 欄（不整形地：D 欄 × 不整形地補正率）・G 欄（地積規模：A〜F 欄 × 規模格差補正率）。円未満切捨て
+            unit = yenFloor(r.unit, decQ(adv!));
+            r.steps.push(`${irregular ? "不整形地補正率" : "規模格差補正率"} ${adv}（税理士に確認）：${fmt(r.unit)}→${fmt(unit)}`);
+          }
+          selfUse = Number(qfloor(qmul(Qn(unit), area)));
           lease = Qn(LEASE_BY_LETTER[r.front.leaseLetter], 100);
-          notes.push(`${it.label}：${r.steps.join("、")} → 1㎡ ${fmt(r.unit)} × ${it.areaSqm}㎡ = ${fmt(selfUse)}`);
+          notes.push(`${it.label}：${r.steps.join("、")} → 1㎡ ${fmt(unit)} × ${it.areaSqm}㎡ = ${fmt(selfUse)}`);
         } else {
           // 評基通21-2：固定資産税評価額 × 倍率
           selfUse = yenFloor(vv.fixedAssetValue, decQ(vv.rate));
@@ -714,29 +784,39 @@ export function expected(s: Scenario): Expected {
           notes.push(`${it.label}：倍率 ${fmt(vv.fixedAssetValue)}×${vv.rate} = ${fmt(selfUse)}`);
         }
         let v = selfUse;
-        const needLease = it.use === "rentedHouse" || it.use === "leasedLand" || it.use === "leasehold";
+        const needLease = it.use === "rentedHouse" || it.use === "leasedLand" || it.use === "leasehold" || it.use === "rentedLeasehold";
         if (needLease && lease === null) {
           notes.push(`${it.label}：借地権割合が分からない（0として計算）`);
           lease = ZERO;
         }
         const L = lease ?? ZERO;
         const R = ratioQ(it.rentRatio ?? 1);
+        const L3 = qmul(L, Qn(3, 10)); // 借地権割合 × 借家権割合0.3
+        let rented: ItemVal["rented"];
         if (it.use === "rentedHouse") {
           // 評基通26：貸家建付地 = 自用地 × (1 − 借地権割合 × 借家権割合0.3 × 賃貸割合)
-          v = yenFloor(selfUse, qsub(ONE, qmul(qmul(L, Qn(3, 10)), R)));
+          v = yenFloor(selfUse, qsub(ONE, qmul(L3, R)));
+          // 空室がある（賃貸割合<1）とき、貸している部分 = 自用地 × 賃貸割合 × (1 − 借地権割合 × 0.3)。空室の部分は自用地（情報 平成22.7.13 06）
+          if (qcmp(R, ONE) < 0) rented = { value: yenFloor(selfUse, R, qsub(ONE, L3)), ratio: R };
         } else if (it.use === "leasedLand") {
           // 評基通25：貸宅地 = 自用地 × (1 − 借地権割合)
           v = yenFloor(selfUse, qsub(ONE, L));
         } else if (it.use === "leasehold") {
           // 評基通27：借地権 = 自用地 × 借地権割合
           v = yenFloor(selfUse, L);
+        } else if (it.use === "rentedLeasehold") {
+          // 評基通28：貸家建付借地権 = 自用地 × 借地権割合 × (1 − 借家権割合0.3 × 賃貸割合)
+          v = yenFloor(selfUse, L, qsub(ONE, qmul(Qn(3, 10), R)));
+          // 空室があるとき、貸している部分 = 自用地 × 借地権割合 × 賃貸割合 × 0.7（空室の部分は借地権のまま）
+          if (qcmp(R, ONE) < 0) rented = { value: yenFloor(selfUse, L, R, Qn(7, 10)), ratio: R };
         }
-        if (v !== selfUse) notes.push(`${it.label}：${it.use} → ${fmt(v)}（借地権割合 ${qstr(L)}）`);
+        if (v !== selfUse) notes.push(`${it.label}：${it.use} → ${fmt(v)}（借地権割合 ${qstr(L)}${qcmp(R, ONE) < 0 ? `・賃貸割合 ${qstr(R)}` : ""}）`);
+        if (rented) notes.push(`${it.label}：貸している部分の価額 ${fmt(rented.value)}（空室の部分 ${fmt(v - rented.value)}）`);
         // 小規模宅地等の対象になる「宅地等」：建物・構築物の敷地。青空駐車場や田畑山林は対象外
         const smallOk =
           (it.landUse === "宅地" || it.landUse === "雑種地") && it.use !== "parking" && !it.foreign && !it.spouseResidenceRight;
         if (it.smallLand && !smallOk) notes.push(`${it.label}：小規模宅地等の対象にならない土地（青空駐車場・田畑山林等）`);
-        vals.push({ item: it, value: v, area, smallOk });
+        vals.push({ item: it, value: v, area, smallOk, rented });
         break;
       }
       case "condo": {
@@ -751,6 +831,7 @@ export function expected(s: Scenario): Expected {
           bld = yenFloor(bld, cc.rate);
           land = yenFloor(land, cc.rate);
         }
+        let rented: ItemVal["rented"];
         if (c.rented) {
           const R = ratioQ(c.rentRatio ?? 1);
           let L: Q;
@@ -761,12 +842,16 @@ export function expected(s: Scenario): Expected {
             notes.push(`${c.label}：借地権割合の記載がないため ${CONDO_DEFAULT_LEASE} とした`);
           }
           bld = yenFloor(bld, qsub(ONE, qmul(Qn(3, 10), R)));
-          land = yenFloor(land, qsub(ONE, qmul(qmul(L, Qn(3, 10)), R)));
+          const L3 = qmul(L, Qn(3, 10));
+          // 空室がある（賃貸割合<1）とき、敷地のうち貸している部分 = 区分所有補正後の敷地利用権 × 賃貸割合 × (1 − 借地権割合 × 0.3)
+          if (qcmp(R, ONE) < 0) rented = { value: yenFloor(land, R, qsub(ONE, L3)), ratio: R };
+          land = yenFloor(land, qsub(ONE, qmul(L3, R)));
         }
         const v = bld + land;
         notes.push(`${c.label}：${cc.detail}；建物 ${fmt(bld)} 敷地 ${fmt(land)}${c.rented ? "（貸付）" : ""}`);
+        if (rented) notes.push(`${c.label}：敷地のうち貸している部分の価額 ${fmt(rented.value)}`);
         // 小規模宅地等は敷地利用権の部分だけ。面積は敷地利用権の面積
-        vals.push({ item: it, value: v, area: decQ(c.landShareSqm), smallOk: true });
+        vals.push({ item: it, value: v, area: decQ(c.landShareSqm), smallOk: true, rented });
         // 敷地の価額を後で使うため、value とは別に保存
         condoLand.set(it.id, land);
         break;
@@ -828,9 +913,12 @@ export function expected(s: Scenario): Expected {
   /** 小規模宅地等の判定用：財産ごとの取得者の持分 */
   const itemShare = new Map<string, Map<string, Q>>();
   let anyUndivided = false;
+  // 財産ごとに、分割で決まった持分（decided）と未分割の割合（rest）を決める
+  const plans: { v: ItemVal; decided: { who: string; f: Q; undiv: boolean }[]; rest: Q }[] = [];
   for (const v of vals) {
     const it = v.item;
-    let parts: { who: string; f: Q; undiv: boolean }[] = [];
+    let decided: { who: string; f: Q; undiv: boolean }[] = [];
+    let rest = ONE;
     const listed = agreed?.shares[it.id] ?? [];
     if (agreed && listed.length > 0) {
       let sum = ZERO;
@@ -841,24 +929,48 @@ export function expected(s: Scenario): Expected {
         }
         if (byId.get(e.who)?.renounced) notes.push(`${it.label}：放棄した${nameOf(e.who)}が取得（遺贈によるものとして扱う）`);
         const f = Qn(BigInt(Math.trunc(e.n)), BigInt(Math.trunc(e.d)));
-        parts.push({ who: e.who, f, undiv: false });
+        decided.push({ who: e.who, f, undiv: false });
         sum = qadd(sum, f);
       }
       if (qcmp(sum, ONE) > 0) {
         notes.push(`${it.label}：取得割合の合計が1を超える（${qstr(sum)}）ので按分し直した`);
-        parts = parts.map((p) => ({ ...p, f: qdiv(p.f, sum) }));
-      } else if (qcmp(sum, ONE) < 0) {
-        const rest = qsub(ONE, sum);
-        notes.push(`${it.label}：${qstr(rest)} が未分割（法定相続分で按分）`);
-        for (const lp of legalParts()) parts.push({ who: lp.who, f: qmul(rest, lp.f), undiv: true });
+        decided = decided.map((p) => ({ ...p, f: qdiv(p.f, sum) }));
+        sum = ONE;
       }
+      rest = qsub(ONE, sum);
+      if (qcmp(rest, ZERO) > 0) notes.push(`${it.label}：${qstr(rest)} が未分割`);
       const m = new Map<string, Q>();
-      for (const p of parts) if (!p.undiv) m.set(p.who, qadd(m.get(p.who) ?? ZERO, p.f));
+      for (const p of decided) m.set(p.who, qadd(m.get(p.who) ?? ZERO, p.f));
       itemShare.set(it.id, m);
-    } else {
-      if (agreed) notes.push(`${it.label}：分け方の記載がない（未分割として法定相続分で按分）`);
-      parts = legalParts();
+    } else if (agreed) notes.push(`${it.label}：分け方の記載がない（未分割）`);
+    plans.push({ v, decided, rest });
+  }
+  // 未分割の部分の分け方（相続税法55条）。一部だけ分けたときは 穴埋め方式：
+  //   T = 分割の対象になる財産（小規模宅地等の前の価額）の合計、D = 各人が分割で取得した価額、L = 民法の法定相続分、
+  //   不足額 = T × L − D（0未満は0）。未分割の部分は不足額の割合で分ける。何も分けていなければ法定相続分
+  const memberIdx = new Map(ms.map((m, i) => [m.id, i]));
+  const heirOrder = [...civilShares].filter(([, q]) => q.n > 0n).sort((a, b) => memberIdx.get(a[0])! - memberIdx.get(b[0])!);
+  let undivWeights: { who: string; w: Q }[] = heirOrder.map(([who, q]) => ({ who, w: q }));
+  if (plans.some((p) => qcmp(p.rest, ZERO) > 0) && plans.some((p) => p.decided.length > 0)) {
+    const T = plans.reduce((x, p) => x + p.v.value, 0);
+    const D = new Map<string, Q>();
+    for (const p of plans) for (const d of p.decided) D.set(d.who, qadd(D.get(d.who) ?? ZERO, qmul(Qn(p.v.value), d.f)));
+    const ws = heirOrder.map(([who, q]) => {
+      const e = qsub(qmul(Qn(T), q), D.get(who) ?? ZERO);
+      return { who, w: qcmp(e, ZERO) > 0 ? e : ZERO };
+    });
+    const sw = ws.reduce((x, w) => qadd(x, w.w), ZERO);
+    if (sw.n > 0n) {
+      undivWeights = ws.filter((w) => w.w.n > 0n).map((w) => ({ who: w.who, w: qdiv(w.w, sw) }));
+      notes.push(
+        `一部未分割（穴埋め方式）：分割対象の合計 ${fmt(T)}、未分割の部分の割合 ${undivWeights.map((w) => `${nameOf(w.who)} ${qstr(w.w)}`).join("、")}`,
+      );
     }
+  }
+  for (const { v, decided, rest } of plans) {
+    const it = v.item;
+    const parts = [...decided];
+    if (qcmp(rest, ZERO) > 0) for (const w of undivWeights) parts.push({ who: w.who, f: qmul(rest, w.w), undiv: true });
     if (parts.some((p) => p.undiv)) anyUndivided = true;
     for (const r of splitValue(v.value, parts)) {
       const a = acc(r.who);
@@ -909,18 +1021,30 @@ export function expected(s: Scenario): Expected {
     }
   }
 
-  /* ---------- 6. 代償分割（相基通11の2-9 の原則的な方法） ---------- */
+  /* ---------- 6. 代償分割（相基通11の2-9・11の2-10） ---------- */
   if (agreed?.compensation) {
     for (const c of agreed.compensation) {
       if (!validPerson(c.from) || !validPerson(c.to)) {
         notes.push(`代償金 ${c.from}→${c.to}：当事者が見つからない（無視）`);
         continue;
       }
-      acc(c.from).compPaid += Math.trunc(c.amount);
+      // 代償金を払う人が分割で遺産を何も取得していなければ、代償分割として扱えない（贈与などの検討が要る）
+      const payerGot = [...itemShare.values()].some((m) => (m.get(c.from)?.n ?? 0n) > 0n);
+      if (!payerGot) addOos("代償金を払う人が分割で遺産を取得していない");
+      let amt = Math.trunc(c.amount);
+      if (c.basis) {
+        // 相基通11の2-10(2)：代償金の額を特定の財産の時価をもとに決めたとき、代償金 × その財産の相続税評価額 ÷ 時価（円未満切捨て）
+        const bv = vals.find((x) => x.item.id === c.basis!.item);
+        if (bv && c.basis.marketValue > 0) {
+          amt = yenFloor(c.amount, Qn(bv.value, Math.trunc(c.basis.marketValue)));
+          notes.push(`代償金 ${fmt(c.amount)}：${bv.item.label}の時価 ${fmt(c.basis.marketValue)} をもとに決めたので × 評価額 ${fmt(bv.value)} ÷ 時価 = ${fmt(amt)}`);
+        } else notes.push(`代償金 ${c.from}→${c.to}：もとにした財産 ${c.basis.item} が見つからない（額面で計算）`);
+      }
+      acc(c.from).compPaid += amt;
       const r = acc(c.to);
-      r.compRecv += Math.trunc(c.amount);
+      r.compRecv += amt;
       r.acquired = true;
-      notes.push(`代償金：${nameOf(c.from)}→${nameOf(c.to)} ${fmt(c.amount)}`);
+      notes.push(`代償金：${nameOf(c.from)}→${nameOf(c.to)} ${fmt(amt)}`);
     }
     for (const a of accs.values()) a.divided += a.compRecv - a.compPaid;
   }
@@ -1035,13 +1159,13 @@ export function expected(s: Scenario): Expected {
     let shareValue = yenFloor(landValue, f);
     let shareArea = qmul(v.area, f);
     // 貸付事業用で空室がある（賃貸割合<1）とき：貸付事業に使っている部分だけが対象（措通69の4-24の2。一時的な空室は賃貸割合に含めて入力する）。
-    // 対象の面積 = 持分の面積 × 賃貸割合（0.01㎡未満切捨て）、価額 = 持分の価額 × 対象の面積 / 持分の面積（円未満切捨て）
-    const rr = it.type === "condo" ? (it as CondoExt).rentRatio : it.use === "rentedHouse" ? it.rentRatio : undefined;
-    if (sl.kind === "rental" && rr !== undefined && qcmp(ratioQ(rr), ONE) < 0) {
-      const rented = Qn(qfloor(qmul(qmul(shareArea, ratioQ(rr)), Qn(100))), 100);
-      shareValue = yenFloor(shareValue, qdiv(rented, shareArea));
-      notes.push(`${it.label}：貸付事業用は貸している部分（賃貸割合 ${qstr(ratioQ(rr))}）の ${qnum(rented)}㎡だけ`);
-      shareArea = rented;
+    // 対象の価額 = 貸している部分の価額（自用地 × 賃貸割合 × (1 − 借地権割合 × 0.3) など）× 持分（円未満切捨て）、
+    // 対象の面積 = 持分の面積 × 賃貸割合（0.01㎡未満切捨て）。空室の部分は自用地（借地権）のまま特例の外（情報 平成22.7.13 06）
+    if (sl.kind === "rental" && v.rented) {
+      const rentedArea = Qn(qfloor(qmul(qmul(shareArea, v.rented.ratio), Qn(100))), 100);
+      shareValue = yenFloor(v.rented.value, f);
+      notes.push(`${it.label}：貸付事業用は貸している部分（賃貸割合 ${qstr(v.rented.ratio)}）の ${qnum(rentedArea)}㎡・${fmt(shareValue)}円だけ`);
+      shareArea = rentedArea;
     }
     cands.push({ itemId: it.id, label: it.label, kind: sl.kind, acquirer: sl.acquirer, shareArea, shareValue });
   }
@@ -1130,11 +1254,12 @@ export function expected(s: Scenario): Expected {
       rem.set(sp.id, rem.get(sp.id)! - sp.spouseRelief);
     }
     // 19条の3・19条の4：未成年者控除・障害者控除（15条2項の相続人で、財産を取得した人）
-    const kin = (id: string): boolean => byId.get(id)?.relation !== "other";
     let transferred = 0;
     const transferExcess = (excess: number, from: string, field: "minor" | "disabled"): void => {
-      // 控除しきれない分は扶養義務者の相続税額から控除（施行令4条の3 等：協議がなければ相続税額の比で按分）
-      const pool = persons.filter((q) => q.id !== from && kin(q.id) && (rem.get(q.id) ?? 0) > 0);
+      // 控除しきれない分は扶養義務者の相続税額から控除（施行令4条の3 等：協議がなければ相続税額の比で按分）。
+      // 扶養義務者は、その人の配偶者・直系血族・兄弟姉妹（相基通1の2-1）。生計を一にする三親等内の親族などは数えない
+      const ben = byId.get(from)!;
+      const pool = persons.filter((q) => q.id !== from && isSupporter(ben, byId.get(q.id)!) && (rem.get(q.id) ?? 0) > 0);
       if (excess <= 0 || pool.length === 0) return;
       const sum = pool.reduce((x, q) => x + rem.get(q.id)!, 0);
       transferred += Math.min(sum, excess);
@@ -1168,8 +1293,30 @@ export function expected(s: Scenario): Expected {
         if (!hypAll.has(p.id) || !accs.get(p.id)?.acquired) continue;
         const age = m.unborn ? 0 : ageAt(m.birthDate, death);
         let amt = 0;
-        if (field === "minor" && age < 18) amt = 100_000 * (18 - age);
-        if (field === "disabled" && m.disability && age < 85) amt = (m.disability === "special" ? 200_000 : 100_000) * (85 - age);
+        if (field === "minor" && age < 18) {
+          amt = 100_000 * (18 - age);
+          // 19条の3第3項：前の相続でも控除を受けたときは、最初の相続のときの控除額 − すでに控除を受けた額 まで。
+          // 最初の相続のときの控除額は、今回の相続が令和4年4月1日以後なら、そのときの年齢から18歳までの年数×10万円（相基通19の3-5（注））
+          const pc = m.priorMinorCredit;
+          if (pc) {
+            const first = 100_000 * Math.max(0, 18 - ageAt(m.birthDate, pc.date));
+            const cap = Math.max(0, first - Math.trunc(pc.amount));
+            if (cap < amt) noteOnce(`${m.name}：前の相続でも未成年者控除を受けた（最初 ${fmt(first)} − 控除済み ${fmt(pc.amount)}）→ ${fmt(cap)} まで`);
+            amt = Math.min(amt, cap);
+          }
+        }
+        if (field === "disabled" && m.disability && age < 85) {
+          const per = m.disability === "special" ? 200_000 : 100_000;
+          amt = per * (85 - age);
+          // 19条の4第3項（19条の3第3項の準用）：前の相続のときも同じ区分だったものとして、最初の相続のときの年齢から85歳までの年数で計算
+          const pc = m.priorDisabilityCredit;
+          if (pc) {
+            const first = per * Math.max(0, 85 - ageAt(m.birthDate, pc.date));
+            const cap = Math.max(0, first - Math.trunc(pc.amount));
+            if (cap < amt) noteOnce(`${m.name}：前の相続でも障害者控除を受けた（最初 ${fmt(first)} − 控除済み ${fmt(pc.amount)}）→ ${fmt(cap)} まで`);
+            amt = Math.min(amt, cap);
+          }
+        }
         if (amt === 0) continue;
         const use = Math.min(amt, rem.get(p.id)!);
         p[field] += use;
@@ -1202,7 +1349,8 @@ export function expected(s: Scenario): Expected {
     let net = 0;
     for (const p of persons) {
       const t = rem.get(p.id)!;
-      const st = accs.get(p.id)?.settlementTax ?? 0;
+      // ⑰ 相続時精算課税分の贈与税額控除額：その人が納めた精算課税の贈与税の合計（100円未満切捨て。第1表⑰の欄は百円単位）
+      const st = floor100(accs.get(p.id)?.settlementTax ?? 0);
       p.settlementCredit = st;
       const after = t - st;
       if (after >= 0) p.payable = floor100(after);
@@ -1261,11 +1409,15 @@ export function expected(s: Scenario): Expected {
     );
   if (fin.transferred > 0)
     notes.push(
-      `未成年者・障害者控除の控除しきれない分 ${fmt(fin.transferred)} を扶養義務者（親族）の税額から相続税額の比で控除した`,
+      `未成年者・障害者控除の控除しきれない分 ${fmt(fin.transferred)} を扶養義務者（配偶者・直系血族・兄弟姉妹）の税額から相続税額の比で控除した`,
     );
   if (cands.length > 0 && chosen.length === 0) notes.push("小規模宅地等：使っても税額が変わらないため選ばなかった");
 
-  const filingRequired = base.totalTaxable > basic;
+  // 申告が要る：課税価格の合計が基礎控除を超える（特例を使って0円になる場合を含む）、
+  // または精算課税の贈与税を引ききれず還付を受ける（還付は申告書を出さないと受けられない。33条の2）
+  const refundOnly = base.totalTaxable <= basic && fin.persons.some((p) => p.refund > 0);
+  if (refundOnly) notes.push("基礎控除以下だが、相続時精算課税の贈与税の還付を受けるため申告する");
+  const filingRequired = base.totalTaxable > basic || refundOnly;
   return {
     computable: oos.length === 0,
     outOfScope: oos.length ? oos.join(" / ") : undefined,

@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { Button, Card, Check, Field, Note, Select, YenInput, fmt } from "@/components/ui";
 import { civilHeirIds, determineHeirs } from "@/domain/heirs";
-import type { Allocation, Compensation, Person } from "@/domain/types";
-import { isAllocated } from "@/lib/progress";
+import type { Allocation, Case, Compensation, Person } from "@/domain/types";
+import { divisibleAssets, isAllocated } from "@/lib/progress";
 import { useCase } from "@/lib/store";
 import { kindLabel } from "./AssetsStep";
 
@@ -17,6 +17,21 @@ function parseShare(s: string): { n: number; d: number } | null {
   if (/^\d+$/.test(t)) return { n: Number(t), d: 1 };
   return null;
 }
+/**
+ * 「すべて法定相続分どおりに分けると決めた」：遺産分割協議で決めた分け方として、分ける財産すべてに法定相続分を入れる。
+ * 決まった分け方になるので、「分け方がまだ決まっていない」のチェックは外す
+ */
+export function legalShareDivision(c: Case): Case {
+  let civil: ReturnType<typeof determineHeirs>;
+  try {
+    civil = determineHeirs(c.persons, "civil");
+  } catch {
+    return c; // 相続人の入力途中は何も変えない
+  }
+  const shares = [...civil.byPerson].map(([personId, f]) => ({ personId, numerator: Number(f.n), denominator: Number(f.d) }));
+  return { ...c, undivided: undefined, allocations: divisibleAssets(c).map((a) => ({ assetId: a.id, shares })) };
+}
+
 const shareText = (s?: { numerator: number; denominator: number }) => (!s ? "" : s.denominator === 1 ? `${s.numerator}` : `${s.numerator}/${s.denominator}`);
 
 function ShareCell({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
@@ -47,19 +62,16 @@ export function DivisionStep() {
     }
   })();
 
-  const byLegalShare = () => {
-    const civil = determineHeirs(data.persons, "civil");
-    const shares = [...civil.byPerson].map(([personId, f]) => ({ personId, numerator: Number(f.n), denominator: Number(f.d) }));
-    update((c) => ({ ...c, allocations: divisible.map((a) => ({ assetId: a.id, shares })) }));
-  };
-
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-stone-600">財産を1件ずつ、誰が受け取るかを選んでください。</p>
-        <Button variant="secondary" onClick={byLegalShare}>
-          すべて法定相続分どおりにする
-        </Button>
+        {/* 決まった分け方として計算される（配偶者の税額軽減・小規模宅地等の特例も使う）ので、「まだ決まっていない」のときは出さない */}
+        {!data.undivided && (
+          <Button variant="secondary" onClick={() => update(legalShareDivision)}>
+            すべて法定相続分どおりに分けると決めた
+          </Button>
+        )}
       </div>
       <Check
         checked={!!data.undivided}
@@ -116,7 +128,7 @@ function AssetChoice({ no, assetId, heirs, evenHeirs }: { no: number; assetId: s
   const derived: ChoiceMode | null = shares.length === 0 ? (alloc ? "undecided" : null) : shares.length === 1 && shares[0].numerator === shares[0].denominator ? "one" : "many";
   const [picked, setPicked] = useState<ChoiceMode | null>(null);
   // 選んだ分け方は、保存されている内容と食い違わないときだけ使う
-  // （「すべて法定相続分どおりにする」などで中身が変わったら、中身のほうを表示する）
+  // （「すべて法定相続分どおりに分けると決めた」などで中身が変わったら、中身のほうを表示する）
   const fits = (m: ChoiceMode) => m === "many" || shares.length === 0 || m === derived;
   const mode = picked && fits(picked) ? picked : derived;
   const total = shares.reduce((s, x) => s + x.numerator / x.denominator, 0);
@@ -221,12 +233,18 @@ function AssetChoice({ no, assetId, heirs, evenHeirs }: { no: number; assetId: s
 
 /** 代償金：財産を多く受け継いだ人が、ほかの人にお金を払う（代償分割）。入れたものがあれば開いておく */
 function CompensationList({ living }: { living: Person[] }) {
-  const { data, update } = useCase();
+  const { data, update, result } = useCase();
   const rows = data.compensation ?? [];
   const [open, setOpen] = useState(rows.length > 0);
   const isLiving = (id: string) => living.some((p) => p.id === id);
   const options = [{ value: "", label: "選んでください" }, ...living.map((p) => ({ value: p.id, label: p.name || "（名前未入力）" }))];
+  // 代償金の額のもとにできる財産（分け方を決める財産）
+  const bases = divisibleAssets(data);
+  const isBase = (id: string) => bases.some((a) => a.id === id);
+  const baseOptions = [{ value: "", label: "選んでください" }, ...bases.map((a) => ({ value: a.id, label: a.label || "（名称未入力）" }))];
   const set = (i: number, p: Partial<Compensation>) => update((c) => ({ ...c, compensation: (c.compensation ?? []).map((x, j) => (j === i ? { ...x, ...p } : x)) }));
+  const setBasis = (i: number, p: Partial<NonNullable<Compensation["basis"]>>) =>
+    update((c) => ({ ...c, compensation: (c.compensation ?? []).map((x, j) => (j === i ? { ...x, basis: { assetId: "", marketValue: 0, ...x.basis, ...p } } : x)) }));
   const remove = (i: number) => update((c) => ({ ...c, compensation: (c.compensation ?? []).filter((_, j) => j !== i) }));
   const add = () => update((c) => ({ ...c, compensation: [...(c.compensation ?? []), { fromId: "", toId: "", amount: 0 }] }));
   const incomplete = rows.some((x) => !isLiving(x.fromId) || !isLiving(x.toId) || x.fromId === x.toId || !(x.amount > 0));
@@ -250,6 +268,14 @@ function CompensationList({ living }: { living: Person[] }) {
             <Button variant="danger" onClick={() => remove(i)}>
               削除
             </Button>
+            <CompensationBasis
+              basis={x.basis}
+              baseOk={!!x.basis && isBase(x.basis.assetId)}
+              options={baseOptions}
+              value={result?.compensation?.[i]?.value}
+              onToggle={(v) => set(i, { basis: v ? { assetId: "", marketValue: 0 } : undefined })}
+              onChange={(p) => setBasis(i, p)}
+            />
           </div>
         ))}
         <Button variant="secondary" onClick={add}>
@@ -258,5 +284,47 @@ function CompensationList({ living }: { living: Person[] }) {
         {incomplete && <Note tone="warn">払う人と受け取る人（別の人）、金額を入れてください。入れるまで相続税の計算を確定できません。</Note>}
       </div>
     </details>
+  );
+}
+
+/**
+ * 代償金の額を、特定の財産の時価をもとに決めたとき（相基通11の2-10(2)）。
+ * 課税価格に入れる額は 代償金 × その財産の相続税評価額 ÷ 時価 になる（計算は税額の計算のほうで行う）
+ */
+export function CompensationBasis({
+  basis,
+  baseOk,
+  options,
+  value,
+  onToggle,
+  onChange,
+}: {
+  basis: Compensation["basis"];
+  baseOk: boolean;
+  options: { value: string; label: string }[];
+  /** 課税価格に入れる額（計算できたとき） */
+  value?: number;
+  onToggle: (on: boolean) => void;
+  onChange: (p: Partial<NonNullable<Compensation["basis"]>>) => void;
+}) {
+  const ready = !!basis && baseOk && basis.marketValue > 0;
+  return (
+    <div className="space-y-2 sm:col-span-4">
+      <Check checked={!!basis} onChange={onToggle} label="特定の財産の時価をもとに金額を決めた" />
+      {basis && (
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Field label="もとにした財産">
+            <Select value={baseOk ? basis.assetId : ""} onChange={(v) => onChange({ assetId: v })} options={options} />
+          </Field>
+          <Field label="その財産の時価">
+            <YenInput value={basis.marketValue} onChange={(v) => onChange({ marketValue: v })} />
+          </Field>
+          <p className="text-xs text-stone-500 sm:col-span-2">
+            課税価格には 代償金 × 評価額 ÷ 時価 で入れます{ready && value != null && value > 0 ? `（${fmt(value)}円）` : ""}。
+            {!ready && <span className="ml-1 font-medium text-amber-800">もとにした財産と時価を入れてください。</span>}
+          </p>
+        </div>
+      )}
+    </div>
   );
 }

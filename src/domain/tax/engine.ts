@@ -11,11 +11,11 @@
  * 33条の2（引ききれない精算課税の贈与税の還付）、55条（未分割の財産は法定相続分で取得したものとして計算）、
  * 相続税法施行令4条の3（扶養義務者の相続税額から引く未成年者控除・障害者控除）、
  * 国税通則法118条（課税標準の1,000円未満切捨て）、119条（確定金額の100円未満切捨て）、
- * 相続税法基本通達 11の2-9（代償分割）、13-1（相続を放棄した人の葬式費用）、13-3（負担する人が決まっていない債務）、
- * 17-1（按分割合の端数調整）、
+ * 相続税法基本通達 1の2-1（扶養義務者）、11の2-9・11の2-10（代償分割と代償財産の価額）、13-1（相続を放棄した人の葬式費用）、
+ * 13-3（負担する人が決まっていない債務）、17-1（按分割合の端数調整）、19の3-5（以前の相続で受けた未成年者控除）、
  * 租税特別措置法69条の4（小規模宅地等の特例。2項 限度面積、4項 未分割の宅地には使えない）。
  */
-import { Fraction, ONE, frac, mul, mulYen, sub, sum } from "../fraction";
+import { Fraction, ONE, ZERO, add, div, frac, mul, mulYen, sub, sum } from "../fraction";
 import { HeirResult, determineHeirs, isSurchargeTarget } from "../heirs";
 import { floor100, floor1000 } from "../rounding";
 import type { Asset, Case, Debt, PriorGift, Person, SmallLandKind } from "../types";
@@ -106,6 +106,9 @@ export interface PersonTax {
   debts: number;
   debtOnly: number;
   funeralOnly: number;
+  /** debtOnly・funeralOnly のうち、負担する人が決まっていないため法定相続分で負担したものとした額（第13表の②⑤「確定していない」） */
+  debtsUnsettled: number;
+  funeralUnsettled: number;
   /** ④ 純資産価額（赤字は0） */
   net: number;
   /** 相続・遺贈（保険金・退職金・代償金・相続時精算課税の贈与を含む）で何かを受け取った（贈与の加算・未成年者控除などの前提） */
@@ -210,6 +213,8 @@ export interface TaxResult {
   undivided: boolean;
   /** 相次相続控除の計算（使うとき） */
   successive?: SuccessiveDetail;
+  /** 代償金ごとの、課税価格に入れた額（value。時価をもとに決めたときは 代償金×評価額÷時価、それ以外は amount と同じ） */
+  compensation: { fromId: string; toId: string; amount: number; value: number }[];
   insuranceExemptLimit: number;
   retirementExemptLimit: number;
   /** 自動完結できない事項（税理士相談が必要） */
@@ -262,6 +267,49 @@ function splitParts(amount: number, parts: SharePart[], rest: "first" | "largest
   }
   out[k] += diff;
   return out;
+}
+
+/** 亡くなった方の子（養子を含む）か、先に亡くなった子・孫の代わりに相続する孫・ひ孫（代襲相続人） */
+function isDescendant(p: Person): boolean {
+  return p.relation === "child" || p.relation === "adoptedChild" || ((p.relation === "grandchild" || p.relation === "greatGrandchild") && !!p.substituteOf);
+}
+
+/** b が a の配偶者・直系血族・兄弟姉妹であると、亡くなった方との続柄から確かに言えるか（片方向） */
+function kinOneWay(a: Person, b: Person): boolean {
+  const ascendant = b.relation === "parent" || b.relation === "grandparent";
+  switch (a.relation) {
+    case "child":
+    case "adoptedChild":
+      // 亡くなった方の子どうしは兄弟姉妹（養子も養親の子と兄弟姉妹になる。民法727条）。父母・祖父母は直系尊属
+      return b.relation === "spouse" || b.relation === "child" || b.relation === "adoptedChild" || ascendant;
+    case "grandchild":
+    case "greatGrandchild":
+      if (!a.substituteOf) return false;
+      // 同じ人の代わりに相続する人どうしは兄弟姉妹。ほかの子は、おじ・おばなので入れない
+      return b.relation === "spouse" || ((b.relation === "grandchild" || b.relation === "greatGrandchild") && b.substituteOf === a.substituteOf) || ascendant;
+    case "spouse":
+      return isDescendant(b);
+    case "parent":
+      // 父母どうしは夫婦として数える。父母の両方を同じくする兄弟姉妹は父母の子
+      return b.relation === "parent" || (b.relation === "sibling" && !b.halfBlood);
+    case "sibling":
+      return (b.relation === "sibling" && (!a.halfBlood || !b.halfBlood)) || (b.relation === "parent" && !a.halfBlood);
+    case "nephewNiece":
+      return b.relation === "nephewNiece" && !!a.substituteOf && b.substituteOf === a.substituteOf;
+    default:
+      return false;
+  }
+}
+
+/**
+ * 未成年者控除・障害者控除の引ききれない分を引ける扶養義務者か（相続税法19条の3第2項・19条の4第3項、相基通1の2-1）。
+ * 扶養義務者は配偶者・直系血族・兄弟姉妹と、生計を一にする3親等内の親族など。相続コンパスは続柄から確かに言える
+ * 配偶者・直系血族・兄弟姉妹だけを数え、おじ・おば・いとこ・配偶者の親族・相続人でない受遺者は入れない（生計を一にしていたかは聞いていない）。
+ * 亡くなった方の配偶者は、亡くなった方の子全員の親（代襲相続人の祖父母）とする。直系血族は向きを問わないので両方向で調べる
+ */
+export function isSupporter(a: Person, b: Person): boolean {
+  if (a.id === b.id || a.relation === "other" || b.relation === "other") return false;
+  return kinOneWay(a, b) || kinOneWay(b, a);
 }
 
 /** 非課税限度額を受取額の比で各相続人に按分（相続税法12条1項5号・6号） */
@@ -544,6 +592,20 @@ function compute(
     kind: SmallLandKind;
   }[] = [];
   const allocateHint = "申告期限までに分け方が決まらないときは、遺産の分け方の画面で「分け方がまだ決まっていない」にチェックを入れてください（法定相続分で受け継いだものとして計算します）。";
+  // 1回目：財産ごとに評価し、分け方で決まった割合（decided）と決まっていない割合（undecided）を調べる
+  type Plan =
+    | { a: Asset; valuation: Valuation; receipt: true }
+    | {
+        a: Asset;
+        valuation: Valuation;
+        receipt: false;
+        label: string;
+        valid: { personId: string; numerator: number; denominator: number }[];
+        decided: SharePart[];
+        undecided: Fraction;
+        rest: "first" | "largest" | "none";
+      };
+  const plans: Plan[] = [];
   for (const a of c.assets) {
     if (a.foreign) blockers.push(`「${a.label}」は国外財産です。国外財産がある相続は税理士にご相談ください。`);
     const valuation = valueOf(a);
@@ -557,9 +619,7 @@ function compute(
         // 受取人がいないと金額がどこにも集計されず課税価格から消えるため、確定させない
         blockers.push(`「${a.label || (a.kind === "insurance" ? "死亡保険金" : "死亡退職金")}」の受取人が選ばれていません。財産の画面で受取人を選んでください。`);
       }
-      const m = a.kind === "insurance" ? insuranceBy : retirementBy;
-      addTo(m, a.recipientId, valuation.value);
-      assetLines.push({ asset: a, valuation, reduction: 0, byPerson: [{ personId: a.recipientId, amount: valuation.value }] });
+      plans.push({ a, valuation, receipt: true });
       continue;
     }
     const label = `「${a.label || "名称未入力の財産"}」`;
@@ -567,12 +627,13 @@ function compute(
     const valid = shares.filter((s) => Number.isInteger(s.numerator) && Number.isInteger(s.denominator) && s.numerator > 0 && s.denominator > 0 && living.has(s.personId));
     const total = sum(valid.map((s) => frac(s.numerator, s.denominator)));
     const over = sub(total, ONE).n;
-    let parts: SharePart[] = valid.map((s) => ({ personId: s.personId, f: frac(s.numerator, s.denominator), undivided: false }));
+    const decided: SharePart[] = valid.map((s) => ({ personId: s.personId, f: frac(s.numerator, s.denominator), undivided: false }));
+    let undecided = ZERO;
     let rest: "first" | "largest" | "none" = "none";
     if (shares.length === 0) {
       if (c.undivided) {
-        // 未分割：民法の法定相続分で取得したものとして計算する（相続税法55条）
-        parts = legalParts;
+        // 未分割：法定相続分で取得したものとして計算する（相続税法55条）
+        undecided = ONE;
         rest = "largest";
       } else {
         blockers.push(`${label}を受け継ぐ人が決まっていません。遺産の分け方で取得者を決めてください。${allocateHint}`);
@@ -585,9 +646,8 @@ function compute(
       blockers.push(`${label}の取得割合の合計が1になっていません（いま ${Math.round(shareSum * 10000) / 100}%）。遺産の分け方を確認してください。`);
     } else if (over < 0n) {
       if (c.undivided) {
-        // 一部だけ決まっている：残りの割合を法定相続分で取得したものとする
-        const restShare = sub(ONE, total);
-        parts = [...parts, ...legalParts.map((lp) => ({ ...lp, f: mul(restShare, lp.f) }))];
+        // 一部だけ決まっている：残りの割合を、決まっていない部分として法定相続分で分ける
+        undecided = sub(ONE, total);
         rest = "largest";
       } else {
         const pct = Math.round((Number(total.n) / Number(total.d)) * 10000) / 100;
@@ -596,6 +656,52 @@ function compute(
     } else {
       rest = "first";
     }
+    plans.push({ a, valuation, receipt: false, label, valid, decided, undecided, rest });
+  }
+
+  // 未分割の部分の分け方（相続税法55条・相基通55-1。穴埋め方式）：分ける対象の財産全体（評価額。小規模宅地等の前）を
+  // 法定相続分で分けた額から、分け方で決まった財産の額を引き、その残り（足りない額。マイナスは0）の割合で、決まっていない部分を分ける。
+  // 相続人でない人が遺言などで受け取ると決まった部分は、相続人で分ける財産に入れない。何も決まっていなければ法定相続分そのもの
+  const undividedSplit = (() => {
+    if (!c.undivided || !plans.some((pl) => !pl.receipt && pl.undecided.n > 0n)) return () => [] as SharePart[];
+    const heirIds = new Set(legalParts.map((lp) => lp.personId));
+    let estate = ZERO;
+    const got = new Map<string, Fraction>();
+    for (const pl of plans) {
+      if (pl.receipt) continue;
+      const V = frac(Math.max(0, pl.valuation.value));
+      estate = add(estate, V);
+      for (const p of pl.decided) {
+        const v = mul(V, p.f);
+        if (heirIds.has(p.personId)) got.set(p.personId, add(got.get(p.personId) ?? ZERO, v));
+        else estate = sub(estate, v);
+      }
+    }
+    const short = legalParts.map((lp) => {
+      const e = sub(mul(estate, lp.f), got.get(lp.personId) ?? ZERO);
+      return e.n > 0n ? e : ZERO;
+    });
+    const W = sum(short);
+    const weights = W.n > 0n ? short.map((e) => div(e, W)) : legalParts.map((lp) => lp.f);
+    return (u: Fraction) =>
+      legalParts.flatMap((lp, i) => {
+        const f = mul(u, weights[i]);
+        return f.n > 0n ? [{ ...lp, f }] : [];
+      });
+  })();
+
+  // 2回目：取得者ごとの価額と小規模宅地等の特例
+  for (const pl of plans) {
+    const { a, valuation } = pl;
+    if (pl.receipt) {
+      if (a.kind !== "insurance" && a.kind !== "retirement") continue;
+      const m = a.kind === "insurance" ? insuranceBy : retirementBy;
+      addTo(m, a.recipientId, valuation.value);
+      assetLines.push({ asset: a, valuation, reduction: 0, byPerson: [{ personId: a.recipientId, amount: valuation.value }] });
+      continue;
+    }
+    const { label, valid, rest } = pl;
+    const parts: SharePart[] = pl.undecided.n > 0n ? [...pl.decided, ...undividedSplit(pl.undecided)] : pl.decided;
     const amounts = splitParts(valuation.value, parts, rest);
     const byPerson: { personId: string; amount: number }[] = [];
     const undivided: { personId: string; amount: number }[] = [];
@@ -651,14 +757,24 @@ function compute(
     }
     let area = (fullArea * share.numerator) / share.denominator;
     // 貸付事業用：空室（一時的なものを除く）の部分は貸付事業に使っていないので対象外（措置法通達69の4-24の2）。
-    // 貸している部分の面積＝面積×賃貸割合（0.01㎡未満切捨て）、価額＝評価額×貸している部分の面積÷面積
-    const rent4 = kind === "rental" && (a.kind === "condo" || a.use === "rentedHouse") ? ratio4(a.rentRatio ?? 1) : 10000;
+    // 貸している部分の面積＝面積×賃貸割合（0.01㎡未満切捨て）。価額は、全体の評価額を面積で割るのではなく、
+    // 貸している部分だけを貸家建付地（貸家建付借地権）として評価した額（valuation.rentedLandPart）×取得者の持分
+    // （国税庁 情報「貸家建付地等の一部が空室の場合」の設例：空いている部分は自用地として評価し、特例の対象にしない）
+    const rent4 =
+      kind === "rental" && (a.kind === "condo" || a.use === "rentedHouse" || a.use === "rentedLeasehold") ? ratio4(a.rentRatio ?? 1) : 10000;
     if (rent4 > 0 && rent4 < 10000 && area > 0) {
       const area100 = Math.round(area * 100);
       const rented100 = Number((BigInt(area100) * BigInt(rent4)) / 10000n);
-      landPart = Number((BigInt(Math.max(0, landPart)) * BigInt(rented100)) / BigInt(area100));
+      const rentedLand = valuation.rentedLandPart;
+      landPart =
+        rentedLand !== undefined && Number.isSafeInteger(rentedLand)
+          ? Number((BigInt(Math.max(0, rentedLand)) * BigInt(share.numerator)) / BigInt(share.denominator))
+          : // 貸している部分の評価額が分からないとき（ふつうは起きない）は、これまでどおり面積の割合で分ける
+            Number((BigInt(Math.max(0, landPart)) * BigInt(rented100)) / BigInt(area100));
       area = rented100 / 100;
-      warnings.push(`${label}は空き部屋があるため、小規模宅地等の特例（貸付事業用）は貸している部分（面積の${ratioText(rent4)}）だけに使っています。`);
+      warnings.push(
+        `${label}は空き部屋があるため、小規模宅地等の特例（貸付事業用）は貸している部分（面積の${ratioText(rent4)}）だけに使っています（空いている部分は、貸していない土地として評価します）。`,
+      );
     }
     if (!(area > 0)) {
       // 面積が分からないと、限度面積までの減額を計算できない
@@ -707,12 +823,15 @@ function compute(
   // 債務・葬式費用は、負担する人ごとの金額の合計が債務の額と一致するまで確定しない。
   // 分け方が決まっていない（未分割）ときに負担する人を入れていない債務は、法定相続分で負担したものとする（相基通13-3）
   const bearersOf = new Map<Debt, { personId: string; amount: number }[]>();
+  /** 法定相続分で負担したものとした債務（第13表の②⑤「負担することが確定していない」） */
+  const unsettledDebts = new Set<Debt>();
   const debtsByLegal: string[] = [];
   for (const d of c.debts) {
     const borne = d.bearers.reduce((acc, b) => acc + b.amount, 0);
     if (c.undivided && borne === 0 && d.amount > 0 && legalParts.length > 0) {
       const amounts = splitParts(d.amount, legalParts, "largest");
       bearersOf.set(d, legalParts.map((p, i) => ({ personId: p.personId, amount: amounts[i] })));
+      unsettledDebts.add(d);
       debtsByLegal.push(`「${d.label || (d.kind === "debt" ? "債務" : "葬式費用")}」`);
       continue;
     }
@@ -733,29 +852,57 @@ function compute(
   const insEx = allocateExempt(insuranceExemptLimit, insuranceBy, civil);
   const retEx = allocateExempt(retirementExemptLimit, retirementBy, civil);
 
-  // 代償金（相基通11の2-9 の原則）：払う人の取得財産の価額から引き、受け取る人の取得財産の価額に足す
+  // 代償金（相基通11の2-9）：払う人の取得財産の価額から引き、受け取る人の取得財産の価額に足す。
+  // 代償金の額を特定の財産の時価をもとに決めたときは、代償金 × その財産の相続税評価額 ÷ 時価（1円未満切捨て）を足し引きする（相基通11の2-10(2)）
   const compIn = new Map<string, number>();
   const compOut = new Map<string, number>();
+  const compensation: TaxResult["compensation"] = [];
   (c.compensation ?? []).forEach((x, i) => {
     const what = `代償金（${i + 1}件目）`;
-    if (!Number.isSafeInteger(x.amount) || x.amount <= 0) {
+    const amountOk = Number.isSafeInteger(x.amount) && x.amount > 0;
+    let value = amountOk ? x.amount : 0;
+    let basisOk = true;
+    if (x.basis) {
+      const base = c.assets.find((a) => a.id === x.basis!.assetId && a.kind !== "insurance" && a.kind !== "retirement");
+      const market = x.basis.marketValue;
+      if (!base) {
+        basisOk = false;
+        blockers.push(`${what}の額を決めるもとにした財産が、財産の一覧に見つかりません。遺産の分け方の画面で、もとにした財産を選び直してください。`);
+      } else if (!Number.isSafeInteger(market) || !(market > 0)) {
+        basisOk = false;
+        blockers.push(`${what}の額を決めるもとにした「${base.label || "財産"}」の時価を、1円以上の整数で入れてください。`);
+      } else if (amountOk) {
+        value = Number((BigInt(x.amount) * BigInt(Math.max(0, valueOf(base).value))) / BigInt(market));
+      }
+    }
+    compensation.push({ fromId: x.fromId, toId: x.toId, amount: x.amount, value: basisOk ? value : 0 });
+    if (!amountOk) {
       blockers.push(`${what}の金額を、1円以上の整数で入れてください。`);
     } else if (!living.has(x.fromId) || !living.has(x.toId)) {
       blockers.push(`${what}を払う人と受け取る人を、相続人の一覧から選んでください。`);
     } else if (x.fromId === x.toId) {
       blockers.push(`${what}を払う人と受け取る人が同じ人になっています。遺産の分け方の画面で確かめてください。`);
-    } else {
-      addTo(compOut, x.fromId, x.amount);
-      addTo(compIn, x.toId, x.amount);
+    } else if (basisOk) {
+      addTo(compOut, x.fromId, value);
+      addTo(compIn, x.toId, value);
     }
   });
   for (const [id, out] of compOut) {
-    // 払う人が相続・遺贈で受け取る財産（分け方で受け継ぐ財産と保険金・退職金）より多い代償金は、自分の財産から払うことになる
-    const own = (dividedGross.get(id) ?? 0) + (insuranceBy.get(id) ?? 0) + (retirementBy.get(id) ?? 0);
-    if (own < out) {
-      const name = nameOf(id);
+    const name = nameOf(id);
+    const divided = dividedGross.get(id) ?? 0;
+    if (divided <= 0) {
+      // 代償分割は、遺産を受け継ぐ人が、その代わりにほかの相続人にお金などを払う分け方。遺産を受け継がない人が払うお金は代償金にならない
       blockers.push(
-        `${name}さんが払う代償金の合計（${yenText(out)}）が、${name}さんが受け継ぐ財産の評価額（${yenText(own)}）より多くなっています。代償金の額と遺産の分け方を確かめてください。代償金を土地などの時価をもとに決めたときは計算のしかたを変えられることがあるため、税理士にご相談ください。`,
+        `${name}さんは遺産の分け方で財産を受け継いでいないため、代償金を払う人にはなれません（遺産を受け継がない人が払うお金は、贈与として扱われることがあります）。払う人と遺産の分け方を確かめ、分からないときは税理士にご相談ください。`,
+      );
+      continue;
+    }
+    // 払う人が相続・遺贈で受け取る財産（分け方で受け継ぐ財産と、保険金・退職金の非課税の分を除いた額）より多い代償金は、自分の財産から払うことになる
+    const receipts = (insuranceBy.get(id) ?? 0) - (insEx.get(id) ?? 0) + (retirementBy.get(id) ?? 0) - (retEx.get(id) ?? 0);
+    const own = divided + Math.max(0, receipts);
+    if (own < out) {
+      blockers.push(
+        `${name}さんが払う代償金の合計（${yenText(out)}）が、${name}さんが受け継ぐ財産の評価額（${yenText(own)}${receipts > 0 ? "。保険金・退職金は非課税の分を除いた額" : ""}）より多くなっています。代償金の額と遺産の分け方を確かめてください。代償金を土地などの時価をもとに決めたときは、遺産の分け方の画面で、もとにした財産とその時価を入れてください（評価額に直して計算します）。`,
       );
     }
   }
@@ -806,6 +953,12 @@ function compute(
     }
     addTo(settleTax, g.personId, Math.max(0, Math.floor(g.giftTaxPaid || 0)));
   }
+  const oddGiftTax = c.priorGifts.flatMap((g, i) => (g.settlement && g.giftTaxPaid > 0 && g.giftTaxPaid % 100 !== 0 ? [i + 1] : []));
+  if (oddGiftTax.length) {
+    warnings.push(
+      `相続時精算課税の贈与（${oddGiftTax.map((n) => `${n}件目`).join("・")}）の納めた贈与税が100円単位になっていません。贈与税は100円未満を切り捨てた額なので、贈与税の申告書の控えで確かめてください（100円未満を切り捨てて計算しています）。`,
+    );
+  }
   const settlementOf = (id: string) => {
     let total = 0;
     for (const [year, amount] of settleByYear.get(id) ?? []) total += year >= 2024 ? Math.max(0, amount - SETTLEMENT_ANNUAL_DEDUCTION) : amount;
@@ -835,11 +988,19 @@ function compute(
       const settlementGifts = settlementOf(p.id);
       let debtOnly = 0;
       let funeralOnly = 0;
+      let debtsUnsettled = 0;
+      let funeralUnsettled = 0;
       for (const d of c.debts) {
+        const unsettled = unsettledDebts.has(d);
         for (const b of bearersOf.get(d) ?? []) {
           if (b.personId !== p.id) continue;
-          if (d.kind === "debt") debtOnly += b.amount;
-          else funeralOnly += b.amount;
+          if (d.kind === "debt") {
+            debtOnly += b.amount;
+            if (unsettled) debtsUnsettled += b.amount;
+          } else {
+            funeralOnly += b.amount;
+            if (unsettled) funeralUnsettled += b.amount;
+          }
         }
       }
       // 債務控除ができるのは相続人と包括受遺者だけ（相続税法13条1項）。
@@ -850,12 +1011,15 @@ function compute(
             warnings.push(`${p.name}さんは相続を放棄したため、債務は差し引けません（実際に負担した葬式費用は差し引けます）。`);
           }
           debtOnly = 0;
+          debtsUnsettled = 0;
         } else {
           blockers.push(
             `${p.name || "相続人でない人"}さんは相続人ではないため、負担した債務・葬式費用は差し引けません。遺言で財産の全部または「3分の1」などの割合で受け取る人（包括受遺者）なら差し引けますが、相続コンパスでは扱えないので税理士にご相談ください。そうでなければ、債務・葬式費用の画面で${p.name || "この方"}さんの負担分を、金額と負担する人から外してください。`,
           );
           debtOnly = 0;
           funeralOnly = 0;
+          debtsUnsettled = 0;
+          funeralUnsettled = 0;
         }
       }
       const debts = debtOnly + funeralOnly;
@@ -887,6 +1051,8 @@ function compute(
         debts,
         debtOnly,
         funeralOnly,
+        debtsUnsettled,
+        funeralUnsettled,
         net,
         acquiresSomething,
         age: ageAt(p.birthDate, deathDate),
@@ -908,7 +1074,8 @@ function compute(
         otherCredits: 0,
         totalCredits: 0,
         afterCredits: 0,
-        settlementCredit: settleTax.get(p.id) ?? 0,
+        // ⑰は100円未満を切り捨てた額（国税通則法119条。申告書の欄も下2桁が00で印刷されている）。⑲・㉑・㉒もこの額から計算する
+        settlementCredit: floor100(settleTax.get(p.id) ?? 0),
         payable: 0,
         refund: 0,
       } satisfies PersonTax;
@@ -994,11 +1161,12 @@ function compute(
     rem.set(p, rem.get(p)! - use);
     return use;
   };
-  // 本人から引ききれない分は、同じ相続で財産を受け取った扶養義務者（親族）の相続税額から引く（19条の3第2項・19条の4第3項）。
+  // 本人から引ききれない分は、同じ相続で財産を受け取った扶養義務者の相続税額から引く（19条の3第2項・19条の4第3項）。
+  // 扶養義務者は続柄から確かに言える人だけにする（isSupporter）。
   // 扶養義務者が2人以上なら、話し合いがなければ相続税額の割合で分ける（施行令4条の3）。端数はまず切り捨て、残りの1円ずつを家族の一覧の順に配る
-  const transferred: { from: PersonTax; kind: "minor" | "disability"; excess: number; used: number; to: string[] }[] = [];
+  const transferred: { from: PersonTax; kind: "minor" | "disability"; excess: number; used: number; to: PersonTax[]; othersLeft: boolean }[] = [];
   const transfer = (from: PersonTax, kind: "minor" | "disability", excess: number) => {
-    const pool = persons.filter((q) => q !== from && q.person.relation !== "other" && rem.get(q)! > 0);
+    const pool = persons.filter((q) => q !== from && isSupporter(from.person, q.person) && rem.get(q)! > 0);
     const total = pool.reduce((a, q) => a + rem.get(q)!, 0);
     const give = pool.map((q) => (total <= excess ? rem.get(q)! : Number((BigInt(excess) * BigInt(rem.get(q)!)) / BigInt(total))));
     if (total > excess) {
@@ -1015,18 +1183,52 @@ function compute(
         if (!moved) break;
       }
     }
-    const to: string[] = [];
+    const to: PersonTax[] = [];
     pool.forEach((q, i) => {
       if (give[i] <= 0) return;
       q.transfersIn.push({ fromId: from.person.id, kind, amount: give[i] });
       rem.set(q, rem.get(q)! - give[i]);
-      to.push(q.person.name || "家族");
+      to.push(q);
     });
-    transferred.push({ from, kind, excess, used: give.reduce((a, b) => a + b, 0), to });
+    // 扶養義務者と確かめられない人（おじ・おばなど）で、まだ相続税が残っている人がいるか
+    const othersLeft = persons.some((q) => q !== from && !pool.includes(q) && rem.get(q)! > 0);
+    transferred.push({ from, kind, excess, used: give.reduce((a, b) => a + b, 0), to, othersLeft });
+  };
+  // 以前の相続でも同じ控除を受けた人は、最初の相続のときに受けられた額から、これまでに受けた額（扶養義務者が引いた分を含む）を引いた残りが限度
+  // （相続税法19条の3第3項・19条の4第3項、相基通19の3-5）
+  const priorLimit = (p: PersonTax, kind: "minor" | "disability", normal: number): number => {
+    const pc = kind === "minor" ? p.person.priorMinorCredit : p.person.priorDisabilityCredit;
+    if (!pc) return normal;
+    const name = p.person.name || "この方";
+    const what = kind === "minor" ? "未成年者控除" : "障害者控除";
+    const amountOk = typeof pc.amount === "number" && Number.isFinite(pc.amount) && pc.amount >= 0;
+    if (!isValidISODate(pc.date) || !amountOk) {
+      blockers.push(
+        `${name}さんは以前の相続でも${what}を受けているため、今回の${what}が少なくなることがあります。計算には、最初に${what}を受けた相続が始まった日（前に亡くなった方が亡くなった日）と、これまでに受けた${what}の合計額（扶養義務者の相続税から引いた分を含む）が必要です。前の相続の申告書の控えを見て、相続人の画面で入れてください。`,
+      );
+      return normal;
+    }
+    if (!(pc.date! < deathDate)) {
+      blockers.push(`${name}さんが最初に${what}を受けた相続の日が、今回亡くなった日より前になっていません。相続人の画面で日付を確かめてください。`);
+      return normal;
+    }
+    const ageThen = ageAt(p.person.birthDate, pc.date!) ?? 0;
+    // 未成年者控除は、今回の相続が令和4年4月1日以後なら、最初の相続のときから18歳になるまでの年数（それより前の相続なら20歳）で数える（相基通19の3-5（注））
+    const first =
+      kind === "minor"
+        ? Math.max(0, (deathDate < "2022-04-01" ? 20 : 18) - ageThen) * 100_000
+        : Math.max(0, 85 - ageThen) * (p.person.disability === "special" ? 200_000 : 100_000);
+    const left = Math.max(0, first - Math.floor(pc.amount!));
+    if (left < normal) {
+      warnings.push(
+        `${name}さんは以前の相続でも${what}を受けているため、今回の${what}は、最初の相続のときに受けられた${yenText(first)}から、これまでに受けた${yenText(Math.floor(pc.amount!))}を引いた${yenText(left)}までにしています。`,
+      );
+    }
+    return Math.min(normal, left);
   };
   for (const p of persons) {
     if (eligible(p) && p.age! < 18) {
-      const full = (18 - p.age!) * 100_000;
+      const full = priorLimit(p, "minor", (18 - p.age!) * 100_000);
       p.minorCredit = ownCredit(p, full);
       p.minorExcess = full - p.minorCredit;
     }
@@ -1034,7 +1236,7 @@ function compute(
   for (const p of persons) if (p.minorExcess > 0) transfer(p, "minor", p.minorExcess);
   for (const p of persons) {
     if (eligible(p) && p.person.disability && p.person.disability !== "none" && p.age! < 85) {
-      const full = (85 - p.age!) * (p.person.disability === "special" ? 200_000 : 100_000);
+      const full = priorLimit(p, "disability", (85 - p.age!) * (p.person.disability === "special" ? 200_000 : 100_000));
       p.disabilityCredit = ownCredit(p, full);
       p.disabilityExcess = full - p.disabilityCredit;
     }
@@ -1044,12 +1246,18 @@ function compute(
     const name = t.from.person.name || "この方";
     const what = t.kind === "minor" ? "未成年者控除" : "障害者控除";
     if (t.used > 0) {
+      // 配偶者と子・代襲相続人のあいだで移すときは、配偶者がその子の親（代襲相続人の祖父母）だとしている
+      const spouseAssumed = [t.from, ...t.to].some((q) => q.person.relation === "spouse") && [t.from, ...t.to].some((q) => isDescendant(q.person));
       warnings.push(
-        `${name}さんの${what}のうち、${name}さんの相続税から引ききれない${yenText(t.used)}を、扶養義務者（同じ相続で財産を受け取った家族）の${t.to.map((n) => `${n}さん`).join("・")}の相続税から引いています。2人以上から引くときは相続税額の割合で分けていますが、扶養義務者どうしで話し合って別の分け方にすることもできます。`,
+        `${name}さんの${what}のうち、${name}さんの相続税から引ききれない${yenText(t.used)}を、扶養義務者（配偶者・親子・祖父母と孫・兄弟姉妹で、同じ相続で財産を受け取った人）の${t.to.map((q) => `${q.person.name || "家族"}さん`).join("・")}の相続税から引いています。2人以上から引くときは相続税額の割合で分けていますが、扶養義務者どうしで話し合って別の分け方にすることもできます。${spouseAssumed ? "配偶者は、亡くなった方の子の親（代襲相続人の祖父母）として数えています。違うときは税理士にご相談ください。" : ""}`,
       );
     }
     if (t.excess > t.used) {
-      warnings.push(`${name}さんの${what}のうち${yenText(t.excess - t.used)}は引ききれません。ほかに相続税を納める家族がいないため、この分は使われません。`);
+      warnings.push(
+        t.othersLeft
+          ? `${name}さんの${what}のうち${yenText(t.excess - t.used)}は、配偶者・親子・祖父母と孫・兄弟姉妹の相続税からは引ききれません。${name}さんと生計を一にしていた3親等内の親族（おじ・おば、配偶者の兄弟姉妹など）が財産を受け取っていれば、その人の相続税からも引ける場合がありますが、相続コンパスでは計算していません。税理士にご相談ください。`
+          : `${name}さんの${what}のうち${yenText(t.excess - t.used)}は引ききれません。ほかに相続税を納める家族がいないため、この分は使われません。`,
+      );
     }
   }
 
@@ -1093,8 +1301,14 @@ function compute(
   const totalReduction = assetLines.reduce((a, l) => a + l.reduction, 0);
   const undividedAny = undividedLabels.length > 0;
   if (undividedAny) {
+    const someDecided = plans.some((pl) => !pl.receipt && pl.decided.length > 0);
     warnings.push(
-      `分け方が決まっていない財産（${undividedLabels.join("・")}）は、民法の法定相続分で受け継いだものとして計算しています。この部分には、配偶者の税額軽減と小規模宅地等の特例は使えません。申告書と一緒に「申告期限後3年以内の分割見込書」を出しておけば、3年以内に分け方が決まったとき、その日の翌日から4か月以内に「更正の請求」をして、これらを使い、納めすぎた相続税を返してもらえます。`,
+      `分け方が決まっていない財産（${undividedLabels.join("・")}）は、民法の法定相続分で受け継いだものとして計算しています${someDecided ? "（すでに分け方が決まった財産も合わせて法定相続分になるように、足りない人に割り当てています）" : ""}。生前に結婚や家を建てる資金などの贈与を受けた相続人がいる場合や、遺言で相続分が決められている場合は計算が変わるため、税理士に確認してください。この部分には、配偶者の税額軽減と小規模宅地等の特例は使えません。申告書と一緒に「申告期限後3年以内の分割見込書」を出しておけば、3年以内に分け方が決まったとき、その日の翌日から4か月以内に「更正の請求」をして、これらを使い、納めすぎた相続税を返してもらえます。`,
+    );
+  } else if (c.undivided && plans.some((pl) => !pl.receipt)) {
+    // 「分け方がまだ決まっていない」にチェックがあるのに、全部の財産に分け方が入っている（「すべて法定相続分どおりに分けると決めた」を押したなど）
+    warnings.push(
+      "「分け方がまだ決まっていない」にチェックがありますが、すべての財産の分け方が入っているため、分け方が決まったものとして計算しています。まだ決まっていない財産は、遺産の分け方の画面で分け方を空けておいてください。",
     );
   }
   const needsFiling = totalTaxable > basicDeduction;
@@ -1137,11 +1351,13 @@ function compute(
     totalRefund,
     undivided: undividedAny,
     successive,
+    compensation,
     insuranceExemptLimit,
     retirementExemptLimit,
     blockers,
     warnings,
-    needsFiling: needsFiling || needsFilingForRelief,
+    // 相続時精算課税の贈与税の還付も、申告書を出さないと受けられない（相続税法33条の2）
+    needsFiling: needsFiling || needsFilingForRelief || totalRefund > 0,
   };
   return { result, sr: srSlots };
 }

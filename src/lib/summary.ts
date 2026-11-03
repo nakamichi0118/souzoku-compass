@@ -22,7 +22,8 @@ export function summarizeForAssistant(c: Case, r: TaxResult | null): string {
     if (r.totalRefund > 0) lines.push(`還付される税額の合計: ${r.totalRefund.toLocaleString()}円（相続時精算課税の贈与税が引ききれない分）`);
     const extra = [
       r.undivided && "未分割の財産あり（法定相続分で計算）",
-      c.compensation?.length && `代償金 ${c.compensation.length}件`,
+      c.compensation?.length && `代償金 ${c.compensation.length}件${r.compensation.some((x) => x.value !== x.amount) ? "（時価をもとに決めた分は評価額に換算）" : ""}`,
+      c.persons.some((p) => p.priorMinorCredit || p.priorDisabilityCredit) && "以前の相続で未成年者控除・障害者控除を受けた人あり（残りの額までに制限）",
       r.successive && `相次相続控除 ${r.successive.total.toLocaleString()}円`,
       r.persons.some((p) => p.settlementGifts > 0) && "相続時精算課税の贈与あり",
       r.persons.some((p) => p.transfersIn.length > 0) && "未成年者・障害者控除の一部を扶養義務者から控除",

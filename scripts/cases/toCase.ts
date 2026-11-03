@@ -2,10 +2,11 @@
  * シナリオ（scenario.ts）→ アプリの入力（src/domain/types.ts の Case）への変換。
  *
  * 「この相続の家族が、相続コンパスの画面にふつうに入力したらこうなる」という Case を作る。
- * - アプリに入力欄がそのままあるもの（続柄・放棄・半血・養子・障害者・非居住者、路線価の道路と間口、倍率、
- *   土地の使い方（貸家建付地・貸宅地・借地権）と賃貸割合・借地権割合、評価に影響する土地の事情、
- *   貸家・賃貸中のマンション、マンションの補正の要素、上場株式の4つの価格、保険金の受取人、債務の負担者、
- *   3年以内の贈与と相続時精算課税の贈与、分け方の割合と未分割、代償金、小規模宅地等（特定居住用・特定事業用・貸付事業用）、
+ * - アプリに入力欄がそのままあるもの（続柄・放棄・半血・養子・障害者・非居住者・前の相続で受けた未成年者控除・障害者控除、
+ *   路線価の道路と間口、倍率、土地の使い方（貸家建付地・貸宅地・借地権・貸家建付借地権）と賃貸割合・借地権割合、
+ *   評価に影響する土地の事情と税理士に確かめた補正率、貸家・賃貸中のマンション、マンションの補正の要素、上場株式の4つの価格、
+ *   保険金の受取人、債務の負担者、3年以内の贈与と相続時精算課税の贈与、分け方の割合と未分割（一部未分割を含む）、
+ *   代償金（特定の財産の時価をもとに決めたときはその財産と時価）、小規模宅地等（特定居住用・特定事業用・貸付事業用）、
  *   相次相続控除の前の相続の内容）は、そのまま写す。
  * - アプリに入力のしかたがまったくないもの（受取人が相続人等にいない保険金、同じ向きに3本以上の路線 など）は、
  *   Case に入れずに unrepresentable[] に書く。
@@ -214,6 +215,9 @@ export function toCase(s: Scenario): ToCaseResult {
     if (m.adoptedCountsAsBiological) p.adoptedCountsAsBiological = true;
     if (m.disability) p.disability = m.disability;
     if (m.nonResident) p.nonResident = true;
+    // 前の相続でも未成年者控除・障害者控除を受けた：最初の相続の日と、これまでに控除を受けた額の合計（扶養義務者から引いた分を含む）
+    if (m.priorMinorCredit) p.priorMinorCredit = { date: m.priorMinorCredit.date, amount: m.priorMinorCredit.amount };
+    if (m.priorDisabilityCredit) p.priorDisabilityCredit = { date: m.priorDisabilityCredit.date, amount: m.priorDisabilityCredit.amount };
     return p;
   });
   const living = new Set(persons.filter((p) => !p.predeceased).map((p) => p.id));
@@ -298,10 +302,18 @@ export function toCase(s: Scenario): ToCaseResult {
       allocations.push({ assetId: it.id, shares: ordered.map((x) => ({ personId: x.who, numerator: x.n, denominator: x.d })) });
     }
   }
-  // 代償金（代償分割）：払う人・受け取る人・金額。画面で選べるのは、亡くなった時点で生きていた家族だけ
+  // 代償金（代償分割）：払う人・受け取る人・金額。画面で選べるのは、亡くなった時点で生きていた家族だけ。
+  // 代償金の額を特定の財産の時価をもとに決めたときは、その財産と時価も入れる
   const compensation: Compensation[] =
     s.division.kind === "agreed"
-      ? (s.division.compensation ?? []).filter((x) => alive.has(x.from) && alive.has(x.to)).map((x) => ({ fromId: x.from, toId: x.to, amount: x.amount }))
+      ? (s.division.compensation ?? [])
+          .filter((x) => alive.has(x.from) && alive.has(x.to))
+          .map((x) => ({
+            fromId: x.from,
+            toId: x.to,
+            amount: x.amount,
+            ...(x.basis ? { basis: { assetId: x.basis.item, marketValue: x.basis.marketValue } } : {}),
+          }))
       : [];
 
   /* ---------- 債務・葬式費用 ---------- */
@@ -371,7 +383,7 @@ function toLand(
 ): LandAsset {
   if (!fitsDigits(it.areaSqm, 2)) approx(FEATURE.areaDigits);
   const use = it.use === "parking" ? "self" : it.use;
-  const leased = use === "rentedHouse" || use === "leasedLand" || use === "leasehold";
+  const leased = use === "rentedHouse" || use === "leasedLand" || use === "leasehold" || use === "rentedLeasehold";
 
   let method: LandMethod;
   let registry: RegistryInfo | undefined;
@@ -387,6 +399,8 @@ function toLand(
       depthCorrection: depthCorrection(v.district, front.depth),
       district: v.district,
       roads: inputs,
+      // 税理士に確かめた補正率（不整形地補正率・規模格差補正率）は「その他の補正率」の欄に入れる
+      ...(it.advisorRate !== undefined ? { otherCorrection: it.advisorRate } : {}),
     };
     // 借地権割合は、アプリが正面の道路の表記の記号（A〜G）から決める
   } else {
@@ -398,6 +412,7 @@ function toLand(
   }
 
   // 評価に影響する事情。地積規模の大きな宅地は、アプリが面積から自分で気づくので入れない
+  // （配偶者居住権のある土地には、シナリオで税理士の補正率を付けないので、不整形地・セットバックを先に選んでも止まり方は同じ）
   const condition: LandAsset["condition"] =
     it.needsReduction === "irregular" ? "irregular" : it.needsReduction === "setback" ? "setback" : it.spouseResidenceRight ? "spouseResidence" : undefined;
 
@@ -410,7 +425,7 @@ function toLand(
     landUse: it.landUse,
     method,
     ...(use !== "self" ? { use } : {}),
-    ...(use === "rentedHouse" && it.rentRatio !== undefined ? { rentRatio: it.rentRatio } : {}),
+    ...((use === "rentedHouse" || use === "rentedLeasehold") && it.rentRatio !== undefined ? { rentRatio: it.rentRatio } : {}),
     ...(leaseRatio !== undefined ? { leaseRatio } : {}),
     ...(condition ? { condition } : {}),
     ...(it.foreign ? { foreign: true } : {}),

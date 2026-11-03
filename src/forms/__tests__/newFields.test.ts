@@ -42,7 +42,11 @@ function fullCase(): Case {
   return c;
 }
 
-/** 精算課税の贈与税を引ききれず還付になり、さくらさん（未成年・特別障害者）の控除を一郎さんが扶養義務者として引く事例 */
+/**
+ * 精算課税の贈与税を引ききれず還付になり、さくらさん（未成年・特別障害者）の控除を一郎さんが扶養義務者として引く事例。
+ * 扶養義務者は配偶者・直系血族・兄弟姉妹なので、この事例のさくらさんは一郎さんの妹（亡くなった方の子）にする
+ * （代襲相続人の孫のままだと、一郎さんはおじにあたり扶養義務者にならない）
+ */
 function refundCase(): Case {
   const c = fullCase();
   c.priorGifts = c.priorGifts.map((g) => (g.settlement ? { ...g, giftTaxPaid: 12_000_000 } : g));
@@ -51,7 +55,9 @@ function refundCase(): Case {
   );
   c.undivided = false;
   c.allocations.push({ assetId: "dep2", shares: [{ personId: "hanako", numerator: 1, denominator: 1 }] });
-  c.persons = c.persons.map((p) => (p.id === "sakura" ? { ...p, disability: "special" as const } : p));
+  c.persons = c.persons.map((p) =>
+    p.id === "sakura" ? { ...p, relation: "child" as const, relationLabel: "長女", substituteOf: undefined, disability: "special" as const } : p,
+  );
   return c;
 }
 
