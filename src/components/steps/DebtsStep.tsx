@@ -52,7 +52,7 @@ export function DebtsStep() {
             <h3 className="mb-2 mt-4 text-sm font-bold text-stone-700">誰が負担しますか</h3>
             <div className="space-y-2">
               {d.bearers.map((b, i) => (
-                <div key={i} className="grid grid-cols-[1fr_1fr_auto] items-center gap-2">
+                <div key={i} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2">
                   <Select
                     value={b.personId}
                     onChange={(v) => patch(d.id, { bearers: d.bearers.map((x, j) => (j === i ? { ...x, personId: v } : x)) })}

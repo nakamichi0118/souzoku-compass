@@ -8,7 +8,8 @@ export async function currentUser() {
 
 export async function clientKey() {
   const h = await headers();
-  return (h.get("x-forwarded-for") ?? "").split(",")[0].trim() || "local";
+  // Cloud Run は実際の接続元を末尾に足す（先頭は利用者が自由に書けるので使わない）
+  return (h.get("x-forwarded-for") ?? "").split(",").pop()?.trim() || "local";
 }
 
 export function withSession(res: NextResponse, token: string | null) {
@@ -23,10 +24,11 @@ export function withSession(res: NextResponse, token: string | null) {
 }
 
 /** 別のサイトから送られた書き込みを断る（Cookie を使う API の CSRF 対策） */
-export async function sameOrigin(): Promise<boolean> {
+export async function sameOrigin(strict = false): Promise<boolean> {
   const h = await headers();
   const origin = h.get("origin");
-  if (!origin) return h.get("sec-fetch-site") !== "cross-site";
+  // ブラウザは POST に必ず Origin を付ける。strict では Origin のない呼び出し（画面以外から）を断る
+  if (!origin) return !strict && h.get("sec-fetch-site") !== "cross-site";
   const host = h.get("x-forwarded-host") ?? h.get("host");
   try {
     return new URL(origin).host === host;

@@ -199,4 +199,46 @@ describe("小規模宅地等の特例", () => {
     // 特例適用後 5,000万 < 基礎控除4,200万? → 5,000万 > 4,200万なので申告必要
     expect(r.needsFiling).toBe(true);
   });
+
+  it("確認の答えがあれば、取得者を変えたときに判定し直す（別居の子は自動では適用しない）", () => {
+    const land = (acquirerId: string): Asset => ({
+      id: "自宅",
+      kind: "land",
+      label: "自宅敷地",
+      location: "x",
+      areaSqm: 200,
+      landUse: "宅地",
+      method: { type: "manual", value: 50_000_000 },
+      // 画面で配偶者を選んだときに保存された applies: true のまま、取得者だけ子に変わった
+      smallResidential: { applies: true, acquirerId, check: { ownHome: "yes", special: "no" } },
+    });
+    const toSpouse = calculate(mk([spouse, c1], [land("s")], [all("自宅", ["s", 1, 1])]));
+    expect(toSpouse.assets[0].reduction).toBe(40_000_000);
+    const toChild = calculate(mk([spouse, c1], [land("c1")], [all("自宅", ["c1", 1, 1])]));
+    expect(toChild.assets[0].reduction).toBe(0);
+  });
+});
+
+describe("土地の入力漏れ", () => {
+  const land = (over: Partial<Extract<Asset, { kind: "land" }>>): Asset => ({
+    id: "l",
+    kind: "land",
+    label: "土地",
+    location: "x",
+    areaSqm: 100,
+    landUse: "宅地",
+    method: { type: "rosenka", routePrice: 300_000, depthCorrection: 1 },
+    ...over,
+  } as Asset);
+  it("路線価・地積が0のままなら0円で計算せず止める", () => {
+    for (const a of [land({ areaSqm: 0 }), land({ method: { type: "rosenka", routePrice: 0, depthCorrection: 1 } }), land({ method: { type: "rosenka", routePrice: 300_000, depthCorrection: 1, roads: [{ edge: 0, price: 300_000, depth: 0 }] } })]) {
+      const r = calculate(mk([c1], [a], [all("l", ["c1", 1, 1])]));
+      expect(r.blockers.some((b) => b.includes("未入力"))).toBe(true);
+    }
+  });
+  it("そろっていれば計算する", () => {
+    const r = calculate(mk([c1], [land({})], [all("l", ["c1", 1, 1])]));
+    expect(r.blockers).toEqual([]);
+    expect(r.assets[0].valuation.value).toBe(30_000_000);
+  });
 });

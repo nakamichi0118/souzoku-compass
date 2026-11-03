@@ -1,6 +1,6 @@
 "use client";
 
-import { Building2, FileText, MapPin, NotebookPen, Phone } from "lucide-react";
+import { Building2, FileText, MapPin, NotebookPen, Phone, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -15,13 +15,12 @@ import type { Category, Task } from "@/domain/procedures/rules";
 import { useOverall } from "@/lib/overall";
 import { taskStatus } from "./Home";
 import type { Asset } from "@/domain/types";
+import { Reader } from "./DocsPage";
+import { DetailStatus, RowStatus } from "./StatusButtons";
 
 /** 不動産の登記は、亡くなった方の住所ではなく不動産のある場所の法務局が窓口 */
 const realEstateLocation = (assets: Asset[]) =>
   assets.map((a) => (a.kind === "land" || a.kind === "building" || a.kind === "condo" ? a.location : "")).find((l) => l.trim()) || undefined;
-import { DetailStatus, RowStatus } from "./StatusButtons";
-import { Reader } from "./DocsPage";
-import { X } from "lucide-react";
 
 const CATS: (Category | "すべて")[] = ["すべて", "届出", "葬儀・法要", "調べる・決める", "お金の受け取り", "税金", "名義変更・解約", "不動産"];
 type StatusFilter = "open" | "done" | "all";
@@ -172,7 +171,7 @@ export function TasksPage() {
         </label>
       </div>
 
-      <div className="grid gap-5 lg:h-[calc(100vh-13rem)] lg:min-h-[32rem] lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:h-[calc(100vh-13rem)] lg:min-h-[32rem] lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
         <div className="flex min-h-0 flex-col rounded-2xl border border-sky-100 bg-sky-50/40 p-2">
           <div className="mb-2 flex gap-1 rounded-full bg-white p-1 text-sm ring-1 ring-stone-200">
             {(

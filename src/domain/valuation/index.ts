@@ -55,6 +55,19 @@ export function condoCorrection(c: Pick<
 
 export function valueLand(a: LandAsset): Valuation {
   const m = a.method;
+  if (m.type === "rosenka") {
+    // 未入力のまま0円で計算すると課税価格が過少になるため、そろうまで確定しない
+    const missing = !(a.areaSqm > 0)
+      ? "地積（土地の面積）"
+      : m.roads?.length
+        ? m.roads.some((r) => r.price > 0 && r.depth > 0)
+          ? null
+          : "面している道路の路線価と奥行"
+        : !(m.routePrice > 0) || !(m.depthCorrection > 0)
+          ? "路線価と奥行価格補正率"
+          : null;
+    if (missing) return { value: 0, quantity: `${a.areaSqm}㎡`, steps: [], needsConsultation: `${missing}が未入力です。固定資産税の課税明細書や路線価図を見て入力してください。` };
+  }
   if (m.type === "rosenka" && m.roads?.some((r) => r.price > 0 && r.depth > 0)) {
     const r = evaluateRoads(m.district ?? "普通住宅地区", m.roads)!;
     const per = Math.floor((r.perSqm * thou(m.otherCorrection ?? 1)) / 1000);
@@ -179,7 +192,6 @@ export function valueAsset(a: Asset): Valuation {
   }
 }
 
-/** 小規模宅地等の特例（特定居住用宅地等：330㎡まで80%減額、租税特別措置法69条の4） */
 /**
  * 小規模宅地等の特例（特定居住用宅地等・減額割合80%）。付表1の⑤⑥⑦の順に計算する。
  * ⑥ = ④ × ⑤/③（1円未満切捨て）、⑦ = ⑥ × 80/100（1円未満切捨て）

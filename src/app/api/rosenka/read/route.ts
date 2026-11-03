@@ -5,6 +5,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { NextResponse } from "next/server";
+import { guardAi } from "@/server/guard";
 import { z } from "zod";
 import { MODEL, getClient } from "@/server/claude";
 
@@ -28,6 +29,8 @@ const SYSTEM = `あなたは国税庁の路線価図を読む補助をします�
 どの路線価を使うか（正面路線の判定）や評価額の計算はしないでください。`;
 
 export async function POST(req: Request) {
+  const blocked = await guardAi("rosenkaRead");
+  if (blocked) return blocked;
   const client = getClient();
   if (!client) return NextResponse.json({ error: "この環境では Claude に接続していません。路線価図を見て入力してください。" }, { status: 503 });
   const form = await req.formData();

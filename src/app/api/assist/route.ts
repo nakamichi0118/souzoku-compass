@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
+import { guardAi } from "@/server/guard";
 import { z } from "zod";
 import { GUIDE_SYSTEM, MODEL, getClient } from "@/server/claude";
 
@@ -10,6 +11,8 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
+  const blocked = await guardAi("assist");
+  if (blocked) return blocked;
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "入力が正しくありません。" }, { status: 400 });
   const client = getClient();

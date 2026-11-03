@@ -35,7 +35,7 @@ export function StepShell({ step }: { step: string }) {
     <div className="min-h-screen bg-gradient-to-b from-sky-50/70 to-stone-50">
       <AppHeader />
       <StepBar current={step} />
-      <div className="mx-auto grid max-w-6xl gap-6 px-4 pb-24 pt-6 lg:grid-cols-[1fr_340px]">
+      <div className="mx-auto grid max-w-6xl gap-6 px-4 pb-24 pt-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <main className="min-w-0 space-y-5">
           <div>
             <p className="text-sm font-semibold text-teal-700">

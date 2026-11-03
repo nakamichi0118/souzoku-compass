@@ -674,12 +674,3 @@ export function buildTasks(iv: Interview, opts: { verdict?: Verdict } = {}): { t
   tasks.sort((a, b) => (a.sortDate < b.sortDate ? -1 : a.sortDate > b.sortDate ? 1 : 0));
   return { tasks, est };
 }
-
-/** 期限までの区切り（画面のグループ見出し） */
-export function periodOf(death: ISODate, date: ISODate): string {
-  if (date <= addDays(death, 14)) return "亡くなってすぐ〜2週間";
-  if (date <= addMonths(death, 3)) return "3か月まで";
-  if (date <= addMonths(death, 4)) return "4か月まで";
-  if (date <= addMonths(death, 10)) return "10か月まで";
-  return "1年以降";
-}

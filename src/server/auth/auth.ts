@@ -5,6 +5,7 @@
  */
 import { createHash, randomBytes, randomUUID, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
+import { overLimit, resetLimit } from "../limit";
 import { getDb, type UserRecord } from "./db";
 
 const scrypt = promisify(scryptCb) as (pw: string, salt: Buffer, len: number, opts: { N: number; r: number; p: number; maxmem: number }) => Promise<Buffer>;
@@ -94,16 +95,6 @@ export async function endSession(token: string | undefined) {
 
 // ---------------------------------------------------------------- 総当たり対策（簡易）
 
-const attempts = new Map<string, { n: number; until: number }>();
 /** 同じ相手から10分に10回まで */
-export function tooManyAttempts(key: string): boolean {
-  const now = Date.now();
-  const a = attempts.get(key);
-  if (!a || a.until < now) {
-    attempts.set(key, { n: 1, until: now + 10 * 60_000 });
-    return false;
-  }
-  a.n += 1;
-  return a.n > 10;
-}
-export const resetAttempts = (key: string) => attempts.delete(key);
+export const tooManyAttempts = (key: string) => overLimit(key, 10, 10 * 60_000);
+export const resetAttempts = (key: string) => resetLimit(key);

@@ -175,6 +175,7 @@ async function fetchText(url: string): Promise<string> {
       const sjis = /shift_jis|sjis|x-sjis/i.test(ct) || /charset\s*=\s*["']?(shift_jis|sjis|x-sjis)/i.test(head);
       return new TextDecoder(sjis ? "shift_jis" : "utf-8").decode(buf);
     })();
+    if (cache.size > 2000) cache.clear(); // 町丁名の索引のページは全国で数千。使い続けても膨らみすぎないように
     cache.set(url, p);
     p.catch(() => cache.delete(url));
   }

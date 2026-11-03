@@ -10,11 +10,12 @@
  * 国税通則法118条（課税標準の1,000円未満切捨て）、119条（確定金額の100円未満切捨て）、
  * 相続税法基本通達17-1（按分割合の端数調整）。
  */
-import { Fraction, frac, mulYen, toNumber } from "../fraction";
+import { Fraction, frac, mulYen } from "../fraction";
 import { HeirResult, civilHeirIds, determineHeirs, isSurchargeTarget } from "../heirs";
 import { floor100, floor1000 } from "../rounding";
 import type { Asset, Case, LandAsset, Person } from "../types";
 import { Valuation, smallResidentialSelection, valueAsset } from "../valuation";
+import { judgeSmallResidential, shouldApply } from "../valuation/smallResidential";
 
 /** 速算表（相続税法16条） */
 export const RATE_TABLE: readonly { upTo: number; rate: number; deduction: number }[] = [
@@ -288,8 +289,10 @@ export function calculate(c: Case, opts: EngineOptions = {}): TaxResult {
     const byPerson = splitAmount(valuation.value, alloc.shares);
     let reduction = 0;
     let small: SmallResidentialDetail | undefined;
-    const sr = (a.kind === "land" || a.kind === "condo") ? a.smallResidential : undefined;
-    if (sr?.applies && sr.acquirerId) {
+    const sr = a.kind === "land" || a.kind === "condo" ? a.smallResidential : undefined;
+    // 確認の質問に答えている場合は、保存された「適用する」ではなく今の答えと取得者で判定し直す（取得者を変えたときなど）
+    const srOn = !!sr?.acquirerId && (sr.check ? shouldApply(judgeSmallResidential(sr.check, c.persons.find((p) => p.id === sr.acquirerId && !p.predeceased)), sr.check) : sr.applies);
+    if (sr?.acquirerId && srOn) {
       const part = byPerson.find((b) => b.personId === sr.acquirerId);
       const share = alloc.shares.find((s) => s.personId === sr.acquirerId);
       if (part && share) {
@@ -534,5 +537,3 @@ export function calculate(c: Case, opts: EngineOptions = {}): TaxResult {
   };
 }
 
-export const shareText = (f: Fraction) => (f.d === 1n ? `${f.n}` : `${f.n}/${f.d}`);
-export { toNumber };

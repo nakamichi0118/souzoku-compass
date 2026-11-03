@@ -3,11 +3,6 @@ import type { Sheet } from "./MapView";
 
 const TARGET_WIDTH = 3000;
 
-export async function pdfPageCount(data: ArrayBuffer): Promise<number> {
-  const pdf = await loadPdf(data);
-  return pdf.numPages;
-}
-
 async function loadPdf(data: ArrayBuffer) {
   const pdfjs = await import("pdfjs-dist");
   pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();

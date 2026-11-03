@@ -7,6 +7,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { NextResponse } from "next/server";
+import { guardAi } from "@/server/guard";
 import { z } from "zod";
 import { OFFICE_LABEL, areaOf, cityOf, type OfficeKind } from "@/domain/procedures/offices";
 import { MODEL, getClient } from "@/server/claude";
@@ -38,6 +39,8 @@ const cache = new Map<string, { at: number; data: z.infer<typeof Office> }>();
 const TTL = 24 * 60 * 60 * 1000;
 
 export async function POST(req: Request) {
+  const blocked = await guardAi("offices");
+  if (blocked) return blocked;
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "入力が正しくありません。" }, { status: 400 });
   const { kind, address, dept } = parsed.data;
@@ -77,6 +80,7 @@ export async function POST(req: Request) {
       if (res.stop_reason === "refusal" || !res.parsed_output) break;
       const data = res.parsed_output;
       if (data.url && !/^https:\/\//.test(data.url)) data.url = "";
+      if (cache.size > 2000) cache.clear();
       cache.set(key, { at: Date.now(), data });
       return NextResponse.json(data);
     }

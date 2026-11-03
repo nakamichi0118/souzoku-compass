@@ -5,6 +5,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { NextResponse } from "next/server";
+import { guardAi } from "@/server/guard";
 import { z } from "zod";
 import { MODEL, getClient } from "@/server/claude";
 
@@ -66,6 +67,8 @@ notes は書類を見ている一般の方に向けて書き、英語の項目�
 const MEDIA = new Set(["image/png", "image/jpeg", "image/webp", "image/gif", "application/pdf"]);
 
 export async function POST(req: Request) {
+  const blocked = await guardAi("extract");
+  if (blocked) return blocked;
   const client = getClient();
   if (!client) return NextResponse.json({ error: "この環境では Claude に接続していません。" }, { status: 503 });
   const form = await req.formData();

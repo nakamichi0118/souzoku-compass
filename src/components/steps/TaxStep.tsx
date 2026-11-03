@@ -40,11 +40,11 @@ export function TaxStep() {
         body: JSON.stringify({
           step: "tax",
           question: "この計算結果を、相続税に詳しくない家族にも分かるように説明してください。なぜこの税額になるのか、配偶者の税額軽減などの効果も含めて。",
-          context: summarizeForAssistant(data, result),
+          context: summarizeForAssistant(data, result).slice(0, 6000),
         }),
       });
       const j = await res.json();
-      setExplain(j.answer ?? j.error);
+      setExplain(j.answer ?? j.error ?? "うまく説明できませんでした。");
     } finally {
       setBusy(false);
     }

@@ -33,7 +33,6 @@ export const add = (a: Fraction, b: Fraction) => frac(a.n * b.d + b.n * a.d, a.d
 export const sub = (a: Fraction, b: Fraction) => frac(a.n * b.d - b.n * a.d, a.d * b.d);
 export const mul = (a: Fraction, b: Fraction) => frac(a.n * b.n, a.d * b.d);
 export const div = (a: Fraction, b: Fraction) => frac(a.n * b.d, a.d * b.n);
-export const eq = (a: Fraction, b: Fraction) => a.n === b.n && a.d === b.d;
 export const sum = (xs: Fraction[]) => xs.reduce(add, ZERO);
 export const toNumber = (a: Fraction) => Number(a.n) / Number(a.d);
 export const toString = (a: Fraction) => (a.d === 1n ? `${a.n}` : `${a.n}/${a.d}`);
