@@ -8,6 +8,12 @@ export interface SystemNotice {
 
 export const SYSTEM_NOTICES: SystemNotice[] = [
   {
+    id: "2026-11-03-rosenka-ku",
+    date: "2026-11-03",
+    title: "政令指定都市の区で路線価図が見つからないことがあったのを直しました",
+    body: "福岡市博多区のように、国税庁の一覧に区の名前だけで載っている地域でも、地図で選んだ場所の路線価図を自動で探せるようになりました。",
+  },
+  {
     id: "2026-11-03-login",
     date: "2026-11-03",
     title: "ログインできるようになりました",

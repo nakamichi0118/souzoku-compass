@@ -97,11 +97,26 @@ const decodeEntities = (s: string) =>
 /** 市区町村一覧のページから「市区町村名 → 町丁名索引ページ」を取り出す */
 export function parseCityList(html: string): { name: string; href: string }[] {
   const out: { name: string; href: string }[] = [];
-  for (const m of html.matchAll(/<a\s[^>]*href\s*=\s*["']?([^"'\s>]*d\d+fr\.htm)["']?[^>]*>([\s\S]*?)<\/a>/gi)) {
+  for (const m of html.matchAll(/<a\s[^>]*href\s*=\s*["']?([^"'\s>]*[a-z]\d+fr\.htm)["']?[^>]*>([\s\S]*?)<\/a>/gi)) {
     const name = decodeEntities(m[2].replace(/<[^>]+>/g, "")).trim();
     if (name) out.push({ name, href: m[1] });
   }
   return out;
+}
+
+/**
+ * 市区町村一覧から、国土地理院の市区町村名（例：福岡市博多区）に当たるものを選ぶ。
+ * 一覧には「博多区」のように区名だけで載っていることがあるので、末尾が一致するもののうち
+ * いちばん長く一致するものを選ぶ。
+ */
+export function pickCity<T extends { name: string }>(cities: T[], city: string): T | undefined {
+  const exact = cities.find((c) => normalizeCity(c.name) === city);
+  if (exact) return exact;
+  const hits = cities.filter((c) => {
+    const n = normalizeCity(c.name);
+    return n.length >= 2 && (n.endsWith(city) || city.endsWith(n));
+  });
+  return hits.sort((a, b) => normalizeCity(b.name).length - normalizeCity(a.name).length)[0];
 }
 
 /**
@@ -196,8 +211,7 @@ export async function findSheets(lat: number, lng: number): Promise<FindResult> 
   const base = `${NTA}/${YEAR_DIR}/${dir}/prices/`;
   const cities = parseCityList(await fetchText(`${base}city_frm.htm`));
   const city =
-    cities.find((c) => normalizeCity(c.name) === muni.city) ??
-    cities.find((c) => normalizeCity(c.name).endsWith(muni.city) || muni.city.endsWith(normalizeCity(c.name)));
+    pickCity(cities, muni.city);
   if (!city) return { ...muni, town, sheets: [], indexUrl: `${base}city_frm.htm`, message: "この市区町村の路線価図が見つかりませんでした（倍率地域の可能性があります）。" };
   const indexUrl = new URL(city.href, base).toString();
   if (!town) return { ...muni, town, sheets: [], indexUrl, message: "町丁目名が分からないため、索引から図番号を選んでください。" };

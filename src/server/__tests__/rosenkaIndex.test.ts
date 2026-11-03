@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeTown, parseCityList, parseMuni, parseTownIndex } from "../rosenkaIndex";
+import { normalizeTown, parseCityList, parseMuni, parseTownIndex, pickCity } from "../rosenkaIndex";
 
 describe("路線価図の図番号さがし", () => {
   it("町丁目名の表記ゆれをそろえる", () => {
@@ -15,6 +15,21 @@ describe("路線価図の図番号さがし", () => {
       { name: "千代田区", href: "d24204fr.htm" },
       { name: "横浜市　鶴見区", href: "./d24301fr.htm" },
     ]);
+  });
+
+  it("区名だけで載っている一覧（福岡市博多区 → 博多区）からも町丁名索引を見つける", () => {
+    const html = `<li><a href="j16101fr.htm">博多区</a></li><li><a href="j16102fr.htm">中央区</a></li><li><a href="j16201fr.htm">北九州市小倉北区</a></li>`;
+    const cities = parseCityList(html);
+    expect(cities.map((c) => c.href)).toEqual(["j16101fr.htm", "j16102fr.htm", "j16201fr.htm"]);
+    expect(pickCity(cities, "福岡市博多区")?.href).toBe("j16101fr.htm");
+    expect(pickCity(cities, "北九州市小倉北区")?.href).toBe("j16201fr.htm");
+    expect(pickCity(cities, "福岡市東区")).toBeUndefined();
+    const index = `<table><tr><th class="th_idx" colspan="4">は</th></tr>
+      <tr><th class="cell_empty"></th><th>博多駅前４</th><td><a href="html/09078f.htm">09078</a></td><td><a href="html/09079f.htm">09079</a></td><td><a href="html/09084f.htm">09084</a></td></tr>
+      <tr><th class="cell_empty"></th><th>博多駅中央街</th><td><a href="html/09073f.htm">09073</a></td><td><a href="html/09079f.htm">09079</a></td></tr></table>`;
+    const m = parseTownIndex(index);
+    expect(m.get(normalizeTown("博多駅前四丁目"))).toEqual(["09078", "09079", "09084"]);
+    expect(m.get("博多駅中央街")).toEqual(["09073", "09079"]);
   });
 
   it("表の形に関係なく、町丁目名に続く図番号を取り出す", () => {
