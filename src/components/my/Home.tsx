@@ -64,7 +64,7 @@ export function Home() {
     );
 
   // ホームには、まだ済んでいない手続きを期限の近い順に（全体はやることリストで）
-  const upcoming = o.main.filter((t) => !o.closed(t.id)).slice(0, 6);
+  const upcoming = o.main.filter((t) => !o.closed(t.id) && t.id !== o.next?.id).slice(0, 6);
   const nextStep = o.steps.find((s) => !s.done);
   const verdict = o.verdict ?? o.est.verdict;
   const taxNeeded = verdict === "likely" || verdict === "relief";
@@ -74,11 +74,26 @@ export function Home() {
     <AppShell wide>
       <PageHead
         title={`ようこそ、${o.account?.name ?? ""}さん`}
-        say={o.next ? <>まずは、次にやることを確認しましょう。次は「{o.next.title}」です。</> : "すべての手続きが終わりました。おつかれさまでした！"}
+        say={o.next ? "今日はここから始めましょう。終わったら、やることリストでチェックを付けてくださいね。" : "すべての手続きが終わりました。おつかれさまでした！"}
       />
+      {o.next && (
+        <section className="mb-5 flex flex-wrap items-center gap-4 rounded-2xl border-2 border-brand/40 bg-brand-soft p-5">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-brand">次にすること</p>
+            <p className="mt-1 text-xl font-bold text-stone-900">{o.next.title}</p>
+            <p className="mt-1 text-sm text-stone-600">
+              {o.next.hard ? "期限" : "目安"} {jpDate(o.next.date)}（{daysBetween(o.now, o.next.date) >= 0 ? `あと${daysBetween(o.now, o.next.date)}日` : "過ぎています"}）
+              {o.next.office ? `・${o.next.dept ?? ""}` : ""}
+            </p>
+          </div>
+          <Link href={o.next.id === "inheritance-tax" && nextStep ? `/case/${nextStep.slug}` : `/my/tasks?id=${o.next.id}`} className="rounded-full bg-brand px-7 py-3 font-bold text-white shadow hover:brightness-95">
+            続きを進める ›
+          </Link>
+        </section>
+      )}
       <div className="grid gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
-          <Panel title="やることリスト" more={{ href: "/my/tasks", label: "すべてのタスクを見る" }}>
+          <Panel title="このあとの手続き" more={{ href: "/my/tasks", label: "すべてのタスクを見る" }}>
             <p className="-mt-2 mb-3 text-sm text-stone-500">期限の近いものから進めましょう。</p>
             <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {upcoming.map((t) => {
@@ -148,13 +163,6 @@ export function Home() {
           )}
 
           <AskCompass state={ask} placeholder="例：この手続きは何をするの？" lead="困ったときは、なんでも聞いてくださいね。" />
-          <div className="-mt-3 flex flex-wrap gap-2">
-            {["四十九日までに何を準備すればいい？", "必要な書類を知りたい", "相続税の計算方法を知りたい"].map((q) => (
-              <button key={q} type="button" onClick={() => ask.ask(q)} className="rounded-full border border-sky-200 bg-white px-3 py-1 text-sm text-sky-900 hover:bg-sky-50">
-                ？ {q}
-              </button>
-            ))}
-          </div>
         </div>
 
         <div className="space-y-5">

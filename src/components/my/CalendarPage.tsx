@@ -89,10 +89,10 @@ export function CalendarPage() {
                 iPhone・Macのカレンダーに追加
               </a>
               <button type="button" onClick={downloadICS} className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-semibold hover:bg-stone-50">
-                ファイル（.ics）をダウンロード
+                Outlookなどほかのカレンダーに追加（ファイルを保存）
               </button>
             </div>
-            <p className="mt-2 text-xs leading-relaxed text-stone-500">相続の手続き専用のカレンダーとして追加されます。追加用のURLには亡くなった日と答えの内容（お名前・住所は除く）が含まれます。</p>
+            <p className="mt-2 text-xs leading-relaxed text-stone-500">相続の手続き専用のカレンダーとして追加されます。</p>
           </Panel>
         </div>
       </div>

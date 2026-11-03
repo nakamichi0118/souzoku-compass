@@ -181,7 +181,7 @@ export function TasksPage() {
               : groups.map(([g, xs]) => (
                   <li key={g}>
                     <p className="sticky top-0 z-10 flex items-center justify-between bg-sky-50 px-1 py-1.5 text-sm font-bold text-sky-950">
-                      <span className="flex items-center gap-1.5"><Building2 className="h-4 w-4 text-sky-700" aria-hidden />{g}</span>
+                      <span className="flex items-center gap-1.5"><Building2 className="h-4 w-4 text-brand" aria-hidden />{g}</span>
                       <span className="text-xs font-normal text-stone-500">あと{xs.filter((x) => !closed(x.id)).length}件</span>
                     </p>
                     <ul className="space-y-2">
@@ -228,7 +228,7 @@ export function TasksPage() {
             )}
 
             <section>
-              <h3 className="mb-2 flex items-center gap-1.5 font-bold text-stone-700"><Building2 className="h-4 w-4 text-sky-700" aria-hidden />提出先・連絡先</h3>
+              <h3 className="mb-2 flex items-center gap-1.5 font-bold text-stone-700"><Building2 className="h-4 w-4 text-brand" aria-hidden />提出先・連絡先</h3>
               {t.office ? (
                 <div className="space-y-2">
                   <OfficeLookup kind={t.office} dept={t.dept} address={o.iv.address} />
@@ -240,7 +240,7 @@ export function TasksPage() {
                       rel="noreferrer"
                       className="inline-block text-sm text-sky-800 underline"
                     >
-                      <MapPin className="mr-1 inline h-4 w-4" aria-hidden />
+                      <MapPin className="mr-1 inline h-4 w-4 text-brand" aria-hidden />
                       地図で見る（Googleマップ）
                     </a>
                   )}
@@ -252,7 +252,7 @@ export function TasksPage() {
 
             {t.docs.length > 0 && (
               <section>
-                <h3 className="mb-2 flex items-center gap-1.5 font-bold text-stone-700"><FileText className="h-4 w-4 text-sky-700" aria-hidden />必要な書類</h3>
+                <h3 className="mb-2 flex items-center gap-1.5 font-bold text-stone-700"><FileText className="h-4 w-4 text-brand" aria-hidden />必要な書類</h3>
                 <ul className="space-y-1.5">
                   {t.docs
                     .filter((id) => DOCS[id])
@@ -278,7 +278,7 @@ export function TasksPage() {
             {t.office && (
               <section className="rounded-xl bg-stone-50 p-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="flex items-center gap-1.5 font-bold text-stone-700"><Phone className="h-4 w-4 text-sky-700" aria-hidden />連絡するときの伝え方</h3>
+                  <h3 className="flex items-center gap-1.5 font-bold text-stone-700"><Phone className="h-4 w-4 text-brand" aria-hidden />連絡するときの伝え方</h3>
                   <button
                     type="button"
                     className="text-xs text-sky-700 hover:underline"
@@ -297,7 +297,7 @@ export function TasksPage() {
             )}
 
             <section>
-              <h3 className="mb-2 flex items-center gap-1.5 font-bold text-stone-700"><NotebookPen className="h-4 w-4 text-sky-700" aria-hidden />メモ</h3>
+              <h3 className="mb-2 flex items-center gap-1.5 font-bold text-stone-700"><NotebookPen className="h-4 w-4 text-brand" aria-hidden />メモ</h3>
               <MemoBox key={t.id} value={o.memos[t.id] ?? ""} onSave={(v) => o.setMemo(t.id, v)} />
             </section>
 
@@ -326,7 +326,7 @@ export function TasksPage() {
                 Googleカレンダーに追加
               </a>
               <button type="button" onClick={() => downloadOne(t)} className="rounded-lg border border-stone-300 px-4 py-2 text-sm hover:bg-stone-50">
-                .ics で保存
+                iPhone・Outlookなどのカレンダーに追加
               </button>
               {t.source?.url && (
                 <a href={t.source.url} target="_blank" rel="noreferrer" className="rounded-lg px-2 py-2 text-sm text-sky-800 underline">

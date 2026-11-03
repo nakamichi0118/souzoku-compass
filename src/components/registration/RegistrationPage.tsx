@@ -173,7 +173,7 @@ export function RegistrationPage() {
           <ul className="space-y-2 text-sm">
             {DOCS.map(([n, why]) => (
               <li key={n} className="flex gap-2">
-                <FileText className="h-4 w-4 text-sky-700" aria-hidden />
+                <FileText className="h-4 w-4 text-brand" aria-hidden />
                 <span>
                   <strong>{n}</strong>
                   <span className="block text-stone-600">{why}</span>

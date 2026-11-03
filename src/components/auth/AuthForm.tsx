@@ -71,7 +71,7 @@ export function AuthForm({ kind }: { kind: "signup" | "login" }) {
           {signup && (
             <label className="flex items-start gap-2 text-sm text-stone-700">
               <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} className="mt-1 h-4 w-4 accent-sky-700" />
-              入力した内容は、ログインした本人だけが見られるようにサーバーに保存されることを確認しました。ハッカソン用の試作のため、実在の方の情報ではなく架空の内容でお試しください。
+              <Link href="/privacy" target="_blank" className="text-sky-800 underline">プライバシーポリシー</Link>に同意します。ハッカソン用の試作のため、架空の内容でお試しください。
             </label>
           )}
           {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-900">{error}</p>}

@@ -6,6 +6,8 @@ import { buildDivisionDoc } from "@/documents/division";
 import { formsNotGenerated } from "@/forms/filing";
 import { useCase } from "@/lib/store";
 import { markCompleted } from "@/lib/progress";
+import { usePlan } from "@/lib/planStore";
+import { FilingGuide } from "./FilingGuide";
 
 async function download(url: string, body: unknown, filename: string) {
   const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -25,6 +27,7 @@ async function download(url: string, body: unknown, filename: string) {
 
 export function DocumentsStep() {
   const { data, result, update } = useCase();
+  const plan = usePlan();
   const missing = result ? formsNotGenerated(data, result) : [];
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -43,6 +46,7 @@ export function DocumentsStep() {
     try {
       await download(url, data, name);
       update((c) => markCompleted(c, "documents"));
+      if (key === "tax") plan.setStatus("filing:prepared", "done");
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -78,7 +82,6 @@ export function DocumentsStep() {
         <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-stone-600">
           <li>マイナンバー（個人番号）欄は空欄です。印刷後に記入してください。</li>
           {result?.assets.some((l) => l.reduction > 0) && <li>小規模宅地等の特例を受けるときは、遺産分割協議書の写し・取得者の住民票などの添付書類も必要です。</li>}
-          <li>PDFを作るときだけ、入力内容をこのアプリのサーバーへ送ります。サーバーには保存しません。</li>
           <li>提出前に、内容を必ず確認してください。相続コンパスは税理士による確認の代わりにはなりません。</li>
         </ul>
       </Card>
@@ -96,6 +99,7 @@ export function DocumentsStep() {
         </Button>
       </Card>
       {err && <Note tone="stop">{err}</Note>}
+      <FilingGuide missing={missing} />
     </div>
   );
 }

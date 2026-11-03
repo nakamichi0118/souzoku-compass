@@ -5,5 +5,5 @@ const CAT: Record<DocCategory, LucideIcon> = { "戸籍・住民票": Users, 預�
 
 export function CatIcon({ k, className = "h-6 w-6" }: { k: DocCategory; className?: string }) {
   const I = CAT[k];
-  return <I className={`text-sky-700 ${className}`} aria-hidden strokeWidth={1.75} />;
+  return <I className={`text-brand ${className}`} aria-hidden strokeWidth={1.75} />;
 }

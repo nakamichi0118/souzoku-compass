@@ -1,10 +1,11 @@
 "use client";
 
-import { Bell, CalendarDays, Calculator, FileText, House, ListChecks, Printer, UserRound, type LucideIcon } from "lucide-react";
+import { CalendarDays, Calculator, FileText, House, ListChecks, Printer, UserRound, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { LogoMark } from "@/components/compass/CompassKun";
+import { NoticeBell } from "./Notices";
 import { useOverall } from "@/lib/overall";
 
 const NAV: { href: string; label: string; Icon: LucideIcon; match: (p: string) => boolean }[] = [
@@ -44,19 +45,16 @@ export function AppHeader() {
                 aria-current={on ? "page" : undefined}
                 className={`flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 text-sm font-medium ${on ? "bg-sky-100 text-sky-900" : "text-stone-600 hover:bg-stone-100"}`}
               >
-                <n.Icon className="h-4 w-4" aria-hidden />
+                <n.Icon className={`h-4 w-4 ${on ? "text-brand" : "text-brand/80"}`} aria-hidden />
                 {n.label}
               </Link>
             );
           })}
         </nav>
-        <Link href="/my/tasks" className="relative shrink-0 rounded-full p-2 hover:bg-stone-100" aria-label={`期限が近い手続き ${o.urgent.length}件`}>
-          <Bell className="h-5 w-5 text-stone-600" aria-hidden />
-          {o.urgent.length > 0 && <span className="absolute right-0.5 top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-orange-500 px-1 text-[10px] font-bold text-white">{o.urgent.length}</span>}
-        </Link>
+        <NoticeBell />
         <div className="relative shrink-0">
           <button type="button" onClick={() => setMenu((m) => !m)} className="flex items-center gap-1 rounded-full px-2 py-1 text-sm text-stone-700 hover:bg-stone-100">
-            <UserRound className="h-5 w-5" aria-hidden /> <span className="hidden md:inline">{o.account?.name ?? ""}さん</span> ▾
+            <UserRound className="h-5 w-5 text-brand" aria-hidden /> <span className="hidden md:inline">{o.account?.name ?? ""}さん</span> ▾
           </button>
           {menu && (
             <div className="absolute right-0 mt-1 w-52 rounded-xl border border-stone-200 bg-white p-1 text-sm shadow-lg">

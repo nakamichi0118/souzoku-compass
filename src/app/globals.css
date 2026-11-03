@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* 相続コンパスのブランドの緑（ロゴの緑を、白地で読みやすい濃さにしたもの） */
+@theme {
+  --color-brand: #2e9b6a;
+  --color-brand-soft: #e3f5ec;
+}
+
 :root {
   --font-sans: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI", Meiryo, system-ui, sans-serif;
 }

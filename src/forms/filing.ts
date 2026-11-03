@@ -195,7 +195,7 @@ export function buildFilingPages(c: Case, r: TaxResult): PageFill[] {
 export function formsNotGenerated(c: Case, r: TaxResult): { form: string; reason: string }[] {
   const out: { form: string; reason: string }[] = [];
   if (r.persons.some((p) => p.otherCredits > 0))
-    out.push({ form: "第8の8表（税額控除額及び納付税額の計算書）", reason: "未成年者控除・障害者控除を使っています（第6表は自動で作ります）" });
+    out.push({ form: "第8の8表（税額控除額及び納付税額の計算書）", reason: "未成年者控除・障害者控除を使っています" });
   if (r.persons.some((p) => p.giftTaxCredit > 0)) out.push({ form: "第4表の2（暦年課税分の贈与税額控除額の計算書）", reason: "贈与税額控除を使っています" });
   return out;
 }

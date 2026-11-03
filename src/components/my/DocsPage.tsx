@@ -1,9 +1,10 @@
 "use client";
 
+import { AskCompass, useAsk } from "@/components/compass/AskCompass";
 import { Upload } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Bubble, CompassAvatar } from "@/components/compass/CompassKun";
 import { OfficeLookup } from "@/components/plan/OfficeLookup";
 import { AppShell, PageHead } from "@/components/shell/AppShell";
@@ -55,7 +56,7 @@ function Reader({ docId, onRegistered }: { docId: string; onRegistered: () => vo
           </a>
         )}
       </div>
-      <p className="mt-2 text-xs text-stone-500">金額や銀行名をコンパスくんが読み取ります。読み取りのため、選んだファイルをAI（Anthropic社のClaude）へ送ります。このアプリのサーバーには保存しません。登録する前に、必ず書類と見比べてください。デモでは架空の書類だけを使ってください。</p>
+      <p className="mt-2 text-xs text-stone-500">金額や銀行名をコンパスくんが読み取ります。登録する前に、必ず書類と見比べてください。</p>
       {ex.err && <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800">{ex.err}</p>}
       {ex.res && (
         <div className="mt-3 space-y-2">
@@ -213,6 +214,11 @@ export function DocsPage() {
   useEffect(() => {
     if (focus) setOpened((x) => ({ ...x, [focus]: true }));
   }, [focus]);
+  const docsContext = useCallback(
+    () => [`亡くなった日：${o.iv.deathDate}`, "集める書類：", ...o.docs.map((d) => `- ${DOCS[d.id].name}${d.done ? "（済）" : d.na ? "（不要）" : ""}`)].join("\n"),
+    [o.iv.deathDate, o.docs],
+  );
+  const ask = useAsk("docs", docsContext);
 
   if (!o.loaded) return <AppShell>{null}</AppShell>;
   if (!o.heard || !o.valid) {
@@ -324,6 +330,9 @@ export function DocsPage() {
             </ul>
           </Panel>
         </div>
+      </div>
+      <div className="mt-6">
+        <AskCompass state={ask} placeholder="例：除籍謄本と改製原戸籍はどう違う？" />
       </div>
     </AppShell>
   );

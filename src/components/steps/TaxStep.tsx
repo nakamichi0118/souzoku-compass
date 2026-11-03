@@ -4,6 +4,9 @@ import { useState } from "react";
 import { Button, Card, Note, fmt } from "@/components/ui";
 import { toString as fracText } from "@/domain/fraction";
 import { RATE_TABLE, rateFor } from "@/domain/tax/engine";
+import { Markdown } from "@/components/compass/Markdown";
+import { addMonths, jpDate, nextOpenDay } from "@/domain/procedures/dates";
+import { relationLabel } from "@/forms/filing";
 import { useCase } from "@/lib/store";
 import { summarizeForAssistant } from "@/lib/summary";
 
@@ -46,6 +49,12 @@ export function TaxStep() {
     }
   }
 
+  const man = (n: number) => (n >= 10_000 ? `約${(Math.round(n / 1_000) / 10).toLocaleString("ja-JP")}万円` : `${fmt(n)}円`);
+  const payers = r.persons.filter((p) => p.taxable > 0 || p.payable > 0);
+  const maxBar = Math.max(1, ...payers.map((p) => p.computed + p.surcharge));
+  const basicPart = Math.min(r.basicDeduction, r.totalTaxable);
+  const deadline = data.decedent.deathDate ? nextOpenDay(addMonths(data.decedent.deathDate, 10)) : null;
+
   return (
     <div className="space-y-5">
       {r.blockers.map((b) => (
@@ -53,119 +62,197 @@ export function TaxStep() {
           {b}
         </Note>
       ))}
-      <Card>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div>
-            <p className="text-sm text-stone-600">課税価格の合計額</p>
-            <p className="text-2xl font-bold tabular-nums">{fmt(r.totalTaxable)}円</p>
-          </div>
-          <div>
-            <p className="text-sm text-stone-600">相続税の総額</p>
-            <p className="text-2xl font-bold tabular-nums">{fmt(r.totalTax)}円</p>
-          </div>
-          <div>
-            <p className="text-sm text-stone-600">納める相続税の合計</p>
-            <p className="text-3xl font-bold tabular-nums text-teal-800">{fmt(r.totalPayable)}円</p>
-          </div>
-        </div>
-        <div className="mt-4">
-          {r.needsFiling ? <Note tone="warn">相続税の申告が必要です。</Note> : <Note tone="ok">相続税の申告は原則不要です。</Note>}
-        </div>
+
+      {/* いちばん大事なこと：家族全体で、誰がいくら納めるか */}
+      <section className="rounded-2xl border border-teal-200 bg-gradient-to-br from-teal-50 to-white p-5 shadow-sm">
+        <p className="text-sm font-semibold text-teal-900">家族全体で納める相続税</p>
+        <p className="mt-1 text-4xl font-bold tabular-nums text-teal-900">
+          {fmt(r.totalPayable)}
+          <span className="ml-1 text-xl">円</span>
+        </p>
+        <p className="mt-2 text-sm text-stone-700">
+          {!r.needsFiling ? "相続税はかからず、申告も原則いりません。" : r.totalPayable === 0 ? "特例を使うので納める税金は0円ですが、申告は必要です。" : "それぞれが自分の分を、申告期限までに納めます。"}
+          {r.needsFiling && deadline && <span className="ml-1 font-semibold">申告・納税の期限：{jpDate(deadline)}</span>}
+        </p>
+
+        {payers.length > 0 && r.totalTax > 0 && (
+          <ul className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {payers.map((p) => {
+              const before = p.computed + p.surcharge;
+              const minus = before - p.afterCredits;
+              return (
+                <li key={p.person.id} className="rounded-xl border border-stone-200 bg-white p-4">
+                  <p className="text-sm text-stone-600">
+                    {p.person.name}
+                    <span className="ml-1 text-xs text-stone-400">{relationLabel(p.person)}</span>
+                  </p>
+                  <p className="mt-1 text-2xl font-bold tabular-nums text-stone-900">
+                    {fmt(p.payable)}
+                    <span className="ml-0.5 text-sm">円</span>
+                  </p>
+                  {/* 割り当てられた税額のうち、控除で減った分と納める分 */}
+                  <div className="mt-3 flex h-3 overflow-hidden rounded-full bg-stone-100" style={{ width: `${Math.max(8, (before / maxBar) * 100)}%` }} aria-hidden>
+                    <div className="h-full bg-teal-600" style={{ width: `${before ? (p.afterCredits / before) * 100 : 0}%` }} />
+                    <div className="h-full bg-emerald-200" style={{ width: `${before ? (minus / before) * 100 : 0}%` }} />
+                  </div>
+                  <p className="mt-2 text-xs leading-relaxed text-stone-500">
+                    受け取った財産 {man(p.taxable)}・税額の割り当て {fmt(before)}円
+                    {minus > 0 && (
+                      <>
+                        <br />
+                        {[
+                          p.spouseCredit && `配偶者の税額軽減 −${fmt(p.spouseCredit)}円`,
+                          p.minorCredit && `未成年者控除 −${fmt(p.minorCredit)}円`,
+                          p.disabilityCredit && `障害者控除 −${fmt(p.disabilityCredit)}円`,
+                          p.giftTaxCredit && `贈与税額控除 −${fmt(p.giftTaxCredit)}円`,
+                        ]
+                          .filter(Boolean)
+                          .join("・")}
+                      </>
+                    )}
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {payers.length > 0 && r.totalTax > 0 && (
+          <p className="mt-3 flex flex-wrap items-center gap-4 text-xs text-stone-600">
+            <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-teal-600 align-middle" />納める額</span>
+            <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-emerald-200 align-middle" />軽減・控除で減った額</span>
+          </p>
+        )}
+      </section>
+
+      {/* どうしてこの金額になるのか：3段階の図 */}
+      <Card title="どうしてこの金額になるの？">
+        <ol className="space-y-5">
+          <li>
+            <p className="text-sm font-bold text-stone-800">1. 財産の合計から、基礎控除を差し引きます</p>
+            <div className="mt-2 flex h-9 overflow-hidden rounded-lg text-xs font-semibold text-white">
+              <div className="grid place-items-center bg-stone-400 px-2" style={{ width: `${r.totalTaxable ? (basicPart / r.totalTaxable) * 100 : 100}%` }}>
+                基礎控除 {man(r.basicDeduction)}
+              </div>
+              {r.taxableEstate > 0 && (
+                <div className="grid min-w-[6rem] place-items-center bg-orange-500 px-2" style={{ width: `${(r.taxableEstate / r.totalTaxable) * 100}%` }}>
+                  税金の対象 {man(r.taxableEstate)}
+                </div>
+              )}
+            </div>
+            <p className="mt-1 text-xs text-stone-500">
+              財産の合計（課税価格の合計）{man(r.totalTaxable)}。基礎控除は 3,000万円＋600万円×法定相続人{r.legalHeirCount}人 です。
+            </p>
+          </li>
+          {r.taxableEstate > 0 && (
+            <li>
+              <p className="text-sm font-bold text-stone-800">2. 法律で決まった割合で分けたとして、家族全体の税額を出します</p>
+              <p className="mt-1 text-sm text-stone-700">
+                相続税の総額：<span className="font-bold tabular-nums">{fmt(r.totalTax)}円</span>
+              </p>
+              <p className="text-xs text-stone-500">実際の分け方に関係なく、法定相続分で分けたとして税率をかけた合計です（相続税法16条）。</p>
+            </li>
+          )}
+          {r.totalTax > 0 && (
+            <li>
+              <p className="text-sm font-bold text-stone-800">3. 実際に受け取った割合で、総額を一人ひとりに割り当てます</p>
+              <div className="mt-2 flex h-9 overflow-hidden rounded-lg text-xs font-semibold text-white">
+                {payers.map((p, i) => (
+                  <div
+                    key={p.person.id}
+                    className={`grid min-w-0 place-items-center truncate px-1 ${["bg-teal-600", "bg-sky-600", "bg-amber-500", "bg-violet-500", "bg-rose-500", "bg-lime-600"][i % 6]}`}
+                    style={{ width: `${p.ratio * 100}%` }}
+                    title={`${p.person.name} ${p.ratioText}`}
+                  >
+                    {p.ratio > 0.12 ? p.person.name : ""}
+                  </div>
+                ))}
+              </div>
+              <p className="mt-1 text-xs text-stone-500">そこから、配偶者の税額軽減や未成年者控除などを差し引いた額が、それぞれの納める税額です。</p>
+            </li>
+          )}
+        </ol>
       </Card>
 
-      <Card title="① 相続税の総額（第2表）">
-        <Row label="課税価格の合計額" value={r.totalTaxable} sub="各人の課税価格（1,000円未満切捨て）の合計" />
-        <Row label={`遺産に係る基礎控除額（法定相続人 ${r.legalHeirCount}人）`} value={-r.basicDeduction} sub="3,000万円＋600万円×法定相続人の数（相続税法15条）" />
-        <Row label="課税遺産総額" value={r.taxableEstate} strong />
-        <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[520px] text-sm">
-            <thead>
-              <tr className="border-b border-stone-200 text-left text-stone-600">
-                <th className="py-2">法定相続人</th>
-                <th className="py-2 text-center">法定相続分</th>
-                <th className="py-2 text-right">取得金額（1,000円未満切捨て）</th>
-                <th className="py-2 text-right">税率・控除額</th>
-                <th className="py-2 text-right">税額</th>
-              </tr>
-            </thead>
-            <tbody>
+      <details className="group rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+        <summary className="cursor-pointer text-lg font-bold text-stone-800">詳しい計算（申告書の第1表・第2表）</summary>
+        <div className="mt-4 space-y-6">
+          <section>
+            <h3 className="mb-2 font-bold text-stone-700">相続税の総額（第2表）</h3>
+            <Row label="課税価格の合計額" value={r.totalTaxable} sub="各人の課税価格（1,000円未満切捨て）の合計" />
+            <Row label={`遺産に係る基礎控除額（法定相続人 ${r.legalHeirCount}人）`} value={-r.basicDeduction} sub="3,000万円＋600万円×法定相続人の数（相続税法15条）" />
+            <Row label="課税遺産総額" value={r.taxableEstate} strong />
+            <ul className="mt-3 grid gap-2 sm:grid-cols-2">
               {r.slots.map((s, i) => {
                 const rate = rateFor(s.amount);
                 return (
-                  <tr key={i} className="border-b border-stone-100">
-                    <td className="py-2">{s.label}</td>
-                    <td className="py-2 text-center tabular-nums">{fracText(s.share)}</td>
-                    <td className="py-2 text-right tabular-nums">{fmt(s.amount)}円</td>
-                    <td className="py-2 text-right text-stone-600">{s.amount > 0 ? `${rate.rate}% − ${fmt(rate.deduction)}円` : "—"}</td>
-                    <td className="py-2 text-right tabular-nums">{fmt(s.tax)}円</td>
-                  </tr>
+                  <li key={i} className="rounded-lg bg-stone-50 p-3 text-sm">
+                    <p className="font-semibold">
+                      {s.label}
+                      <span className="ml-2 text-xs font-normal text-stone-500">法定相続分 {fracText(s.share)}</span>
+                    </p>
+                    <p className="mt-1 flex justify-between tabular-nums"><span className="text-stone-500">取得金額</span>{fmt(s.amount)}円</p>
+                    <p className="flex justify-between tabular-nums"><span className="text-stone-500">税率・控除額</span>{s.amount > 0 ? `${rate.rate}% − ${fmt(rate.deduction)}円` : "—"}</p>
+                    <p className="flex justify-between font-semibold tabular-nums"><span className="text-stone-500">税額</span>{fmt(s.tax)}円</p>
+                  </li>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
-        <Row label="相続税の総額（100円未満切捨て）" value={r.totalTax} strong />
-        <details className="mt-2 text-xs text-stone-600">
-          <summary className="cursor-pointer text-teal-800">速算表（相続税法16条）</summary>
-          <ul className="mt-2 grid grid-cols-2 gap-1 sm:grid-cols-4">
-            {RATE_TABLE.map((t) => (
-              <li key={t.rate}>
-                {t.upTo === Infinity ? "6億円超" : `${fmt(t.upTo / 10000)}万円以下`}：{t.rate}%・控除{fmt(t.deduction / 10000)}万円
-              </li>
-            ))}
-          </ul>
-        </details>
-      </Card>
-
-      <Card title="② 各人の納付税額（第1表）">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-sm">
-            <thead>
-              <tr className="border-b border-stone-200 text-right text-stone-600">
-                <th className="py-2 text-left">項目</th>
-                {r.persons.map((p) => (
-                  <th key={p.person.id} className="py-2">
-                    {p.person.name}
-                  </th>
+            </ul>
+            <Row label="相続税の総額（100円未満切捨て）" value={r.totalTax} strong />
+            <details className="mt-2 text-xs text-stone-600">
+              <summary className="cursor-pointer text-teal-800">速算表（相続税法16条）</summary>
+              <ul className="mt-2 grid grid-cols-2 gap-1 sm:grid-cols-4">
+                {RATE_TABLE.map((t) => (
+                  <li key={t.rate}>
+                    {t.upTo === Infinity ? "6億円超" : `${fmt(t.upTo / 10000)}万円以下`}：{t.rate}%・控除{fmt(t.deduction / 10000)}万円
+                  </li>
                 ))}
-              </tr>
-            </thead>
-            <tbody className="tabular-nums">
-              {(
-                [
-                  ["取得財産の価額", (p) => p.acquired],
-                  ["債務及び葬式費用", (p) => p.debts],
-                  ["暦年課税分の贈与財産価額（3年以内）", (p) => p.gifts],
-                  ["課税価格", (p) => p.taxable],
-                  ["按分割合", (p) => p.ratioText],
-                  ["算出税額", (p) => p.computed],
-                  ["2割加算", (p) => p.surcharge],
-                  ["暦年課税分の贈与税額控除", (p) => -p.giftTaxCredit],
-                  ["配偶者の税額軽減", (p) => -p.spouseCredit],
-                  ["未成年者控除", (p) => -p.minorCredit],
-                  ["障害者控除", (p) => -p.disabilityCredit],
-                  ["納付すべき税額（100円未満切捨て）", (p) => p.payable],
-                ] as [string, (p: (typeof r.persons)[number]) => number | string][]
-              ).map(([label, f]) => (
-                <tr key={label} className={`border-b border-stone-100 ${label.startsWith("納付") ? "font-bold text-teal-800" : ""}`}>
-                  <td className="py-2 text-left">{label}</td>
-                  {r.persons.map((p) => {
-                    const v = f(p);
-                    return (
-                      <td key={p.person.id} className="py-2 text-right">
-                        {typeof v === "number" ? (v === 0 ? "—" : `${fmt(v)}円`) : v}
-                      </td>
-                    );
-                  })}
-                </tr>
+              </ul>
+            </details>
+          </section>
+
+          <section>
+            <h3 className="mb-2 font-bold text-stone-700">各人の納付税額（第1表）</h3>
+            <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {r.persons.map((p) => (
+                <li key={p.person.id} className="rounded-lg border border-stone-200 p-3 text-sm">
+                  <p className="mb-1 font-bold">{p.person.name}</p>
+                  <dl className="tabular-nums">
+                    {(
+                      [
+                        ["取得財産の価額", p.acquired],
+                        ["債務及び葬式費用", p.debts],
+                        ["3年以内の贈与財産", p.gifts],
+                        ["課税価格", p.taxable],
+                        ["按分割合", p.ratioText],
+                        ["算出税額", p.computed],
+                        ["2割加算", p.surcharge],
+                        ["贈与税額控除", -p.giftTaxCredit],
+                        ["配偶者の税額軽減", -p.spouseCredit],
+                        ["未成年者控除", -p.minorCredit],
+                        ["障害者控除", -p.disabilityCredit],
+                      ] as [string, number | string][]
+                    )
+                      .filter(([, v]) => v !== 0 && v !== "")
+                      .map(([k, v]) => (
+                        <div key={k} className="flex justify-between gap-2 border-b border-stone-100 py-1">
+                          <dt className="text-stone-500">{k}</dt>
+                          <dd>{typeof v === "number" ? `${fmt(v)}円` : v}</dd>
+                        </div>
+                      ))}
+                    <div className="flex justify-between gap-2 pt-1 font-bold text-teal-800">
+                      <dt>納付すべき税額</dt>
+                      <dd>{fmt(p.payable)}円</dd>
+                    </div>
+                  </dl>
+                </li>
               ))}
-            </tbody>
-          </table>
+            </ul>
+          </section>
         </div>
-      </Card>
+      </details>
 
       {r.spouse && (
-        <Card title="③ 配偶者の税額軽減（第5表）">
+        <Card title="配偶者の税額軽減（第5表）">
           <Row label="課税価格の合計額" value={r.spouse.totalTaxable} />
           <Row label="配偶者の法定相続分相当額" value={r.spouse.legalShareAmount} sub="1億6千万円に満たない場合は1億6千万円" />
           <Row label="配偶者の課税価格" value={r.spouse.spouseTaxable} />
@@ -175,7 +262,7 @@ export function TaxStep() {
       )}
 
       <Card title="コンパスくんの説明" actions={<Button onClick={askExplain} disabled={busy}>{busy ? "作成中…" : "この結果を説明してもらう"}</Button>}>
-        {explain ? <p className="whitespace-pre-wrap text-sm leading-relaxed">{explain}</p> : <p className="text-sm text-stone-500">「この結果を説明してもらう」を押すと、コンパスくんが計算結果をやさしく説明します。</p>}
+        {explain ? <div className="text-sm text-stone-800"><Markdown text={explain} /></div> : <p className="text-sm text-stone-500">「この結果を説明してもらう」を押すと、コンパスくんが計算結果をやさしく説明します。</p>}
       </Card>
 
       {r.warnings.map((w) => (
