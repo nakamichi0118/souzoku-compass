@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronDown, Lightbulb } from "lucide-react";
 import { useCallback } from "react";
 import { AskCompass, useAsk } from "./compass/AskCompass";
 import { CompassAvatar } from "./compass/CompassKun";
@@ -70,17 +71,22 @@ export function GuidePanel({ step }: { step: string }) {
   return (
     <div className="space-y-3">
       {g && (
-        <div className="flex items-start gap-3 rounded-2xl border border-sky-200 bg-white p-4">
-          <CompassAvatar size={44} />
-          <div className="min-w-0 space-y-2">
-            <p className="text-sm leading-relaxed text-stone-800">{g.lead}</p>
-            <ul className="list-disc space-y-1 pl-5 text-sm text-stone-700">
-              {g.points.map((p) => (
+        <details className="group rounded-2xl border border-sky-200 bg-white">
+          <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold text-sky-950 [&::-webkit-details-marker]:hidden">
+            <Lightbulb className="h-4 w-4 text-brand" aria-hidden />
+            このステップのTips
+            <span className="text-xs font-normal text-stone-500">（{g.points.length + 1}件）</span>
+            <ChevronDown className="ml-auto h-4 w-4 text-stone-400 transition group-open:rotate-180" aria-hidden />
+          </summary>
+          <div className="flex items-start gap-3 border-t border-sky-100 px-4 py-3">
+            <CompassAvatar size={36} />
+            <ul className="min-w-0 list-disc space-y-1.5 pl-4 text-sm leading-relaxed text-stone-700">
+              {[g.lead, ...g.points].map((p) => (
                 <li key={p}>{p}</li>
               ))}
             </ul>
           </div>
-        </div>
+        </details>
       )}
       <AskCompass state={state} placeholder="例：定期預金の利息はどう調べればいい？" />
     </div>

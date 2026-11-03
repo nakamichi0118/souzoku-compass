@@ -8,11 +8,11 @@ import { LogoMark } from "@/components/compass/CompassKun";
 import { NoticeBell } from "./Notices";
 import { useOverall } from "@/lib/overall";
 
-const NAV: { href: string; label: string; Icon: LucideIcon; match: (p: string) => boolean }[] = [
+const NAV: { href: string; label: string; Icon: LucideIcon; match: (p: string) => boolean; count?: "tasks" | "docs" }[] = [
   { href: "/my", label: "ホーム", Icon: House, match: (p) => p === "/my" },
-  { href: "/my/tasks", label: "やることリスト", Icon: ListChecks, match: (p) => p.startsWith("/my/tasks") },
+  { href: "/my/tasks", label: "やることリスト", Icon: ListChecks, match: (p) => p.startsWith("/my/tasks"), count: "tasks" },
   { href: "/my/calendar", label: "カレンダー", Icon: CalendarDays, match: (p) => p.startsWith("/my/calendar") },
-  { href: "/my/docs", label: "資料集め", Icon: FileText, match: (p) => p.startsWith("/my/docs") },
+  { href: "/my/docs", label: "資料集め", Icon: FileText, match: (p) => p.startsWith("/my/docs"), count: "docs" },
   { href: "/case/assets", label: "財産と相続税", Icon: Calculator, match: (p) => p.startsWith("/case/") && p !== "/case/registration" },
   { href: "/my/papers", label: "書類・帳票", Icon: Printer, match: (p) => p.startsWith("/my/papers") || p === "/case/registration" },
 ];
@@ -23,6 +23,8 @@ export function AppHeader() {
   const path = usePathname();
   const router = useRouter();
   const [menu, setMenu] = useState(false);
+  // まだ終わっていない件数（不要にしたものは数えない）
+  const left = o.valid && o.heard ? { tasks: o.live.length - o.doneTasks, docs: o.docs.filter((d) => !d.na).length - o.doneDocs } : null;
 
   useEffect(() => {
     if (o.loaded && !o.account) router.replace("/login");
@@ -47,6 +49,11 @@ export function AppHeader() {
               >
                 <n.Icon className={`h-4 w-4 ${on ? "text-brand" : "text-brand/80"}`} aria-hidden />
                 {n.label}
+                {n.count && left && left[n.count] > 0 && (
+                  <span className="ml-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-orange-500 px-1.5 text-[11px] font-bold tabular-nums text-white" aria-label={`残り${left[n.count]}件`}>
+                    {left[n.count]}
+                  </span>
+                )}
               </Link>
             );
           })}
