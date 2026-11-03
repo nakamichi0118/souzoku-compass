@@ -251,17 +251,17 @@ export function valueAsset(a: Asset): Valuation {
 }
 
 /**
- * 小規模宅地等の特例（特定居住用宅地等・減額割合80%）。付表1の⑤⑥⑦の順に計算する。
- * ⑥ = ④ × ⑤/③（1円未満切捨て）、⑦ = ⑥ × 80/100（1円未満切捨て）
+ * 小規模宅地等の特例。付表1の⑤⑥⑦の順に計算する。
+ * ⑥ = ④ × ⑤/③（1円未満切捨て）、⑦ = ⑥ × 減額割合（特定居住用・特定事業用 80/100、貸付事業用 50/100。1円未満切捨て）
  */
-export function smallResidentialSelection(value: number, areaSqm: number, limitSqm = 330) {
+export function smallResidentialSelection(value: number, areaSqm: number, limitSqm = 330, ratePercent = 80) {
   if (areaSqm <= 0 || value <= 0) return { selectedArea: 0, selectedValue: 0, reduction: 0 };
   const area100 = Math.round(areaSqm * 100);
   const target100 = Math.min(area100, Math.max(0, Math.round(limitSqm * 100)));
   const selectedValue = Number((BigInt(value) * BigInt(target100)) / BigInt(area100));
-  return { selectedArea: target100 / 100, selectedValue, reduction: Math.floor((selectedValue * 8) / 10) };
+  return { selectedArea: target100 / 100, selectedValue, reduction: Math.floor((selectedValue * ratePercent) / 100) };
 }
 
-export function smallResidentialReduction(value: number, areaSqm: number, limitSqm = 330) {
-  return smallResidentialSelection(value, areaSqm, limitSqm).reduction;
+export function smallResidentialReduction(value: number, areaSqm: number, limitSqm = 330, ratePercent = 80) {
+  return smallResidentialSelection(value, areaSqm, limitSqm, ratePercent).reduction;
 }

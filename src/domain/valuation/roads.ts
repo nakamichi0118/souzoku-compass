@@ -22,8 +22,10 @@ export interface RoadInput {
   price: number;
   /** その道路から見た奥行距離（m） */
   depth: number;
-  /** 路線価図の表記（例：420D） */
+  /** 路線価図の表記（例：420D）。末尾の記号（A〜G）が借地権割合 */
   notation?: string;
+  /** 間口距離（m）。正面の道路の間口で間口狭小補正・奥行長大補正（付表6・7）をする。未入力なら補正しない */
+  frontage?: number;
 }
 
 /** 付表2 側方路線影響加算率表（角地・準角地） */

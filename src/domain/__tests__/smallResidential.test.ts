@@ -19,7 +19,8 @@ describe("小規模宅地等の特例の判定", () => {
   });
   it("売る・引っ越す場合や自宅でない土地は使えない", () => {
     expect(judgeSmallResidential({ ownHome: "yes", special: "no", livedTogether: "yes", keep: "no" }, child).result).toBe("no");
-    expect(judgeSmallResidential({ ownHome: "no" }, spouse).result).toBe("no");
+    expect(judgeSmallResidential({ ownHome: "no" }, spouse).result).toBe("incomplete");
+    expect(judgeSmallResidential({ ownHome: "no", business: "no" }, spouse).result).toBe("no");
   });
   it("相談が必要な場合は、税理士に確認したときだけ適用する", () => {
     const c = { ownHome: "yes" as const, special: "no" as const, livedTogether: "no" as const };

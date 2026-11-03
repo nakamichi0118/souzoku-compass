@@ -69,8 +69,20 @@ export interface Decedent {
   occupation?: string;
   /** 亡くなった方が、亡くなる前10年以内に相続で財産を受け取り相続税を納めていた（相次相続控除の対象。自動計算の対象外） */
   priorInheritanceTax?: boolean;
-  /** 相続時精算課税を選んで贈与した財産がある（自動計算の対象外） */
+  /** 相続時精算課税を選んで贈与した財産がある（贈与の欄で「精算課税」の印を付けた贈与を計算に入れる） */
   settlementGift?: boolean;
+  /**
+   * 相次相続控除の計算に使う前の相続の内容（priorInheritanceTax のとき）。
+   * 相続税法20条：A × C/(B−A)（100/100が上限） × (10−E)/10
+   */
+  priorInheritance?: {
+    /** 前の相続が始まった日（前の相続で亡くなった方が亡くなった日）。経過年数 E（1年未満切捨て）に使う */
+    date?: ISODate;
+    /** A：今回亡くなった方が、前の相続で納めた相続税額 */
+    prevTax?: number;
+    /** B：今回亡くなった方が、前の相続で取得した財産の価額（債務控除後） */
+    prevAcquired?: number;
+  };
 }
 
 export type AssetKind =
@@ -174,15 +186,56 @@ export interface LandAsset extends AssetBase {
   geo?: { lat: number; lng: number };
   /** 地図に重ねた路線価図（基準点は画像の幅・高さを1とした座標と緯度経度の組） */
   rosenkaSheet?: RosenkaSheet;
-  /** 小規模宅地等の特例（特定居住用宅地等）を適用する */
-  smallResidential?: { applies: boolean; acquirerId?: string; check?: SmallResidentialCheck };
+  /** 土地の使い方（評価が変わる）。未設定は "self"（自分で使っている＝自用地） */
+  use?: LandUse;
+  /** 貸家建付地の賃貸割合（0より大きく1以下。未設定は1＝全部貸している） */
+  rentRatio?: number;
+  /**
+   * 借地権割合（0より大きく1未満。例 0.6）。貸家建付地・貸宅地・借地権の評価に使う。
+   * 未設定なら、路線価方式は正面の道路の記号（A〜G）から、倍率方式は評価倍率表の借地権割合から決める
+   */
+  leaseRatio?: number;
+  /**
+   * 評価に影響する、この土地の事情（本人が選んだもの）。どれかがあると、相続コンパスでは評価せず税理士への相談を案内する
+   * irregular：形がいびつ（旗竿地・三角形・L字など）、setback：道路の幅が4m未満で建て替えのとき下がる部分がある、
+   * spouseResidence：配偶者居住権を設定した
+   */
+  condition?: "irregular" | "setback" | "spouseResidence";
+  /** 小規模宅地等の特例を適用する（種類は smallLandKind で使い方と答えから決める） */
+  smallResidential?: SmallLandRelief;
   registry?: RegistryInfo;
+}
+
+/** 土地の使い方 */
+export type LandUse =
+  | "self" // 自分で使っている（自宅・空き地・青空駐車場など）
+  | "rentedHouse" // アパート・貸家を建てて貸している（貸家建付地）
+  | "leasedLand" // 土地を人に貸し、相手が建物を建てている（貸宅地）
+  | "leasehold"; // 人の土地を借りて建物を建てている（借地権）
+
+/** 小規模宅地等の特例の種類（租税特別措置法69条の4） */
+export type SmallLandKind =
+  | "residence" // 特定居住用宅地等（330㎡まで80%減額）
+  | "business" // 特定事業用宅地等（400㎡まで80%減額）
+  | "rental"; // 貸付事業用宅地等（200㎡まで50%減額）
+
+/** 小規模宅地等の特例の入力（土地・マンション共通） */
+export interface SmallLandRelief {
+  applies: boolean;
+  acquirerId?: string;
+  check?: SmallResidentialCheck;
+  /** マンション：特例の対象にする敷地権の面積（未設定は敷地権の面積） */
+  landShareSqm?: number;
 }
 
 export interface BuildingAsset extends AssetBase {
   kind: "building";
   location: string;
   fixedAssetValue: number;
+  /** 人に貸している家屋（貸家）。評価は 固定資産税評価額 ×（1 − 借家権割合0.3 × 賃貸割合） */
+  rented?: boolean;
+  /** 賃貸割合（0より大きく1以下。未設定は1） */
+  rentRatio?: number;
   registry?: RegistryInfo;
 }
 
@@ -201,7 +254,13 @@ export interface CondoAsset extends AssetBase {
   exclusiveAreaSqm: number; // 専有部分の床面積
   /** 居住用の専有部分が3室以下で、そのすべてを本人・親族が住まいに使っている（区分所有補正の対象外） */
   fewUnitsFamily?: boolean;
-  smallResidential?: { applies: boolean; acquirerId?: string; landShareSqm?: number; check?: SmallResidentialCheck };
+  /** 人に貸している部屋。部屋は貸家、敷地利用権は貸家建付地として評価する */
+  rented?: boolean;
+  /** 賃貸割合（0より大きく1以下。未設定は1） */
+  rentRatio?: number;
+  /** 敷地の借地権割合（0より大きく1未満。貸している部屋のときに使う。路線価図の記号 A〜G から） */
+  leaseRatio?: number;
+  smallResidential?: SmallLandRelief;
   registry?: RegistryInfo;
 }
 
@@ -266,12 +325,25 @@ export interface Allocation {
   shares: { personId: string; numerator: number; denominator: number }[];
 }
 
-/** 相続開始前3年以内の暦年課税贈与（令和8年中の相続開始は3年） */
+/**
+ * 亡くなった方からの生前贈与。
+ * 暦年課税：相続開始前3年以内のものを加算（令和8年中の相続開始は3年）。
+ * 相続時精算課税（settlement）：期間に関係なく加算。令和6年以後の贈与は年110万円の基礎控除を引いた額。
+ */
 export interface PriorGift {
   personId: string;
   date: ISODate;
   amount: number;
   giftTaxPaid: number;
+  /** 相続時精算課税を選んだ贈与 */
+  settlement?: boolean;
+}
+
+/** 代償金：財産を多く受け継いだ人が、ほかの相続人に払うお金（代償分割） */
+export interface Compensation {
+  fromId: string;
+  toId: string;
+  amount: number;
 }
 
 export interface Case {
@@ -283,6 +355,13 @@ export interface Case {
   debts: Debt[];
   allocations: Allocation[];
   priorGifts: PriorGift[];
+  /**
+   * 申告期限までに分け方が決まらない（未分割）。true のとき、取得者が決まっていない財産は
+   * 民法の法定相続分で取得したものとして計算する（相続税法55条）
+   */
+  undivided?: boolean;
+  /** 代償金（代償分割） */
+  compensation?: Compensation[];
   /** 申告書の提出先税務署・提出日 */
   filing?: { taxOffice: string; submitDate?: ISODate };
   /** 相続税申告の7ステップのうち「次へ」で完了にしたもの（進捗表示用。計算には使わない） */

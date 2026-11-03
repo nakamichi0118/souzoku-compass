@@ -14,7 +14,7 @@
 import { Fraction, frac, mulYen } from "../fraction";
 import { HeirResult, determineHeirs, isSurchargeTarget } from "../heirs";
 import { floor100, floor1000 } from "../rounding";
-import type { Asset, Case, LandAsset, Person, PriorGift } from "../types";
+import type { Asset, Case, LandAsset, Person, PriorGift, SmallLandKind } from "../types";
 import { Valuation, smallResidentialSelection, valueAsset } from "../valuation";
 import { judgeSmallResidential, shouldApply } from "../valuation/smallResidential";
 
@@ -59,6 +59,10 @@ export interface AssetLine {
 
 export interface SmallResidentialDetail {
   acquirerId: string;
+  /** 特例の種類（特定居住用・特定事業用・貸付事業用） */
+  kind: SmallLandKind;
+  /** 減額割合（%）：特定居住用・特定事業用 80、貸付事業用 50 */
+  rate: number;
   /** ③ 取得者の持分に応ずる宅地等の面積（㎡） */
   area: number;
   /** ④ 取得者の持分に応ずる宅地等の価額 */
@@ -73,8 +77,13 @@ export interface PersonTax {
   person: Person;
   isLegalHeir: boolean; // 相続税法上の法定相続人（放棄者を含む）
   isCivilHeir: boolean; // 民法上の相続人（放棄者を除く）
-  /** 遺産分割で取得した財産（減額後） */
+  /** 遺産分割で取得した財産（減額後）。未分割の財産（undivided）と代償金の受取り・支払いを含む */
   inherited: number;
+  /** うち、未分割の財産を法定相続分で取得したものとした価額（第11表②・第5表③） */
+  undivided: number;
+  /** 代償金の受取額・支払額（inherited に足し引き済み） */
+  compensationIn: number;
+  compensationOut: number;
   /** みなし相続財産（保険金・退職金）の受取額と非課税額 */
   insurance: number;
   insuranceExempt: number;
@@ -82,6 +91,8 @@ export interface PersonTax {
   retirementExempt: number;
   /** ① 取得財産の価額 */
   acquired: number;
+  /** ② 相続時精算課税適用財産の価額（令和6年以後の贈与は年110万円の基礎控除後） */
+  settlementGifts: number;
   /** ③ 債務及び葬式費用 */
   debts: number;
   debtOnly: number;
@@ -112,17 +123,39 @@ export interface PersonTax {
   /** 未成年者控除・障害者控除（第6表） */
   minorCredit: number;
   disabilityCredit: number;
-  /** 控除しきれなかった未成年者・障害者控除（扶養義務者から控除可能） */
+  /** 控除しきれなかった未成年者・障害者控除（扶養義務者の相続税額から控除する） */
   minorExcess: number;
   disabilityExcess: number;
+  /** ほかの人の控除しきれなかった未成年者・障害者控除を、この人（扶養義務者）の相続税額から控除した額（第6表） */
+  transfersIn: { fromId: string; kind: "minor" | "disability"; amount: number }[];
+  /** 相次相続控除額（第7表。⑭に含む） */
+  successiveCredit: number;
   /** ⑭ ⑫⑬以外の税額控除 */
   otherCredits: number;
   /** ⑮ 計 */
   totalCredits: number;
   /** ⑯ 差引税額 */
   afterCredits: number;
+  /** ⑰ 相続時精算課税分の贈与税額控除額（納めた贈与税。引ききれない分は還付） */
+  settlementCredit: number;
   /** ⑲ 小計（100円未満切捨て） = ㉑ 納付すべき税額 */
   payable: number;
+  /** ㉒ 還付される税額（⑯ − ⑰ が赤字のとき） */
+  refund: number;
+}
+
+/** 相次相続控除の計算（第7表） */
+export interface SuccessiveDetail {
+  /** A 前の相続で今回亡くなった方が納めた相続税額 */
+  prevTax: number;
+  /** B 前の相続で今回亡くなった方が取得した財産の価額 */
+  prevAcquired: number;
+  /** C 今回の相続で財産を取得した全員の純資産価額の合計 */
+  netTotal: number;
+  /** E 前の相続から今回の相続までの年数（1年未満切捨て） */
+  years: number;
+  /** 相次相続控除額の総額 A × C/(B−A)（上限1） × (10−E)/10 */
+  total: number;
 }
 
 export interface SpouseDetail {
@@ -151,6 +184,12 @@ export interface TaxResult {
   totalTax: number; // 相続税の総額（100円未満切捨て）
   spouse?: SpouseDetail;
   totalPayable: number;
+  /** 還付される税額の合計 */
+  totalRefund: number;
+  /** 未分割の財産がある（法定相続分で計算した） */
+  undivided: boolean;
+  /** 相次相続控除の計算（使うとき） */
+  successive?: SuccessiveDetail;
   insuranceExemptLimit: number;
   retirementExemptLimit: number;
   /** 自動完結できない事項（税理士相談が必要） */
@@ -444,7 +483,7 @@ function compute(
     const sel = smallResidentialSelection(x.landPart, x.area, srLeft100 / 100);
     if (sel.selectedArea > 0) srUsed.push(area100 > srLeft100 ? `${label}は残り${sqmText(srLeft100)}㎡分` : `${label}に${sqmText(area100)}㎡`);
     x.line.reduction = sel.reduction;
-    x.line.small = { acquirerId: x.acquirerId, area: x.area, value: x.landPart, selectedArea: sel.selectedArea, selectedValue: sel.selectedValue };
+    x.line.small = { acquirerId: x.acquirerId, kind: "residence", rate: 80, area: x.area, value: x.landPart, selectedArea: sel.selectedArea, selectedValue: sel.selectedValue };
     srLeft100 -= Math.round(sel.selectedArea * 100);
     x.part.amount -= sel.reduction;
   }
@@ -550,11 +589,15 @@ function compute(
         isLegalHeir: legalSet.has(p.id),
         isCivilHeir: civil.has(p.id),
         inherited,
+        undivided: 0,
+        compensationIn: 0,
+        compensationOut: 0,
         insurance,
         insuranceExempt,
         retirement,
         retirementExempt,
         acquired,
+        settlementGifts: 0,
         debts,
         debtOnly,
         funeralOnly,
@@ -574,10 +617,14 @@ function compute(
         disabilityCredit: 0,
         minorExcess: 0,
         disabilityExcess: 0,
+        transfersIn: [],
+        successiveCredit: 0,
         otherCredits: 0,
         totalCredits: 0,
         afterCredits: 0,
+        settlementCredit: 0,
         payable: 0,
+        refund: 0,
       } satisfies PersonTax;
     })
     .filter((pt) => pt.acquired > 0 || pt.taxable > 0 || pt.debts > 0 || pt.isLegalHeir);
@@ -700,6 +747,8 @@ function compute(
     totalTax,
     spouse,
     totalPayable,
+    totalRefund: 0,
+    undivided: false,
     insuranceExemptLimit,
     retirementExemptLimit,
     blockers,
