@@ -6,6 +6,10 @@ import { useEffect, useState } from "react";
 import { fmt } from "@/components/ui";
 import { TARGET_LABEL, applyExtracted, destination, findSame, missingItems, refExists, useExtract, type ExtractedAsset, type Ref } from "@/lib/extract";
 import { useCase } from "@/lib/store";
+import { type Progress, ProgressBar } from "@/components/compass/ProgressBar";
+
+/** 書類の読み取りにかかる目安（コンパスくんが画像を読む。ふつう十数秒） */
+const READ_WAIT: Progress = { at: 0, until: 1, expectSec: 20 };
 
 /** 見本の書類で試せる書類 */
 const SAMPLE: Record<string, { url: string; name: string }> = {
@@ -59,7 +63,7 @@ export function Reader({ docId, onRegistered }: { docId?: string; onRegistered?:
       <div className="flex flex-wrap items-center gap-2">
         <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800">
           <Upload className="h-4 w-4" aria-hidden />
-          {ex.busy ? "コンパスくんが読み取り中…" : "写真・PDFをアップロード"}
+          写真・PDFをアップロード
           <input
             type="file"
             accept="image/*,application/pdf"
@@ -86,11 +90,12 @@ export function Reader({ docId, onRegistered }: { docId?: string; onRegistered?:
           </button>
         )}
         {sample && (
-          <a href={sample.url} target="_blank" rel="noreferrer" className="text-xs text-teal-800 underline">
+          <a href={sample.url} target="_blank" rel="noreferrer" className="inline-block py-2 text-xs text-teal-800 underline">
             見本を開く
           </a>
         )}
       </div>
+      {ex.busy && <ProgressBar message="コンパスくんが読み取っています" progress={READ_WAIT} className="mt-3 text-sm text-teal-900" />}
       <p className="mt-2 text-xs text-stone-500">金額や名前をコンパスくんが読み取ります。財産・債務・葬式費用・贈与のどこに入るかも振り分けます。登録する前に、必ず書類と見比べてください。</p>
       {ex.err && <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800">{ex.err}</p>}
       {ex.res && (
@@ -123,7 +128,7 @@ export function Reader({ docId, onRegistered }: { docId?: string; onRegistered?:
                   </tbody>
                 </table>
                 <details className="mt-1 text-xs text-stone-500">
-                  <summary className="cursor-pointer">読み取った箇所</summary>
+                  <summary className="cursor-pointer py-2">読み取った箇所</summary>
                   <p className="mt-1">「{x.evidence}」</p>
                 </details>
                 {missing.length > 0 && <p className="mt-1 text-xs text-orange-700">書類からは分からないため、登録後に入れてください：{missing.join("、")}。入れるまで「確認待ち」として扱い、税額は確定しません。</p>}

@@ -54,7 +54,8 @@ function UnitBox({ unit, children }: { unit?: string; children: React.ReactNode 
     </div>
   );
 }
-const boxInputCls = "min-w-0 flex-1 rounded-lg bg-transparent px-3 py-2 text-right text-base tabular-nums text-stone-900 focus:outline-none";
+// w-full：入力欄の決まった幅（20文字ぶん）で、スマホの枠より外へはみ出さないように
+const boxInputCls = "w-full min-w-0 flex-1 rounded-lg bg-transparent px-3 py-2 text-right text-base tabular-nums text-stone-900 focus:outline-none";
 
 /** 円単位の数値入力（3桁区切り表示） */
 export function YenInput({ value, onChange, unit = "円" }: { value: number | undefined; onChange: (v: number) => void; unit?: string }) {

@@ -2,8 +2,9 @@
 
 import { kvGet, kvSet } from "@/lib/cloud";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Card, Note, TextInput } from "@/components/ui";
+import { scrollBelowHeader, scrollToY } from "@/components/ui/scroll";
 import { Choice, Counter, ManYen, Q, YesNo } from "@/components/plan/inputs";
 import { isValidDate } from "@/domain/procedures/dates";
 import { estimate, familyFromInterview, type Interview } from "@/domain/procedures/interview";
@@ -22,16 +23,62 @@ function seedPersons(iv: Interview): Person[] {
 
 const ANS_KEY = "souzoku-compass:answered:v1";
 
-/** 選んだ質問の次の質問へ、画面をゆっくり送る */
-function scrollNext() {
-  const cur = (document.activeElement as HTMLElement | null)?.closest("[data-q]");
-  setTimeout(() => {
-    const all = [...document.querySelectorAll<HTMLElement>("[data-q]")];
-    const i = cur ? all.indexOf(cur as HTMLElement) : -1;
-    const next = all[i + 1];
-    if (next) next.scrollIntoView({ behavior: "smooth", block: "start" });
-    else document.getElementById("hearing-finish")?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, 120);
+/**
+ * 答えた質問の次に見せる質問。最後の質問なら "end"。
+ * 答えた質問は、押した場所（tapped）から決める。iPhone の Safari ではボタンを押してもフォーカスが移らないため、
+ * フォーカス（focused）は押した場所が分からないときだけ使う。どちらでも分からなければ null で、画面は動かさない（一番上へ戻さない）
+ */
+export function nextQuestion<T>(all: readonly T[], tapped: T | null | undefined, focused?: T | null): T | "end" | null {
+  const cur = tapped ?? focused ?? null;
+  const i = cur == null ? -1 : all.indexOf(cur);
+  if (i < 0) return null;
+  return i + 1 < all.length ? all[i + 1] : "end";
+}
+
+/** 要素の高さを測り続ける（画面の幅や文が変わったときも） */
+function useHeight<E extends HTMLElement>() {
+  const [h, setH] = useState<number | null>(null);
+  const ref = useCallback((el: E | null) => {
+    if (!el) return;
+    const update = () => setH(el.offsetHeight);
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [h, ref] as const;
+}
+
+/** 画面の下に固定する「次へ」の帯。スマホでは文を短くして、帯が後ろのボタンを隠さないよう低くする */
+export function FinishBar({ dateOk, unanswered, onFinish, barRef }: { dateOk: boolean; unanswered: number; onFinish: () => void; barRef?: React.Ref<HTMLDivElement> }) {
+  return (
+    <div ref={barRef} className="fixed inset-x-0 bottom-0 z-30 border-t border-stone-200 bg-white/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
+      <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
+        <p className="min-w-0 flex-1 text-xs leading-snug text-stone-600 sm:text-sm">
+          {!dateOk ? (
+            "亡くなった日を入力してください。"
+          ) : unanswered > 0 ? (
+            <>
+              <span className="sm:hidden">選んでいない質問があと{unanswered}問</span>
+              <span className="hidden sm:inline">まだ選んでいない質問があと{unanswered}問あります。選ばないままだと仮の答えで手続きを出すため、必要な手続きが抜けることがあります（答えはあとから変えられます）。</span>
+            </>
+          ) : (
+            "答えはあとから変えられます。"
+          )}
+        </p>
+        <button
+          id="hearing-finish"
+          type="button"
+          disabled={!dateOk}
+          onClick={onFinish}
+          className="shrink-0 whitespace-nowrap rounded-lg bg-sky-700 px-4 py-3 font-semibold text-white hover:bg-sky-800 disabled:bg-stone-300 sm:px-6"
+        >
+          次へ（マイページへ） →
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export function Hearing() {
@@ -50,6 +97,24 @@ export function Hearing() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded]);
+  const listRef = useRef<HTMLDivElement>(null);
+  /** いま押した質問（iPhone の Safari ではボタンを押してもフォーカスが移らないので、押した場所から探す） */
+  const tappedQ = useRef<HTMLElement | null>(null);
+  const [barH, barRef] = useHeight<HTMLDivElement>();
+  /** 選んだ質問の次の質問へ、画面をゆっくり送る */
+  const scrollNext = () => {
+    const tapped = tappedQ.current;
+    tappedQ.current = null;
+    const focused = document.activeElement instanceof HTMLElement ? document.activeElement.closest<HTMLElement>("[data-q]") : null;
+    setTimeout(() => {
+      const all = [...(listRef.current?.querySelectorAll<HTMLElement>("[data-q]") ?? [])];
+      const next = nextQuestion(all, tapped, focused);
+      // 最後の質問のあとは、いちばん下まで送る（下の帯の分だけ余白があるので、隠れるボタンはない）
+      if (next === "end") scrollToY(document.documentElement.scrollHeight);
+      // 次の質問は、上に固定した見出しのすぐ下に出す
+      else if (next) scrollBelowHeader(next);
+    }, 120);
+  };
   const set = <K extends keyof Interview>(k: K, v: Interview[K]) => saveIv({ ...iv, [k]: v });
   /** まだ答えていない選択肢は、何も選ばれていない状態で見せる */
   const a = <K extends keyof Interview>(k: K): Interview[K] | undefined => (answered?.includes(k) ? iv[k] : undefined);
@@ -83,10 +148,16 @@ export function Hearing() {
   const unanswered = choiceKeys.filter((k) => !answered.includes(k)).length;
   return (
     <AppShell>
-      <div className="mx-auto max-w-3xl pb-24">
+      <div className="mx-auto max-w-3xl">
       <PageHead title="最初に、状況を教えてください" say="いくつかの質問に答えるだけで、あなたの手続きの道筋が見えてきます！金額はだいたいで大丈夫です。" />
 
-      <div className="mt-6 space-y-5">
+      <div
+        ref={listRef}
+        className="mt-6 space-y-5"
+        onClickCapture={(e) => {
+          tappedQ.current = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-q]") : null;
+        }}
+      >
         <Card title="1. 亡くなった方の情報">
           <Q label="いまの状況にいちばん近いものは？" hint="すでに済んだ時期の手続きは、最初から「完了」にしておきます（あとで戻せます）。">
             <Choice
@@ -109,7 +180,7 @@ export function Hearing() {
             <TextInput value={iv.address} onChange={(e) => set("address", e.target.value)} placeholder="例：東京都千代田区架空町一丁目2番3号" />
           </Q>
           <Q label="亡くなった日" hint="期限はこの日から数えます。">
-            <TextInput type="date" value={iv.deathDate} onChange={(e) => set("deathDate", e.target.value)} className="max-w-56" />
+            <TextInput type="date" value={iv.deathDate} onChange={(e) => set("deathDate", e.target.value)} className="min-h-[42px] max-w-56 [&::-webkit-date-and-time-value]:text-left" />
           </Q>
         </Card>
 
@@ -279,22 +350,15 @@ export function Hearing() {
         </Card>
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-stone-200 bg-white/95 px-4 py-3 backdrop-blur">
-        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
-          <p className="text-sm text-stone-600">
-            {!dateOk ? "亡くなった日を入力してください。" : unanswered > 0 ? `まだ選んでいない質問が${unanswered}つあります。選ばないままだと仮の答えで手続きを出すため、必要な手続きが抜けることがあります（答えはあとから変えられます）。` : "答えはあとから変えられます。"}
-          </p>
-          <button
-            id="hearing-finish"
-            type="button"
-            disabled={!dateOk}
-            onClick={finish}
-            className="rounded-lg bg-sky-700 px-6 py-3 font-semibold text-white hover:bg-sky-800 disabled:bg-stone-300"
-          >
-            次へ（マイページへ） →
-          </button>
-        </div>
-      </div>
+      {unanswered > 0 && (
+        <details className="mt-5 text-xs text-stone-600 sm:hidden">
+          <summary className="cursor-pointer py-2 font-medium text-teal-800">Tips：選んでいない質問があるときは</summary>
+          <p className="mt-2 leading-relaxed">選ばないままだと仮の答えで手続きを出すため、必要な手続きが抜けることがあります。答えはあとから変えられます。</p>
+        </details>
+      )}
+      {/* 下に固定した帯と同じ高さの余白（いちばん下の質問やボタンが帯に隠れないように） */}
+      <div aria-hidden style={{ height: (barH ?? 96) + 16 }} />
+      <FinishBar dateOk={dateOk} unanswered={unanswered} onFinish={finish} barRef={barRef} />
       </div>
     </AppShell>
   );

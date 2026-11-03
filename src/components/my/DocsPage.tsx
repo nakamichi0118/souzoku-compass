@@ -14,19 +14,24 @@ import { DOCS, type DocCategory } from "@/domain/procedures/documents";
 import { useOverall, useRequireHearing, type DocItem } from "@/lib/overall";
 import { usePlan, type ItemStatus } from "@/lib/planStore";
 import { CatIcon } from "./icons";
+import { showBelowHeader } from "./scroll";
 import { RowStatus } from "./StatusButtons";
 
 /** 亡くなった方の住所で請求先が決まる書類 */
 const LOOKUP = new Set(["juminhyoJokyo", "hyokaCert", "nayose", "houteiJoho"]);
 const ORDER: DocCategory[] = ["戸籍・住民票", "預貯金", "保険", "不動産", "株式", "年金・税金", "その他"];
 
+/** 書類のカードの id（「今集めるべき書類」から、同じ書類をもう一度押したときに探す） */
+export const docAnchor = (id: string) => `doc-${id}`;
+
 function DocCard({ item, address, open, onOpen, focus }: { item: DocItem; address: string; open: boolean; onOpen: (v: boolean) => void; focus: boolean }) {
   const { setStatus } = usePlan();
   const doc = DOCS[item.id];
   const key = `doc:${item.id}`;
   const ref = useRef<HTMLLIElement>(null);
+  // 開いた書類は画面より長いので、名前とチェックが見えるよう、先頭を上の見出しのすぐ下に出す
   useEffect(() => {
-    if (focus) ref.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (focus) showBelowHeader(() => ref.current);
   }, [focus]);
   const setSt = (v: ItemStatus) => {
     setStatus(key, v);
@@ -35,9 +40,9 @@ function DocCard({ item, address, open, onOpen, focus }: { item: DocItem; addres
   };
   const st: ItemStatus = item.done ? "done" : item.na ? "na" : "open";
   return (
-    <li ref={ref} className={`rounded-xl border bg-white ${focus ? "border-sky-500 ring-2 ring-sky-100" : item.done ? "border-emerald-200" : "border-stone-200"}`}>
+    <li ref={ref} id={docAnchor(item.id)} className={`rounded-xl border bg-white ${focus ? "border-sky-500 ring-2 ring-sky-100" : item.done ? "border-emerald-200" : "border-stone-200"}`}>
       <div className="flex items-start gap-3 p-4">
-        <span className="mt-0.5">
+        <span className="-mt-1.5">
           <RowStatus status={st} onChange={setSt} label={doc.name} />
         </span>
         <button type="button" onClick={() => onOpen(!open)} className="min-w-0 flex-1 text-left" aria-expanded={open}>
@@ -171,6 +176,8 @@ export function DocsPage() {
                         setCat("すべて");
                         setOpened((x) => ({ ...x, [d.id]: true }));
                         router.replace(`/my/docs?id=${d.id}`, { scroll: false });
+                        // もう選んである書類は、URLが変わらずカードも動かないので、ここで送る
+                        if (focus === d.id) showBelowHeader(() => document.getElementById(docAnchor(d.id)));
                       }}
                       className="block w-full rounded-lg px-2 py-1 text-left hover:bg-stone-50"
                     >
@@ -197,7 +204,7 @@ export function DocsPage() {
                 .map(([label]) => (
                   <li key={String(label)} className="flex items-center justify-between gap-2">
                     <span className="text-stone-700">{label}</span>
-                    <Link href="/case/assets" className="shrink-0 text-xs font-semibold text-sky-700 hover:underline">
+                    <Link href="/case/assets" className="shrink-0 py-1.5 text-xs font-semibold text-sky-700 hover:underline">
                       見つかったら登録 ›
                     </Link>
                   </li>

@@ -3,6 +3,7 @@
 import { Button, Card, Check, Field, Note, Select, TextInput, YenInput, fmt } from "@/components/ui";
 import type { Case, Debt } from "@/domain/types";
 import { newId, useCase } from "@/lib/store";
+import { addedAnchor, useShowAdded } from "./useShowAdded";
 
 /** 申告書（第13表）の「種類」。値は申告書の表記、表示は分かりやすい説明つき */
 const DEBT_TYPES: { value: NonNullable<Debt["debtType"]>; label: string }[] = [
@@ -30,7 +31,13 @@ export function DebtsStep() {
   const { data, update, result } = useCase();
   const living = data.persons.filter((p) => !p.predeceased);
   const isLiving = (id: string) => living.some((p) => p.id === id);
-  const add = (kind: Debt["kind"]) => update((c) => ({ ...c, debts: [...c.debts, newDebt(c, kind, newId())] }));
+  // 追加した債務は一覧の最後に入るので、そこまで画面を送る
+  const showAdded = useShowAdded(data.debts);
+  const add = (kind: Debt["kind"]) => {
+    const id = newId();
+    update((c) => ({ ...c, debts: [...c.debts, newDebt(c, kind, id)] }));
+    showAdded(id);
+  };
   const patch = (id: string, p: Partial<Debt>) => update((c) => ({ ...c, debts: c.debts.map((d) => (d.id === id ? { ...d, ...p } : d)) }));
   // 相続時精算課税を選んだ贈与があるときだけ、贈与ごとの「相続時精算課税」の印を出す（印を付けた贈与があるときも出したままにする）
   const settlement = !!data.decedent.settlementGift || data.priorGifts.some((g) => g.settlement);
@@ -52,70 +59,71 @@ export function DebtsStep() {
         // 分け方が決まっていないときに負担額を入れなければ、法定相続分で負担したものとして計算する（合計が合わなくてもよい）
         const byLegalShare = !!data.undivided && borne === 0;
         return (
-          <Card
-            key={d.id}
-            title={`${d.kind === "debt" ? "債務" : "葬式費用"}：${d.label || "（未入力）"}`}
-            actions={
-              <Button variant="danger" onClick={() => update((c) => ({ ...c, debts: c.debts.filter((x) => x.id !== d.id) }))}>
-                削除
-              </Button>
-            }
-          >
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="内容">
-                <TextInput value={d.label} onChange={(e) => patch(d.id, { label: e.target.value })} />
-              </Field>
-              <Field label={d.kind === "debt" ? "債権者（支払先）" : "支払先"} hint="申告書（第13表）に記載します">
-                <TextInput value={d.creditor ?? ""} onChange={(e) => patch(d.id, { creditor: e.target.value })} placeholder={d.kind === "debt" ? "〇〇銀行、〇〇市役所など" : "〇〇斎場など"} />
-              </Field>
-              <Field label="債権者・支払先の住所">
-                <TextInput value={d.creditorAddress ?? ""} onChange={(e) => patch(d.id, { creditorAddress: e.target.value })} />
-              </Field>
-              <Field label="金額">
-                <YenInput value={d.amount} onChange={(v) => patch(d.id, withDebtAmount(d, v, data.undivided))} />
-              </Field>
-              {d.kind === "debt" && (
-                <Field label="種類" hint="申告書（第13表）に記載します">
-                  <Select
-                    value={d.debtType ?? ""}
-                    onChange={(v) => patch(d.id, { debtType: (v || undefined) as Debt["debtType"] })}
-                    options={[{ value: "", label: "選んでください" }, ...DEBT_TYPES]}
-                  />
+          <div key={d.id} id={addedAnchor(d.id)}>
+            <Card
+              title={`${d.kind === "debt" ? "債務" : "葬式費用"}：${d.label || "（未入力）"}`}
+              actions={
+                <Button variant="danger" onClick={() => update((c) => ({ ...c, debts: c.debts.filter((x) => x.id !== d.id) }))}>
+                  削除
+                </Button>
+              }
+            >
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="内容">
+                  <TextInput value={d.label} onChange={(e) => patch(d.id, { label: e.target.value })} />
                 </Field>
-              )}
-            </div>
-            <h3 className="mb-2 mt-4 text-sm font-bold text-stone-700">誰が負担しますか</h3>
-            {data.undivided && <p className="mb-2 text-xs text-stone-500">負担する人が決まっていなければ、入っている人を×で外して空欄にしてください（法定相続分で計算します）。</p>}
-            <div className="space-y-2">
-              {d.bearers.map((b, i) => (
-                <div key={i}>
-                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2">
+                <Field label={d.kind === "debt" ? "債権者（支払先）" : "支払先"} hint="申告書（第13表）に記載します">
+                  <TextInput value={d.creditor ?? ""} onChange={(e) => patch(d.id, { creditor: e.target.value })} placeholder={d.kind === "debt" ? "〇〇銀行、〇〇市役所など" : "〇〇斎場など"} />
+                </Field>
+                <Field label="債権者・支払先の住所">
+                  <TextInput value={d.creditorAddress ?? ""} onChange={(e) => patch(d.id, { creditorAddress: e.target.value })} />
+                </Field>
+                <Field label="金額">
+                  <YenInput value={d.amount} onChange={(v) => patch(d.id, withDebtAmount(d, v, data.undivided))} />
+                </Field>
+                {d.kind === "debt" && (
+                  <Field label="種類" hint="申告書（第13表）に記載します">
                     <Select
-                      value={isLiving(b.personId) ? b.personId : ""}
-                      onChange={(v) => patch(d.id, { bearers: d.bearers.map((x, j) => (j === i ? { ...x, personId: v } : x)) })}
-                      options={[{ value: "", label: "選んでください" }, ...living.map((p) => ({ value: p.id, label: p.name || "（未入力）" }))]}
+                      value={d.debtType ?? ""}
+                      onChange={(v) => patch(d.id, { debtType: (v || undefined) as Debt["debtType"] })}
+                      options={[{ value: "", label: "選んでください" }, ...DEBT_TYPES]}
                     />
-                    <YenInput value={b.amount} onChange={(v) => patch(d.id, { bearers: d.bearers.map((x, j) => (j === i ? { ...x, amount: v } : x)) })} />
-                    <Button variant="danger" onClick={() => patch(d.id, { bearers: d.bearers.filter((_, j) => j !== i) })}>
-                      ×
-                    </Button>
-                  </div>
-                  {!isLiving(b.personId) && <p className="mt-1 text-xs font-medium text-amber-800">負担する人を選んでください。選ぶまで相続税の計算を確定できません。</p>}
-                </div>
-              ))}
-              {byLegalShare && d.amount > 0 && <p className="text-xs text-stone-500">（法定相続分で負担したものとして計算します）</p>}
-              <Button variant="ghost" onClick={() => patch(d.id, { bearers: [...d.bearers, { personId: living[0]?.id ?? "", amount: 0 }] })}>
-                ＋ 負担する人を追加
-              </Button>
-            </div>
-            {borne !== d.amount && !byLegalShare && (
-              <div className="mt-2">
-                <Note tone="warn">
-                  負担額の合計（{fmt(borne)}円）が金額（{fmt(d.amount)}円）と一致していません。
-                </Note>
+                  </Field>
+                )}
               </div>
-            )}
-          </Card>
+              <h3 className="mb-2 mt-4 text-sm font-bold text-stone-700">誰が負担しますか</h3>
+              {data.undivided && <p className="mb-2 text-xs text-stone-500">負担する人が決まっていなければ、入っている人を×で外して空欄にしてください（法定相続分で計算します）。</p>}
+              <div className="space-y-2">
+                {d.bearers.map((b, i) => (
+                  <div key={i}>
+                    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2">
+                      <Select
+                        value={isLiving(b.personId) ? b.personId : ""}
+                        onChange={(v) => patch(d.id, { bearers: d.bearers.map((x, j) => (j === i ? { ...x, personId: v } : x)) })}
+                        options={[{ value: "", label: "選んでください" }, ...living.map((p) => ({ value: p.id, label: p.name || "（未入力）" }))]}
+                      />
+                      <YenInput value={b.amount} onChange={(v) => patch(d.id, { bearers: d.bearers.map((x, j) => (j === i ? { ...x, amount: v } : x)) })} />
+                      <Button variant="danger" onClick={() => patch(d.id, { bearers: d.bearers.filter((_, j) => j !== i) })}>
+                        ×
+                      </Button>
+                    </div>
+                    {!isLiving(b.personId) && <p className="mt-1 text-xs font-medium text-amber-800">負担する人を選んでください。選ぶまで相続税の計算を確定できません。</p>}
+                  </div>
+                ))}
+                {byLegalShare && d.amount > 0 && <p className="text-xs text-stone-500">（法定相続分で負担したものとして計算します）</p>}
+                <Button variant="ghost" onClick={() => patch(d.id, { bearers: [...d.bearers, { personId: living[0]?.id ?? "", amount: 0 }] })}>
+                  ＋ 負担する人を追加
+                </Button>
+              </div>
+              {borne !== d.amount && !byLegalShare && (
+                <div className="mt-2">
+                  <Note tone="warn">
+                    負担額の合計（{fmt(borne)}円）が金額（{fmt(d.amount)}円）と一致していません。
+                  </Note>
+                </div>
+              )}
+            </Card>
+          </div>
         );
       })}
       {result && result.totalDebts > 0 && <Note tone="ok">差し引く債務・葬式費用の合計：{fmt(result.totalDebts)}円</Note>}
@@ -126,7 +134,7 @@ export function DebtsStep() {
           {settlement && <span className="mt-1 block">相続時精算課税を選んだ後の贈与は、3年より前のものも含めて全部入れ、「相続時精算課税」に印を付けてください。</span>}
         </p>
         <details className="mb-3 text-xs text-stone-600">
-          <summary className="cursor-pointer font-medium text-teal-800">Tips：入れない贈与</summary>
+          <summary className="cursor-pointer py-2 font-medium text-teal-800">Tips：入れない贈与</summary>
           <p className="mt-2 leading-relaxed">
             贈与税の配偶者控除（2,000万円まで）を受けた分と、住宅取得等資金の非課税を受けた分は、相続財産に足さないので入れません。配偶者控除を受けた贈与は、配偶者控除の額（2,000万円まで）だけを引いた残りを入れてください（基礎控除の110万円は引きません）。
           </p>

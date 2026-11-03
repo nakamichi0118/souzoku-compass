@@ -3,6 +3,7 @@
 import { AlertTriangle, Bell, Clock, Megaphone } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { useOutsideClose } from "./useOutsideClose";
 import { jpDate } from "@/domain/procedures/dates";
 import { type Notice, useNotices } from "@/lib/notices";
 import { useOverall } from "@/lib/overall";
@@ -61,7 +62,7 @@ export function NoticeTabs({ compact, onOpen }: { compact?: boolean; onOpen?: ()
           </button>
         ))}
       </div>
-      <div className={`${compact ? "max-h-96 overflow-y-auto" : ""} divide-y divide-stone-100 py-1`}>
+      <div className={`${compact ? "max-h-[min(24rem,calc(100dvh-10rem))] overflow-y-auto" : ""} divide-y divide-stone-100 py-1`}>
         {list.length === 0 && <p className="px-3 py-6 text-center text-sm text-stone-500">{tab === "personal" ? "いま急ぎのお知らせはありません。" : "お知らせはありません。"}</p>}
         {(compact ? list.slice(0, 8) : list).map((n) => (
           <Item key={n.id} n={n} unread={nt.unread(n)} onOpen={onOpen} />
@@ -77,20 +78,16 @@ export function NoticeBell() {
   const nt = useNotices(o);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [open]);
+  useOutsideClose(open, ref, setOpen);
   return (
-    <div ref={ref} className="relative shrink-0">
+    // スマホでは、一覧を画面の幅いっぱい（左右に余白）で出す。ベルの位置に合わせると左にはみ出すため
+    <div ref={ref} className="shrink-0 sm:relative">
       <button type="button" onClick={() => setOpen((v) => !v)} className="relative rounded-full p-2 hover:bg-stone-100" aria-label={`お知らせ（未読${nt.unreadCount}件）`} aria-expanded={open}>
         <Bell className="h-5 w-5 text-brand" aria-hidden />
         {nt.unreadCount > 0 && <span className="absolute right-0.5 top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-orange-500 px-1 text-[10px] font-bold text-white">{nt.unreadCount}</span>}
       </button>
       {open && (
-        <div className="absolute right-0 z-50 mt-1 w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-stone-200 bg-white shadow-xl">
+        <div className="absolute inset-x-4 top-full z-50 mt-1 rounded-xl border border-stone-200 bg-white shadow-xl sm:inset-x-auto sm:right-0 sm:top-auto sm:w-96">
           <NoticeTabs compact onOpen={() => setOpen(false)} />
           <Link href="/my/notices" onClick={() => setOpen(false)} className="block border-t border-stone-100 px-3 py-2 text-center text-sm text-sky-800 hover:bg-stone-50">
             すべてのお知らせを見る

@@ -11,13 +11,15 @@ vi.mock("@/lib/store", () => ({
   useCase: () => ({ ...ctx, update: () => {}, replace: () => {}, loaded: true }),
   newId: () => "new-id",
 }));
-vi.mock("@/lib/planStore", () => ({ usePlan: () => ({ setStatus: () => {}, statusOf: () => undefined }) }));
+vi.mock("@/lib/planStore", () => ({ usePlan: () => ({ setStatus: () => {}, statusOf: () => undefined, done: [], iv: {} }) }));
 
 const { DivisionStep, legalShareDivision, CompensationBasis } = await import("../DivisionStep");
 const { DebtsStep, newDebt, withDebtAmount } = await import("../DebtsStep");
 const { HeirsStep, priorCreditKinds, removePerson } = await import("../HeirsStep");
 const { TaxStep, filingMessage, filingNeeded, refundOnlyFiling, SUPPORTER_TIP, ROUNDING_TIP } = await import("../TaxStep");
 const { DocumentsStep, handFilledBlanks, divisionDocUnavailable } = await import("../DocumentsStep");
+const { AssetsStep } = await import("../AssetsStep");
+const { addedAnchor } = await import("../useShowAdded");
 
 const render = (c: ComponentType, data: Case, withResult = true) => {
   ctx.data = data;
@@ -426,5 +428,39 @@ describe("家族を削除したとき、小規模宅地等の特例の取得者�
     const c = withOthers();
     const before = srOf(c);
     expect(srOf(removePerson(c, "jiro"))).toBe(before);
+  });
+});
+
+describe("スマートフォンの表示", () => {
+  it("追加した家族・債務のカードには目印（id）を付け、追加したら画面をそこまで送れるようにする（case-6）", () => {
+    const c = clone();
+    const heirs = render(HeirsStep, c);
+    for (const p of c.persons) expect(heirs).toContain(`id="${addedAnchor(p.id)}"`);
+    c.debts = [newDebt(c, "funeral", "d-new")];
+    expect(render(DebtsStep, c)).toContain(`id="${addedAnchor("d-new")}"`);
+    // ほかの id と重ならないよう、前に付ける
+    expect(addedAnchor("hanako")).toBe("added-hanako");
+  });
+
+  it("財産を追加のボタンを留める帯は、ボタンのほかは素通しにする（下の行・ボタンを押せるように）（case-3）", () => {
+    const html = render(AssetsStep, clone());
+    expect(html).toContain('class="pointer-events-none sticky bottom-3 z-20 flex justify-end"');
+    expect(html).toContain('class="pointer-events-auto relative"');
+  });
+
+  it("財産の一覧：スマートフォンでは種類を絵だけにし、評価額を名称の下に回して、名称に1行を使う（case-7）", () => {
+    const c = clone();
+    const html = render(AssetsStep, c);
+    const first = c.assets[0];
+    const row = html.slice(html.indexOf(first.label), html.indexOf("</button>", html.indexOf(first.label)));
+    // 評価額は、名称と同じ折り返す枠の中（名称の後ろ）にある
+    expect(row).toMatch(/円<\/span><\/span>/);
+    // 種類の文字は、スマートフォンでは読み上げだけ
+    expect(html).toContain('<span class="sr-only sm:hidden">');
+  });
+
+  it("税額の帯：名前が入りきらないときは「…」で省けるよう、名前を span で囲む（case-14）", () => {
+    const html = render(TaxStep, clone());
+    expect(html).toMatch(/<span class="min-w-0 max-w-full truncate">相続 [^<]+<\/span>/);
   });
 });

@@ -116,7 +116,7 @@ export function FilingGuide({ missing }: { missing: { form: string; reason: stri
                     plan.setStatus(sid(s.id), done ? "open" : "done");
                     if (s.id === "paid") plan.setStatus("inheritance-tax", done ? "open" : "done");
                   }}
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ${done ? "border border-stone-300 text-stone-600" : "bg-brand text-white"}`}
+                  className={`rounded-full px-3 py-2 text-xs font-semibold ${done ? "border border-stone-300 text-stone-600" : "bg-brand text-white"}`}
                 >
                   {done ? "未完了に戻す" : { prepared: "作成済みにする", filled: "記入済みにする", attached: "そろった", submitted: "提出済みにする", paid: "納税済みにする" }[s.id]}
                 </button>

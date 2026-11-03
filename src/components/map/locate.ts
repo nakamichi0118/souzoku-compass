@@ -7,7 +7,10 @@
  * 3. 国土地理院の道路の線に路線価図の道路の線が重なるよう、枠を少しずつ動かして細かく合わせる（決まった計算）
  *
  * 最後は本人が地図の上で重なりを見て確かめる。合っていなければ別の図を選ぶか、手で合わせる。
+ *
+ * 時間がかかるのは 1. のコンパスくんの答え（数十秒〜1分あまり）。進み具合は onStep で段階ごとに知らせる。
  */
+import type { Progress } from "@/components/compass/ProgressBar";
 import { autoAlign } from "@/domain/geo/autoAlign";
 import { type FitPair, frameFromPairs, pairsAgree } from "@/domain/geo/fit";
 import { type Frame, type Paper, frameCorners } from "@/domain/geo/frame";
@@ -77,27 +80,61 @@ const plausible = (f: Frame, paper: Paper, property: LatLng) => f.scale >= 300 &
 /** 向きを -180°〜180° にそろえる（小数1桁） */
 const wrap180 = (d: number) => Math.round(((((d + 180) % 360) + 360) % 360 - 180) * 10) / 10;
 
+/**
+ * 進み具合の区切り（全体を 0〜1 として）。候補の図と地図を読み込み終えたら LOADED、
+ * コンパスくんの答えが届いたら ANSWERED、道路の線で合わせ終えたら 1
+ */
+export const LOCATE_PROGRESS = { LOADED: 0.25, ANSWERED: 0.92 } as const;
+/** 目安の秒数：図か地図を1つ読み込む・コンパスくんが見比べる・道路の線で合わせる */
+const LOAD_SEC = 3;
+const ASK_SEC = 45;
+const REFINE_SEC = 3;
+
 export async function locateSheet(opts: {
   property: LatLng;
   candidates: Candidate[];
   town?: string | null;
   cache: Map<string, ArrayBuffer>;
   roads: Road[];
-  onStep?: (msg: string) => void;
+  /** 段階が変わるたびに、案内と進み具合（全体のどこからどこまでか・目安の秒数）を知らせる */
+  onStep?: (msg: string, progress: Progress) => void;
 }): Promise<LocateResult> {
   const { property, cache, roads, onStep } = opts;
+  const { LOADED, ANSWERED } = LOCATE_PROGRESS;
   const candidates = opts.candidates.slice(0, 4);
-  onStep?.("候補の路線価図を国税庁のサイトから読み込んでいます");
-  const rendered = await Promise.all(
-    candidates.map(async (c) => {
-      const buf = await fetchSheetPdf(c.pdfUrl, cache);
-      return { c, sheet: await renderPdfPage(buf, 1, 1600) };
-    }),
-  );
-  onStep?.("土地のまわりの地図を用意しています");
-  const map = await captureGsiMap(property, { zoom: 17, width: 1280, height: 960, marker: true });
 
-  onStep?.("コンパスくんが、土地が載っている路線価図を探しています");
+  // 候補の図と、土地のまわりの地図を同時に読み込む（1つ読み込むごとにバーを進める）
+  const total = candidates.length + 1;
+  let done = 0;
+  const loading = () =>
+    onStep?.("候補の路線価図を国税庁のサイトから読み込んでいます", { at: (LOADED * done) / total, until: (LOADED * (done + 1)) / total, expectSec: LOAD_SEC });
+  const counted = <T>(job: Promise<T>) =>
+    job.then((v) => {
+      done++;
+      if (done < total) loading();
+      return v;
+    });
+  loading();
+  const made: { c: Candidate; sheet: Sheet }[] = [];
+  const sheetJobs = candidates.map(async (c) => {
+    const buf = await fetchSheetPdf(c.pdfUrl, cache);
+    const r = { c, sheet: await renderPdfPage(buf, 1, 1600) };
+    made.push(r);
+    return r;
+  });
+  let rendered: { c: Candidate; sheet: Sheet }[];
+  let map: Awaited<ReturnType<typeof captureGsiMap>>;
+  try {
+    // 図の順番は候補の順のまま（コンパスくんに見せる順を変えない）
+    [map, rendered] = await Promise.all([counted(captureGsiMap(property, { zoom: 17, width: 1280, height: 960, marker: true })), Promise.all(sheetJobs.map(counted))]);
+  } catch (e) {
+    // 1つでも読み込めなければやめる。ほかの図の読み込みが終わるのを待って、作った画像を捨てる
+    await Promise.allSettled(sheetJobs);
+    for (const r of made) URL.revokeObjectURL(r.sheet.src);
+    throw e;
+  }
+
+  onStep?.("コンパスくんが、土地が載っている路線価図を探しています", { at: LOADED, until: ANSWERED, expectSec: ASK_SEC });
   const fd = new FormData();
   fd.append("map", map.blob, "map.png");
   fd.append("mapSize", `${map.width},${map.height}`);
@@ -144,7 +181,7 @@ export async function locateSheet(opts: {
   // 道路の線で細かく合わせる（よくならなければコンパスくんの位置のまま）
   let refined = false;
   if (roads.length > 0) {
-    onStep?.("道路の線に合わせて、重なりを細かく調整しています");
+    onStep?.("道路の線に合わせて、重なりを細かく調整しています", { at: ANSWERED, until: 1, expectSec: REFINE_SEC });
     await new Promise((ok) => setTimeout(ok, 30));
     const field = await sheetField(chosen.sheet);
     const r = autoAlign(field, paper, roads, property, frame, 80);

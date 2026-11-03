@@ -2,7 +2,7 @@
 
 import { YenInput } from "@/components/ui";
 
-/** 選択肢。value が undefined のときは何も選ばれていない状態 */
+/** 選択肢。value が undefined のときは何も選ばれていない状態。スマホでも指で押しやすい高さにし、幅が足りなければ次の行へ折り返す */
 export function Choice<T extends string | boolean>({ value, onChange, options }: { value: T | undefined; onChange: (v: T) => void; options: { value: T; label: string }[] }) {
   return (
     <div className="flex flex-wrap gap-2" role="radiogroup">
@@ -15,7 +15,7 @@ export function Choice<T extends string | boolean>({ value, onChange, options }:
             role="radio"
             aria-checked={on}
             onClick={() => onChange(o.value)}
-            className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+            className={`min-h-11 max-w-full touch-manipulation rounded-full border px-4 py-2 text-sm leading-snug font-medium transition sm:min-h-10 ${
               on ? "border-teal-700 bg-teal-700 text-white" : "border-stone-300 bg-white text-stone-700 hover:border-teal-600"
             }`}
           >
@@ -32,7 +32,8 @@ export const YesNo = ({ value, onChange, yes = "はい", no = "いいえ" }: { v
 );
 
 export function Counter({ value, onChange, max = 10, unit = "人" }: { value: number; onChange: (v: number) => void; max?: number; unit?: string }) {
-  const btn = "grid h-10 w-10 place-items-center rounded-full border border-stone-300 bg-white text-lg font-bold text-stone-700 hover:border-teal-600 disabled:opacity-40";
+  // 続けて押しても、スマホで画面が拡大されないようにする（touch-manipulation）
+  const btn = "grid h-11 w-11 shrink-0 touch-manipulation place-items-center rounded-full border border-stone-300 bg-white text-lg font-bold text-stone-700 hover:border-teal-600 disabled:opacity-40 sm:h-10 sm:w-10";
   return (
     <div className="flex items-center gap-3">
       <button type="button" className={btn} onClick={() => onChange(Math.max(0, value - 1))} disabled={value <= 0} aria-label="減らす">

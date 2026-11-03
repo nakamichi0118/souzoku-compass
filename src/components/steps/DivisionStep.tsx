@@ -212,7 +212,7 @@ function AssetChoice({ no, assetId, heirs, evenHeirs }: { no: number; assetId: s
             ))}
           </ul>
           <div className="flex items-center justify-between">
-            <button type="button" onClick={even} disabled={evenHeirs.length === 0} className="text-sm text-sky-800 underline disabled:text-stone-400 disabled:no-underline">
+            <button type="button" onClick={even} disabled={evenHeirs.length === 0} className="py-2 text-sm text-sky-800 underline disabled:text-stone-400 disabled:no-underline">
               相続人全員で均等に分ける
             </button>
             {shares.length > 0 && Math.abs(total - 1) > 1e-9 && !(undividedPart && total < 1) && (

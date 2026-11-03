@@ -82,7 +82,7 @@ export function DecedentStep() {
             </div>
             {successive > 0 && <Note tone="ok">今回の相続税から、家族全体で {fmt(successive)}円 を差し引けます（相次相続控除）。</Note>}
             <details className="text-xs text-stone-600">
-              <summary className="cursor-pointer font-medium text-teal-800">Tips：差し引ける額の計算</summary>
+              <summary className="cursor-pointer py-2 font-medium text-teal-800">Tips：差し引ける額の計算</summary>
               <div className="mt-2 space-y-1 leading-relaxed">
                 <p>差し引ける額の合計 ＝ A × C ÷（B − A）×（10 − E）÷ 10（相続税法20条）</p>
                 <ul className="list-disc space-y-1 pl-5">

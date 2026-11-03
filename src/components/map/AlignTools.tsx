@@ -30,7 +30,7 @@ export function FrameControls({ frame, setFrame, property }: { frame: Frame | nu
       <label className="flex items-center gap-2 text-sm text-stone-700">
         縮尺
         <select
-          className="rounded border border-stone-300 px-2 py-1"
+          className="rounded border border-stone-300 px-2 py-1 text-base"
           value={base}
           onChange={(e) => {
             const sc = Number(e.target.value);

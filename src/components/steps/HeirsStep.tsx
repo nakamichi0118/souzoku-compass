@@ -8,6 +8,7 @@ import { ageAt, wareki } from "@/forms/format";
 import { newId, useCase } from "@/lib/store";
 import { Choice } from "@/components/plan/inputs";
 import { ConsultLink } from "@/components/compass/ConsultLink";
+import { addedAnchor, useShowAdded } from "./useShowAdded";
 
 const RELATIONS: { value: Relation; label: string; hint: string }[] = [
   { value: "spouse", label: "配偶者", hint: "夫・妻（法律上の婚姻）" },
@@ -69,18 +70,25 @@ export function removePerson(c: Case, id: string): Case {
 export function HeirsStep() {
   const { data, update, result } = useCase();
   const persons = data.persons;
+  // 追加した人は一覧の最後に入るので、そこまで画面を送る
+  const showAdded = useShowAdded(persons);
 
-  const add = (relation: Relation) =>
-    update((c) => ({ ...c, persons: [...c.persons, { id: newId(), name: "", relation, relationLabel: relLabel(relation) }] }));
+  const add = (relation: Relation) => {
+    const id = newId();
+    update((c) => ({ ...c, persons: [...c.persons, { id, name: "", relation, relationLabel: relLabel(relation) }] }));
+    showAdded(id);
+  };
   const patch = (id: string, p: Partial<Person>) =>
     update((c) => ({ ...c, persons: c.persons.map((x) => (x.id === id ? { ...x, ...p } : x)) }));
   /** 先に亡くなった子・兄弟姉妹の子を、代襲相続人として追加する */
   const addChildOf = (parent: Person) => {
     const relation: Relation = parent.relation === "sibling" ? "nephewNiece" : parent.relation === "grandchild" ? "greatGrandchild" : "grandchild";
+    const id = newId();
     update((c) => ({
       ...c,
-      persons: [...c.persons.map((x) => (x.id === parent.id ? { ...x, hasChildren: true } : x)), { id: newId(), name: "", relation, relationLabel: relLabel(relation), substituteOf: parent.id }],
+      persons: [...c.persons.map((x) => (x.id === parent.id ? { ...x, hasChildren: true } : x)), { id, name: "", relation, relationLabel: relLabel(relation), substituteOf: parent.id }],
     }));
+    showAdded(id);
   };
   const remove = (id: string) => update((c) => removePerson(c, id));
 
@@ -114,118 +122,119 @@ export function HeirsStep() {
         // 亡くなった後に生まれた子は0歳（相続税の計算と同じ扱い）
         const age = rawAge == null ? undefined : Math.max(0, rawAge);
         return (
-          <Card
-            key={p.id}
-            title={
-              <span className="flex flex-wrap items-center gap-2">
-                <span>{p.name || "（氏名未入力）"}</span>
-                <span className="rounded bg-stone-100 px-2 py-0.5 text-xs font-medium text-stone-700">{p.relationLabel ?? relLabel(p.relation)}</span>
-                {p.predeceased && <span className="rounded bg-stone-200 px-2 py-0.5 text-xs">先に死亡</span>}
-                {p.renounced && <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900">相続放棄</span>}
-                {civilShare && <span className="rounded bg-teal-100 px-2 py-0.5 text-xs text-teal-900">法定相続分 {fracText(civilShare)}</span>}
-                {civil && !p.predeceased && p.relation !== "spouse" && !(p.grandchildAdopted && p.alsoSubstituteHeir) && isSurchargeTarget(p, civil.substitutes) && (
-                  <span className="rounded bg-rose-100 px-2 py-0.5 text-xs text-rose-900">2割加算の対象</span>
-                )}
-              </span>
-            }
-            actions={
-              <Button variant="danger" onClick={() => remove(p.id)}>
-                削除
-              </Button>
-            }
-          >
-            <div className="grid gap-4 sm:grid-cols-3">
-              <Field label="氏名">
-                <TextInput value={p.name} onChange={(e) => patch(p.id, { name: e.target.value })} />
-              </Field>
-              <Field label="フリガナ">
-                <TextInput value={p.kana ?? ""} onChange={(e) => patch(p.id, { kana: e.target.value })} />
-              </Field>
-              <Field label="続柄（書類に書く表記）" hint="例：妻、長男、二女、孫">
-                <TextInput value={p.relationLabel ?? ""} onChange={(e) => patch(p.id, { relationLabel: e.target.value })} />
-              </Field>
-              <Field label="生年月日" hint={[wareki(p.birthDate)?.text, age != null && !p.predeceased ? `相続開始時 ${age}歳` : ""].filter(Boolean).join(" / ")}>
-                <TextInput type="date" value={p.birthDate ?? ""} onChange={(e) => patch(p.id, { birthDate: e.target.value })} />
-              </Field>
-              {!p.predeceased && (
-                <>
-                  <Field label="郵便番号">
-                    <TextInput value={p.zip ?? ""} onChange={(e) => patch(p.id, { zip: e.target.value })} placeholder="100-0001" />
-                  </Field>
-                  <Field label="電話番号">
-                    <TextInput value={p.phone ?? ""} onChange={(e) => patch(p.id, { phone: e.target.value })} placeholder="03-0000-0000" />
-                  </Field>
-                  <div className="sm:col-span-2">
-                    <Field label="住所">
-                      <TextInput value={p.address ?? ""} onChange={(e) => patch(p.id, { address: e.target.value })} />
-                    </Field>
-                  </div>
-                  <Field label="職業">
-                    <TextInput value={p.occupation ?? ""} onChange={(e) => patch(p.id, { occupation: e.target.value })} />
-                  </Field>
-                </>
-              )}
-              {["grandchild", "greatGrandchild", "nephewNiece"].includes(p.relation) && (
-                <Field label="代わりに相続する親（被代襲者）" hint="先に亡くなった親を選ぶと代襲相続人になります">
-                  <Select
-                    value={p.substituteOf ?? ""}
-                    onChange={(v) => patch(p.id, { substituteOf: v || undefined })}
-                    options={[{ value: "", label: "代襲相続ではない" }, ...parentsFor(p).map((x) => ({ value: x.id, label: `${x.name || "（未入力）"}（${x.relationLabel ?? relLabel(x.relation)}）` }))]}
-                  />
-                </Field>
-              )}
-              {!p.predeceased && (
-                <Field label="障害者控除">
-                  <Select
-                    value={p.disability ?? "none"}
-                    onChange={(v) => patch(p.id, { disability: v as Person["disability"] })}
-                    options={[
-                      { value: "none", label: "該当しない" },
-                      { value: "general", label: "一般障害者" },
-                      { value: "special", label: "特別障害者" },
-                    ]}
-                  />
-                </Field>
-              )}
-            </div>
-            <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2">
-              {p.relation !== "other" && (
-                <Check checked={!!p.predeceased} onChange={(v) => patch(p.id, { predeceased: v })} label="すでに亡くなっている" />
-              )}
-              {!p.predeceased && p.relation !== "other" && <Check checked={!!p.renounced} onChange={(v) => patch(p.id, { renounced: v })} label="家庭裁判所で相続放棄をした" />}
-              {p.relation === "sibling" && <Check checked={!!p.halfBlood} onChange={(v) => patch(p.id, { halfBlood: v })} label="父母の一方だけが同じ（半血）" />}
-              {p.relation === "adoptedChild" && (
-                <>
-                  <Check checked={!!p.grandchildAdopted} onChange={(v) => patch(p.id, { grandchildAdopted: v, ...(v ? {} : { alsoSubstituteHeir: undefined }) })} label="孫を養子にした" />
-                  {p.grandchildAdopted && (
-                    <Check
-                      checked={!!p.alsoSubstituteHeir}
-                      onChange={(v) => patch(p.id, { alsoSubstituteHeir: v || undefined })}
-                      label="先に亡くなった子の代わりに相続する人（代襲相続人）でもある"
-                    />
+          <div key={p.id} id={addedAnchor(p.id)}>
+            <Card
+              title={
+                <span className="flex flex-wrap items-center gap-2">
+                  <span>{p.name || "（氏名未入力）"}</span>
+                  <span className="rounded bg-stone-100 px-2 py-0.5 text-xs font-medium text-stone-700">{p.relationLabel ?? relLabel(p.relation)}</span>
+                  {p.predeceased && <span className="rounded bg-stone-200 px-2 py-0.5 text-xs">先に死亡</span>}
+                  {p.renounced && <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900">相続放棄</span>}
+                  {civilShare && <span className="rounded bg-teal-100 px-2 py-0.5 text-xs text-teal-900">法定相続分 {fracText(civilShare)}</span>}
+                  {civil && !p.predeceased && p.relation !== "spouse" && !(p.grandchildAdopted && p.alsoSubstituteHeir) && isSurchargeTarget(p, civil.substitutes) && (
+                    <span className="rounded bg-rose-100 px-2 py-0.5 text-xs text-rose-900">2割加算の対象</span>
                   )}
-                  <Check
-                    checked={!!p.adoptedCountsAsBiological}
-                    onChange={(v) => patch(p.id, { adoptedCountsAsBiological: v })}
-                    label="特別養子・配偶者の連れ子の養子"
-                  />
-                </>
-              )}
-              {!p.predeceased && <Check checked={!!p.nonResident} onChange={(v) => patch(p.id, { nonResident: v })} label="海外に住んでいる" />}
-            </div>
-            {!p.predeceased && <PriorCredits p={p} age={age} isLegalHeir={tax ? tax.slots.some((x) => x.personIds.includes(p.id)) : undefined} patch={patch} />}
-            {p.relation === "adoptedChild" && p.grandchildAdopted && p.alsoSubstituteHeir && !p.predeceased && (
-              <div className="mt-3">
-                <Note tone="stop">
-                  養子としての立場と、先に亡くなった子の代わりに相続する立場の両方がある場合（二重の資格）は、相続分や相続税の計算が特殊になるため、相続コンパスでは計算できません。税理士にご相談ください。
-                  <span className="mt-2 block">
-                    <ConsultLink topic="二重の資格" />
-                  </span>
-                </Note>
+                </span>
+              }
+              actions={
+                <Button variant="danger" onClick={() => remove(p.id)}>
+                  削除
+                </Button>
+              }
+            >
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Field label="氏名">
+                  <TextInput value={p.name} onChange={(e) => patch(p.id, { name: e.target.value })} />
+                </Field>
+                <Field label="フリガナ">
+                  <TextInput value={p.kana ?? ""} onChange={(e) => patch(p.id, { kana: e.target.value })} />
+                </Field>
+                <Field label="続柄（書類に書く表記）" hint="例：妻、長男、二女、孫">
+                  <TextInput value={p.relationLabel ?? ""} onChange={(e) => patch(p.id, { relationLabel: e.target.value })} />
+                </Field>
+                <Field label="生年月日" hint={[wareki(p.birthDate)?.text, age != null && !p.predeceased ? `相続開始時 ${age}歳` : ""].filter(Boolean).join(" / ")}>
+                  <TextInput type="date" value={p.birthDate ?? ""} onChange={(e) => patch(p.id, { birthDate: e.target.value })} />
+                </Field>
+                {!p.predeceased && (
+                  <>
+                    <Field label="郵便番号">
+                      <TextInput value={p.zip ?? ""} onChange={(e) => patch(p.id, { zip: e.target.value })} placeholder="100-0001" />
+                    </Field>
+                    <Field label="電話番号">
+                      <TextInput value={p.phone ?? ""} onChange={(e) => patch(p.id, { phone: e.target.value })} placeholder="03-0000-0000" />
+                    </Field>
+                    <div className="sm:col-span-2">
+                      <Field label="住所">
+                        <TextInput value={p.address ?? ""} onChange={(e) => patch(p.id, { address: e.target.value })} />
+                      </Field>
+                    </div>
+                    <Field label="職業">
+                      <TextInput value={p.occupation ?? ""} onChange={(e) => patch(p.id, { occupation: e.target.value })} />
+                    </Field>
+                  </>
+                )}
+                {["grandchild", "greatGrandchild", "nephewNiece"].includes(p.relation) && (
+                  <Field label="代わりに相続する親（被代襲者）" hint="先に亡くなった親を選ぶと代襲相続人になります">
+                    <Select
+                      value={p.substituteOf ?? ""}
+                      onChange={(v) => patch(p.id, { substituteOf: v || undefined })}
+                      options={[{ value: "", label: "代襲相続ではない" }, ...parentsFor(p).map((x) => ({ value: x.id, label: `${x.name || "（未入力）"}（${x.relationLabel ?? relLabel(x.relation)}）` }))]}
+                    />
+                  </Field>
+                )}
+                {!p.predeceased && (
+                  <Field label="障害者控除">
+                    <Select
+                      value={p.disability ?? "none"}
+                      onChange={(v) => patch(p.id, { disability: v as Person["disability"] })}
+                      options={[
+                        { value: "none", label: "該当しない" },
+                        { value: "general", label: "一般障害者" },
+                        { value: "special", label: "特別障害者" },
+                      ]}
+                    />
+                  </Field>
+                )}
               </div>
-            )}
-            {p.predeceased && <Deceased p={p} decedentDeath={data.decedent.deathDate} persons={persons} patch={patch} onAddChild={() => addChildOf(p)} />}
-          </Card>
+              <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2">
+                {p.relation !== "other" && (
+                  <Check checked={!!p.predeceased} onChange={(v) => patch(p.id, { predeceased: v })} label="すでに亡くなっている" />
+                )}
+                {!p.predeceased && p.relation !== "other" && <Check checked={!!p.renounced} onChange={(v) => patch(p.id, { renounced: v })} label="家庭裁判所で相続放棄をした" />}
+                {p.relation === "sibling" && <Check checked={!!p.halfBlood} onChange={(v) => patch(p.id, { halfBlood: v })} label="父母の一方だけが同じ（半血）" />}
+                {p.relation === "adoptedChild" && (
+                  <>
+                    <Check checked={!!p.grandchildAdopted} onChange={(v) => patch(p.id, { grandchildAdopted: v, ...(v ? {} : { alsoSubstituteHeir: undefined }) })} label="孫を養子にした" />
+                    {p.grandchildAdopted && (
+                      <Check
+                        checked={!!p.alsoSubstituteHeir}
+                        onChange={(v) => patch(p.id, { alsoSubstituteHeir: v || undefined })}
+                        label="先に亡くなった子の代わりに相続する人（代襲相続人）でもある"
+                      />
+                    )}
+                    <Check
+                      checked={!!p.adoptedCountsAsBiological}
+                      onChange={(v) => patch(p.id, { adoptedCountsAsBiological: v })}
+                      label="特別養子・配偶者の連れ子の養子"
+                    />
+                  </>
+                )}
+                {!p.predeceased && <Check checked={!!p.nonResident} onChange={(v) => patch(p.id, { nonResident: v })} label="海外に住んでいる" />}
+              </div>
+              {!p.predeceased && <PriorCredits p={p} age={age} isLegalHeir={tax ? tax.slots.some((x) => x.personIds.includes(p.id)) : undefined} patch={patch} />}
+              {p.relation === "adoptedChild" && p.grandchildAdopted && p.alsoSubstituteHeir && !p.predeceased && (
+                <div className="mt-3">
+                  <Note tone="stop">
+                    養子としての立場と、先に亡くなった子の代わりに相続する立場の両方がある場合（二重の資格）は、相続分や相続税の計算が特殊になるため、相続コンパスでは計算できません。税理士にご相談ください。
+                    <span className="mt-2 block">
+                      <ConsultLink topic="二重の資格" />
+                    </span>
+                  </Note>
+                </div>
+              )}
+              {p.predeceased && <Deceased p={p} decedentDeath={data.decedent.deathDate} persons={persons} patch={patch} onAddChild={() => addChildOf(p)} />}
+            </Card>
+          </div>
         );
       })}
 

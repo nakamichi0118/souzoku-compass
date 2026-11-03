@@ -48,8 +48,8 @@ export function AuthForm({ kind }: { kind: "signup" | "login" }) {
           相続コンパス
         </Link>
         <div className="mt-6 flex items-end gap-2">
-          <CompassKun className="h-24 w-auto" />
-          <Bubble className="mb-4 flex-1">{signup ? "はじめまして、コンパスくんです。マイページを作って、一緒に進めていきましょう。" : "おかえりなさい。続きから進めましょう。"}</Bubble>
+          <CompassKun className="h-24 w-auto shrink-0" />
+          <Bubble className="mb-4 min-w-0 flex-1">{signup ? "はじめまして、コンパスくんです。マイページを作って、一緒に進めていきましょう。" : "おかえりなさい。続きから進めましょう。"}</Bubble>
         </div>
         <form onSubmit={submit} className="mt-2 space-y-4 rounded-2xl border border-white bg-white/95 p-6 shadow-xl">
           <h1 className="text-xl font-bold text-sky-950">{signup ? "利用者登録" : "ログイン"}</h1>
@@ -70,11 +70,17 @@ export function AuthForm({ kind }: { kind: "signup" | "login" }) {
           </label>
           {signup && (
             <label className="flex items-start gap-2 text-sm text-stone-700">
-              <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} className="mt-1 h-4 w-4 accent-sky-700" />
-              <Link href="/privacy" target="_blank" className="text-sky-800 underline">プライバシーポリシー</Link>に同意します。ハッカソン用の試作のため、架空の内容でお試しください。
+              <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-sky-700" />
+              {/* リンクと文を1つにまとめる（分かれていると、スマホでは2つの列に分かれて読みにくい） */}
+              <span className="min-w-0">
+                <Link href="/privacy" target="_blank" className="text-sky-800 underline">
+                  プライバシーポリシー
+                </Link>
+                に同意します。ハッカソン用の試作のため、架空の内容でお試しください。
+              </span>
             </label>
           )}
-          {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-900">{error}</p>}
+          {error && <p role="alert" className="break-words rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-900">{error}</p>}
           <button type="submit" disabled={!ok || busy} className="w-full rounded-full bg-sky-700 px-6 py-3 font-bold text-white hover:bg-sky-800 disabled:bg-stone-300">
             {busy ? "お待ちください…" : signup ? "マイページを作成する" : "ログイン"}
           </button>

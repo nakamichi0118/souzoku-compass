@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import { revealBelowHeader } from "@/components/ui/scroll";
 import { Bubble, CompassAvatar } from "./CompassKun";
 import { FAQS, type Faq } from "./faq";
 import { Markdown } from "./Markdown";
@@ -54,12 +55,26 @@ export type AskState = ReturnType<typeof useAsk>;
 export function AskCompass({ state, placeholder, lead, id }: { state: AskState; placeholder: string; lead?: React.ReactNode; id?: string }) {
   const { q, setQ, busy, answer, asked, ask, pick } = state;
   const faqs = FAQS[state.step] ?? [];
+  const answerRef = useRef<HTMLDivElement>(null);
+  /** 新しい答えの頭が画面の上（見出しの下）に隠れていたら、見える所まで戻す。答えは下へ伸びるので、頭が見えていれば動かさない */
+  const showAnswer = () =>
+    requestAnimationFrame(() => {
+      if (answerRef.current) revealBelowHeader(answerRef.current);
+    });
   return (
-    <section id={id} className="space-y-3 rounded-2xl border border-sky-200 bg-gradient-to-b from-sky-50 to-emerald-50/60 p-5">
+    <section id={id} className="space-y-3 rounded-2xl border border-sky-200 bg-gradient-to-b from-sky-50 to-emerald-50/60 p-3 sm:p-5">
       <div className="flex items-start gap-3">
-        <CompassAvatar size={52} />
-        <div className="min-w-0 flex-1 space-y-2">
-          <p className="font-bold text-sky-900">コンパスくんに相談</p>
+        {/* スマホでは顔を見出しの横に小さく出し、答えの幅を広くとる */}
+        <span className="hidden sm:block">
+          <CompassAvatar size={52} />
+        </span>
+        <div ref={answerRef} className="min-w-0 flex-1 space-y-2">
+          <p className="flex items-center gap-2 font-bold text-sky-900">
+            <span className="sm:hidden">
+              <CompassAvatar size={32} />
+            </span>
+            コンパスくんに相談
+          </p>
           {asked && <p className="text-sm text-stone-600">「{asked}」</p>}
           <Bubble>
             {busy ? "ちょっと調べています…" : answer ? <div className="text-sm text-stone-800"><Markdown text={answer} /></div> : (lead ?? "分からないことがあれば、なんでも聞いてくださいね。")}
@@ -72,7 +87,10 @@ export function AskCompass({ state, placeholder, lead, id }: { state: AskState; 
             <button
               key={f.q}
               type="button"
-              onClick={() => pick(f)}
+              onClick={() => {
+                pick(f);
+                showAnswer();
+              }}
               className={`rounded-full border px-3 py-1 text-sm ${asked === f.q ? "border-sky-600 bg-sky-700 text-white" : "border-sky-200 bg-white text-sky-900 hover:bg-sky-50"}`}
             >
               {f.q}
@@ -80,14 +98,23 @@ export function AskCompass({ state, placeholder, lead, id }: { state: AskState; 
           ))}
         </div>
       )}
+      {/* 文字は 16px（iPhone で入力するときに画面が拡大されないように） */}
       <textarea
         rows={2}
         value={q}
         onChange={(e) => setQ(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm"
+        className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-base sm:text-sm"
       />
-      <button type="button" onClick={() => ask(q)} disabled={busy || !q.trim()} className="w-full rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:bg-stone-300">
+      <button
+        type="button"
+        onClick={() => {
+          ask(q);
+          showAnswer();
+        }}
+        disabled={busy || !q.trim()}
+        className="w-full rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:bg-stone-300"
+      >
         {busy ? "考えています…" : "コンパスくんに聞く"}
       </button>
     </section>

@@ -19,6 +19,7 @@ import { saveBlob } from "@/lib/download";
 import { useOverall, useRequireHearing } from "@/lib/overall";
 import type { ItemStatus } from "@/lib/planStore";
 import { daysLeftLabel, taskStatus } from "@/lib/taskStatus";
+import { showBelowHeader } from "./scroll";
 import { DetailStatus, RowStatus } from "./StatusButtons";
 
 /** 不動産の登記は、亡くなった方の住所ではなく不動産のある場所の法務局が窓口 */
@@ -57,8 +58,14 @@ function downloadOne(t: Task) {
   saveBlob(new Blob([ics], { type: "text/calendar" }), `${t.id}.ics`);
 }
 
+/**
+ * 手続きを選ばずに開いたとき、詳細には先頭のまだの手続きが出る。それを済ませたら、その手続きを選んだままにする
+ * （そうしないと詳細が次の手続きに入れ替わり、同じ場所の「完了にする」をもう一度押すと別の手続きが完了になる）
+ */
+export const keepShown = (urlId: string | null, shownId: string | undefined, markedId: string) => !urlId && shownId === markedId;
+
 /** やることリストの1行 */
-function TaskRow({
+export function TaskRow({
   task,
   status,
   selected,
@@ -85,7 +92,7 @@ function TaskRow({
     <li className={`flex items-center gap-3 rounded-xl border bg-white p-3 ${selected ? "border-sky-500 ring-2 ring-sky-100" : "border-stone-200"}`}>
       <RowStatus status={status} onChange={(v) => onMark(task.id, v)} label={task.title} locked={locked} />
       <button type="button" onClick={() => onSelect(task.id)} className="min-w-0 flex-1 text-left">
-        <p className={`truncate font-semibold ${closed ? "text-stone-400 line-through" : "text-stone-900"}`}>{task.title}</p>
+        <p className={`line-clamp-2 font-semibold ${closed ? "text-stone-400 line-through" : "text-stone-900"}`}>{task.title}</p>
         <p className="truncate text-xs text-stone-500">
           {showDept && task.dept ? `${task.dept}・` : `${task.category}・`}
           {task.hard ? "期限" : "目安"} {jpDate(task.date)}
@@ -129,17 +136,44 @@ export function TasksPage() {
   useEffect(() => {
     if (bump) listRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   }, [bump]);
+  const urlId = params.get("id");
+  // 選ばずに開いて済ませた手続き。URLが変わるまでのあいだも詳細に出したままにする（keepShown）
+  const [pinned, setPinned] = useState<string | null>(null);
+  if (pinned && urlId) setPinned(null);
+  const selId = urlId ?? pinned ?? list.find((t) => !o.closed(t.id))?.id ?? list[0]?.id;
+  const t = o.tasks.find((x) => x.id === selId) ?? null;
+  // スマホでは詳細が一覧の下にあるので、手続きを選んだら詳細の先頭まで画面を送る（パソコンでは横に並ぶので送らない）
+  const articleRef = useRef<HTMLElement>(null);
+  /** 詳細の先頭まで送った手続き（同じ手続きで送り直さないため） */
+  const shownFor = useRef<string | null>(null);
+  const showDetail = useCallback((id: string, smooth: boolean) => {
+    shownFor.current = id;
+    showBelowHeader(() => articleRef.current, { smooth, phoneOnly: true });
+  }, []);
+  // 聞き取りが済んでいなければトップへ戻す（移動は描画のあとに行う）
+  const ready = useRequireHearing(o);
+  // ホーム・カレンダー・お知らせから手続きを選んで開いたときも、詳細の先頭を出す
+  useEffect(() => {
+    if (ready && urlId && shownFor.current !== urlId) showDetail(urlId, false);
+  }, [ready, urlId, showDetail]);
+  // パソコンでは詳細だけが動くので、別の手続きに替わったら詳細を先頭から見せる
+  useEffect(() => {
+    if (articleRef.current) articleRef.current.scrollTop = 0;
+  }, [selId]);
   // 手続きを済ませたら、読み取りできる書類（残高証明書など）のアップロードをその場で案内する
   const [prompt, setPrompt] = useState<{ taskId: string; docs: string[]; open: boolean } | null>(null);
   const mark = (id: string, v: Parameters<typeof o.setStatus>[1]) => {
+    if (keepShown(urlId, selId, id)) {
+      setPinned(id);
+      shownFor.current = id;
+      router.replace(`/my/tasks?id=${id}`, { scroll: false });
+    }
     o.setStatus(id, v);
     if (v !== "open") setBump((n) => n + 1);
     const task = o.tasks.find((x) => x.id === id);
     const docs = v === "done" && task ? task.docs.filter((d) => DOCS[d]?.readable && !o.done.includes(`doc:${d}`)) : [];
     setPrompt(docs.length ? { taskId: id, docs, open: false } : null);
   };
-  const selId = params.get("id") ?? list.find((t) => !o.closed(t.id))?.id ?? list[0]?.id;
-  const t = o.tasks.find((x) => x.id === selId) ?? null;
 
   const context = useCallback(
     () =>
@@ -152,11 +186,12 @@ export function TasksPage() {
     [o.iv.deathDate, o.main, o.done, t],
   );
   const ask = useAsk("tasks", context);
-  // 聞き取りが済んでいなければトップへ戻す（移動は描画のあとに行う）
-  const ready = useRequireHearing(o);
 
   if (!ready) return <AppShell>{null}</AppShell>;
-  const select = (id: string) => router.replace(`/my/tasks?id=${id}`, { scroll: false });
+  const select = (id: string) => {
+    router.replace(`/my/tasks?id=${id}`, { scroll: false });
+    showDetail(id, true);
+  };
   const lockedNote = (id: string) => (o.autoDone.includes(id) ? AUTO_DONE_NOTE : undefined);
   const left = t ? daysBetween(o.now, t.date) : 0;
   const st = t ? o.statusOf(t.id) : "open";
@@ -239,7 +274,7 @@ export function TasksPage() {
         </div>
 
         {t && (
-          <article className="min-h-0 space-y-4 overflow-y-auto rounded-2xl border border-sky-100 bg-white p-5 shadow-sm">
+          <article ref={articleRef} className="min-h-0 space-y-4 overflow-y-auto rounded-2xl border border-sky-100 bg-white p-5 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="text-xs text-stone-500">{t.category}</p>
@@ -299,7 +334,7 @@ export function TasksPage() {
             {t.docs.length > 0 && (
               <section>
                 <h3 className="mb-2 flex items-center gap-1.5 font-bold text-stone-700"><FileText className="h-4 w-4 text-brand" aria-hidden />必要な書類</h3>
-                <ul className="space-y-1.5">
+                <ul className="space-y-0.5">
                   {t.docs
                     .filter((id) => DOCS[id])
                     .map((id) => {
@@ -310,7 +345,7 @@ export function TasksPage() {
                         <li key={id} className="flex items-center gap-2 text-sm">
                           <RowStatus status={ds} onChange={(v) => o.setStatus(k, v)} label={DOCS[id].name} />
                           <span className={ok ? "text-stone-400 line-through" : "text-stone-800"}>{DOCS[id].name}</span>
-                          <Link href={`/my/docs?id=${id}`} className="ml-auto shrink-0 text-xs text-sky-700 hover:underline">
+                          <Link href={`/my/docs?id=${id}`} className="ml-auto shrink-0 py-2 text-xs text-sky-700 hover:underline">
                             {DOCS[id].readable ? "取り方・読み取り" : "取り方"} ›
                           </Link>
                         </li>
@@ -327,7 +362,7 @@ export function TasksPage() {
                   <h3 className="flex items-center gap-1.5 font-bold text-stone-700"><Phone className="h-4 w-4 text-brand" aria-hidden />連絡するときの伝え方</h3>
                   <button
                     type="button"
-                    className="text-xs text-sky-700 hover:underline"
+                    className="-my-2 -mr-2 px-2 py-2 text-xs text-sky-700 hover:underline"
                     onClick={() => {
                       navigator.clipboard?.writeText(script(t, o.iv.myRelation, o.iv.decedentName)).then(() => {
                         setCopied(true);
@@ -391,7 +426,7 @@ export function TasksPage() {
 }
 
 /** 手続きごとのメモ。入力をやめたら保存する */
-function MemoBox({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+export function MemoBox({ value, onSave }: { value: string; onSave: (v: string) => void }) {
   const [v, setV] = useState(value);
   // このタブで入力して、まだ保存していない
   const [typing, setTyping] = useState(false);
@@ -431,51 +466,72 @@ function MemoBox({ value, onSave }: { value: string; onSave: (v: string) => void
         }}
         rows={3}
         placeholder="例：みほん銀行 相続センター 0120-000-000、担当 見本さん。○日に書類を郵送済み。"
-        className="w-full rounded-lg border border-stone-300 p-2 text-sm focus:border-sky-500 focus:outline-none"
+        className="w-full rounded-lg border border-stone-300 p-2 text-base focus:border-sky-500 focus:outline-none sm:text-sm"
       />
       <p className="h-4 text-xs text-emerald-700">{saved ? "保存しました" : ""}</p>
     </div>
   );
 }
 
-/** 手続きを済ませたときに出す案内：届いた書類をその場でアップロードして財産に登録できる */
-function UploadPrompt({ docs, open, onOpen, onClose, onRegistered }: { docs: string[]; open: boolean; onOpen: () => void; onClose: () => void; onRegistered: (doc: string) => void }) {
+/**
+ * 手続きを済ませたときに出す案内：届いた書類をその場でアップロードして財産に登録できる。
+ * 画面の下に固定するので、案内と同じ高さの余白をページの下に足して、後ろに隠れたボタンも上へ送れば押せるようにする。
+ * 開いて長くなっても上の見出しには重ならず、案内の中で上下に動かせる
+ */
+export function UploadPrompt({ docs, open, onOpen, onClose, onRegistered }: { docs: string[]; open: boolean; onOpen: () => void; onClose: () => void; onRegistered: (doc: string) => void }) {
   const names = docs.map((d) => DOCS[d].name.replace(/（.*?）/g, ""));
+  const [h, setH] = useState(0);
+  const card = useCallback((el: HTMLDivElement | null) => {
+    if (!el) return;
+    const update = () => setH(el.offsetHeight);
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   return (
-    <div role="status" className="fixed inset-x-3 bottom-3 z-40 mx-auto max-w-xl rounded-2xl border border-teal-200 bg-white p-4 shadow-2xl sm:left-auto sm:right-4 sm:mx-0">
-      <div className="flex items-start gap-3">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/brand/compass-kun-main.png" alt="" className="h-12 w-auto shrink-0" />
-        <div className="min-w-0 flex-1">
-          <p className="font-bold text-stone-900">お疲れさまでした！</p>
-          <p className="mt-0.5 text-sm text-stone-700">
-            「{names.join("」「")}」が届いたら、アップロードしてください。コンパスくんが金額を読み取って、財産に登録します。
-          </p>
-          {!open && (
-            <div className="mt-2 flex flex-wrap gap-2">
-              <button type="button" onClick={onOpen} className="rounded-lg bg-teal-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-teal-800">
-                いまアップロードする
-              </button>
-              <button type="button" onClick={onClose} className="rounded-lg border border-stone-300 px-3 py-1.5 text-sm hover:bg-stone-50">
-                届いてから（資料集めでいつでもできます）
-              </button>
-            </div>
-          )}
+    <>
+      <div aria-hidden style={{ height: h }} />
+      <div
+        ref={card}
+        role="status"
+        className="fixed inset-x-3 bottom-3 z-40 mx-auto max-h-[calc(100dvh-10rem)] max-w-xl overflow-y-auto overscroll-contain rounded-2xl border border-teal-200 bg-white p-4 shadow-2xl sm:left-auto sm:right-4 sm:mx-0"
+      >
+        <div className="flex items-start gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brand/compass-kun-main.png" alt="" className="h-12 w-auto shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="font-bold text-stone-900">お疲れさまでした！</p>
+            <p className="mt-0.5 text-sm text-stone-700">
+              「{names.join("」「")}」が届いたら、アップロードしてください。コンパスくんが金額を読み取って、財産に登録します。
+            </p>
+            {!open && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button type="button" onClick={onOpen} className="rounded-lg bg-teal-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-teal-800">
+                  いまアップロードする
+                </button>
+                <button type="button" onClick={onClose} className="rounded-lg border border-stone-300 px-3 py-1.5 text-sm hover:bg-stone-50">
+                  届いてから（資料集めでいつでもできます）
+                </button>
+              </div>
+            )}
+          </div>
+          <button type="button" onClick={onClose} aria-label="閉じる" className="-m-2 shrink-0 p-2 text-stone-400 hover:text-stone-700">
+            <X className="h-5 w-5" />
+          </button>
         </div>
-        <button type="button" onClick={onClose} aria-label="閉じる" className="shrink-0 text-stone-400 hover:text-stone-700">
-          <X className="h-5 w-5" />
-        </button>
+        {open && (
+          <div className="mt-3 space-y-3 sm:max-h-[60vh] sm:overflow-y-auto">
+            {docs.map((d) => (
+              <div key={d}>
+                <p className="mb-1 text-sm font-semibold text-stone-700">{DOCS[d].name}</p>
+                <Reader docId={d} onRegistered={() => onRegistered(d)} />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
-      {open && (
-        <div className="mt-3 max-h-[60vh] space-y-3 overflow-y-auto">
-          {docs.map((d) => (
-            <div key={d}>
-              <p className="mb-1 text-sm font-semibold text-stone-700">{DOCS[d].name}</p>
-              <Reader docId={d} onRegistered={() => onRegistered(d)} />
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+    </>
   );
 }

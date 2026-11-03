@@ -567,3 +567,15 @@ describe("共有で受け継いだ土地・面積の一部だけに特例を使�
     expect(a).toContain("付表1");
   });
 });
+
+describe("スマートフォンの表示：面している道路の行（case-9）", () => {
+  it("道路の位置と路線価は、スマートフォンでは1行ずつ使い（路線価の数字が欠けないように）、奥行と間口は横に並べる", () => {
+    const h = html(land({ method: { type: "rosenka", routePrice: 420_000, depthCorrection: 1, roads: [{ edge: 0, price: 420_000, depth: 13 }] } }));
+    const row = h.slice(h.indexOf("sm:grid-cols-[7rem_1fr_6rem_6rem_auto]"));
+    const wide = '<div class="col-span-2 sm:col-span-1">';
+    expect(row.indexOf(wide)).toBeLessThan(row.indexOf("道路の位置"));
+    expect(row.indexOf(wide, row.indexOf("道路の位置"))).toBeLessThan(row.indexOf("路線価（正面）"));
+    // 奥行・間口は囲まない（2列の格子に1つずつ入る）
+    expect(row.slice(row.indexOf("路線価（正面）"), row.indexOf("間口")).split(wide).length).toBe(1);
+  });
+});

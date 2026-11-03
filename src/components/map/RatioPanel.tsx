@@ -6,6 +6,7 @@
  */
 import { useEffect, useState } from "react";
 import { ConsultLink } from "@/components/compass/ConsultLink";
+import { type Progress, ProgressBar } from "@/components/compass/ProgressBar";
 import { Button, Field, Note, NumInput, YenInput, fmt } from "@/components/ui";
 import type { LandAsset } from "@/domain/types";
 import { type Valuation, valueLand } from "@/domain/valuation";
@@ -34,6 +35,10 @@ interface RatioResult {
 }
 type MultiplierMethod = Extract<LandAsset["method"], { type: "multiplier" }>;
 type RatioSource = NonNullable<MultiplierMethod["source"]>;
+
+/** 評価倍率表を探している間の案内と、待ち時間の目安（表のPDFを丸ごと読むので、数十秒かかることがある） */
+export const RATIO_WAIT = "コンパスくんが国税庁の評価倍率表から、この土地の地域の行を探しています";
+const RATIO_PROGRESS: Progress = { at: 0, until: 1, expectSec: 30 };
 
 /** 宅地の欄の「1.1」「1.10」などを倍率の数に。「路線」「比準」などは null */
 export const ratioNumber = (s: string | null | undefined): number | null => {
@@ -76,6 +81,7 @@ export function RatioPanel({
   onApply,
   onUseRosenka,
   onReady,
+  onWait,
 }: {
   step: number;
   setStep: (s: number) => void;
@@ -89,10 +95,15 @@ export function RatioPanel({
   onUseRosenka: () => void;
   /** 倍率が決まったか（確かめたか、自分で入れたか）を知らせる。決まるまで 3. には進めない */
   onReady?: (ready: boolean) => void;
+  /** 評価倍率表を探している間の案内と進み具合を知らせる（地図の上にも出す）。終わったら null */
+  onWait?: (w: { message: string; progress: Progress } | null) => void;
 }) {
   const saved = land.method.type === "multiplier" ? land.method : undefined;
   const [res, setRes] = useState<RatioResult | null>(null);
-  const [busy, setBusy] = useState(false);
+  // 開いたらすぐ探し始めるので、最初から「探しています」にする
+  const [busy, setBusy] = useState(true);
+  /** 探し始めた時刻（バーの進み具合をここから数える） */
+  const [since, setSince] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
   /** 探せなかったときに、サーバーが教えてくれた評価倍率表の PDF */
   const [errorPdfUrl, setErrorPdfUrl] = useState<string | null>(null);
@@ -112,10 +123,19 @@ export function RatioPanel({
     onReady?.(multiplier > 0);
   }, [multiplier]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const progress: Progress = { ...RATIO_PROGRESS, since };
+  // 探している間は、地図の上にも同じ案内を出す（終わったら・画面を離れたら消す）
+  useEffect(() => {
+    if (!busy) return void onWait?.(null);
+    onWait?.({ message: RATIO_WAIT, progress });
+    return () => onWait?.(null);
+  }, [busy, since]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // 評価倍率表をコンパスくんに探してもらう
   useEffect(() => {
     let off = false;
     setBusy(true);
+    setSince(Date.now());
     setError(null);
     setErrorPdfUrl(null);
     setRes(null);
@@ -174,7 +194,7 @@ export function RatioPanel({
     return (
       <div className="space-y-3">
         <h2 className="font-bold text-stone-800">2. 評価倍率表で倍率を確かめる</h2>
-        {busy && <p className="rounded-lg bg-sky-50 p-2 text-sm text-sky-900">コンパスくんが国税庁の評価倍率表から、この土地の地域の行を探しています…</p>}
+        {busy && <ProgressBar message={RATIO_WAIT} progress={progress} className="rounded-lg bg-sky-50 p-2 text-sm text-sky-900" />}
         {error && (
           <Note tone="warn">
             {error} 評価倍率表を見て、倍率を自分で入れることもできます。

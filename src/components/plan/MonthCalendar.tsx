@@ -33,13 +33,13 @@ export function MonthCalendar({ tasks, done, today, compact }: { tasks: Task[]; 
   return (
     <div>
       <div className="mb-2 flex items-center justify-between">
-        <button type="button" onClick={() => move(-1)} className="rounded-full px-2 py-1 text-stone-500 hover:bg-stone-100" aria-label="前の月">
+        <button type="button" onClick={() => move(-1)} className="grid h-10 w-10 place-items-center rounded-full text-stone-500 hover:bg-stone-100" aria-label="前の月">
           ‹
         </button>
         <p className="font-bold text-stone-800">
           {y}年 {m}月
         </p>
-        <button type="button" onClick={() => move(1)} className="rounded-full px-2 py-1 text-stone-500 hover:bg-stone-100" aria-label="次の月">
+        <button type="button" onClick={() => move(1)} className="grid h-10 w-10 place-items-center rounded-full text-stone-500 hover:bg-stone-100" aria-label="次の月">
           ›
         </button>
       </div>
@@ -60,15 +60,16 @@ export function MonthCalendar({ tasks, done, today, compact }: { tasks: Task[]; 
               type="button"
               key={d}
               onClick={() => setSel(sel === d ? null : d)}
-              className={`relative flex flex-col items-center rounded-lg ${compact ? "py-1" : "min-h-20 p-1"} ${sel === d ? "bg-sky-100" : "hover:bg-stone-50"}`}
+              className={`relative flex flex-col items-center rounded-lg ${compact ? "py-1" : "min-h-12 p-1 sm:min-h-20"} ${sel === d ? "bg-sky-100" : "hover:bg-stone-50"}`}
             >
               <span
                 className={`grid h-7 w-7 place-items-center rounded-full text-sm ${isToday ? "bg-sky-700 font-bold text-white" : open.length ? (hard ? "bg-orange-100 font-bold text-orange-800" : "bg-sky-50 font-bold text-sky-800") : i % 7 === 6 ? "text-rose-600" : i % 7 === 5 ? "text-sky-600" : "text-stone-700"}`}
               >
                 {Number(d.slice(8))}
               </span>
+              {/* 手続きの名前は、幅のある画面だけに出す（スマホでは1文字しか入らないので、点だけにする） */}
               {!compact && (
-                <span className="mt-0.5 w-full space-y-0.5 text-left">
+                <span className="mt-0.5 hidden w-full space-y-0.5 text-left sm:block">
                   {ts.slice(0, 2).map((t) => (
                     <span key={t.id} className={`block truncate rounded px-1 text-[10px] leading-4 ${done.includes(t.id) ? "bg-stone-100 text-stone-400 line-through" : t.hard ? "bg-orange-100 text-orange-900" : "bg-sky-50 text-sky-900"}`}>
                       {t.title}
@@ -77,7 +78,7 @@ export function MonthCalendar({ tasks, done, today, compact }: { tasks: Task[]; 
                   {ts.length > 2 && <span className="block text-[10px] text-stone-500">ほか{ts.length - 2}件</span>}
                 </span>
               )}
-              {compact && ts.length > 0 && <span className={`absolute bottom-0 h-1 w-1 rounded-full ${hard ? "bg-orange-500" : "bg-sky-500"}`} />}
+              {ts.length > 0 && <span className={`absolute h-1 w-1 rounded-full ${compact ? "bottom-0" : "bottom-1.5 sm:hidden"} ${hard ? "bg-orange-500" : "bg-sky-500"}`} />}
             </button>
           );
         })}

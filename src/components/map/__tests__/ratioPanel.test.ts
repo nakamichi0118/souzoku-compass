@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { LandAsset } from "@/domain/types";
-import { RatioPanel, ratioStep3 } from "../RatioPanel";
+import { RATIO_WAIT, RatioPanel, ratioStep3 } from "../RatioPanel";
 
 const land = (p: Partial<LandAsset> = {}): LandAsset => ({
   id: "L1",
@@ -80,5 +80,16 @@ describe("倍率方式「3.」の評価と反映 ui-3", () => {
     const h = panel(land({ method: { type: "multiplier", fixedAssetValue: 0, multiplier: 1.1, source: row } }));
     expect(h).toContain("固定資産税評価額を入れると評価額を計算します。");
     expect(button(h)).toContain('disabled=""');
+  });
+});
+
+describe("評価倍率表を探している間 ui-progress", () => {
+  it("開いたときから、案内と進み具合のバーを出す", () => {
+    const h = renderToStaticMarkup(
+      createElement(RatioPanel, { step: 2, setStep: () => {}, land: land(), property: [43.06, 141.35], cache: new Map(), onApply: () => {}, onUseRosenka: () => {} }),
+    );
+    expect(h).toContain(`${RATIO_WAIT}…`);
+    expect(h).toContain('role="progressbar"');
+    expect(h).toContain('aria-valuenow="0"');
   });
 });

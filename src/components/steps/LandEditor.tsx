@@ -365,7 +365,7 @@ export function SmallResidential({
 }
 
 const detailsCls = "rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm";
-const summaryCls = "cursor-pointer text-sm font-medium text-teal-800";
+const summaryCls = "cursor-pointer py-1 text-sm font-medium text-teal-800";
 const personLabel = (p: Person) => `${p.name || "（未入力）"}（${p.relationLabel ?? ""}）`;
 
 /**
@@ -446,7 +446,7 @@ function OtherAcquirers({
           );
         })}
         {canAdd && (
-          <button type="button" onClick={() => set(addOtherAcquirer(sr))} className="text-sm font-semibold text-teal-800 hover:underline">
+          <button type="button" onClick={() => set(addOtherAcquirer(sr))} className="py-2 text-sm font-semibold text-teal-800 hover:underline">
             ＋ 取得する人を追加
           </button>
         )}
@@ -531,17 +531,22 @@ function RoadsEditor({ a, m, patch }: { a: LandAsset; m: RosenkaMethod; patch: (
       <div className="space-y-2">
         <p className="text-sm font-medium text-stone-700">面している道路と路線価</p>
         {roads.map((r, i) => (
+          // スマートフォンでは、道路の位置と路線価を1行ずつにする（路線価の数字が欠けないように）。奥行と間口は横に並べる
           <div key={r.edge} className="grid grid-cols-2 items-end gap-2 rounded-lg border border-stone-200 p-2 sm:grid-cols-[7rem_1fr_6rem_6rem_auto]">
-            <Field label="道路の位置">
-              <Select
-                value={String(r.edge)}
-                onChange={(v) => setRoad(i, { edge: Number(v) as Edge })}
-                options={[r.edge, ...free].sort().map((e) => ({ value: String(e), label: EDGE_LABEL[e] }))}
-              />
-            </Field>
-            <Field label={`路線価${role(r.edge) ? `（${{ front: "正面", side: "側方", back: "裏面" }[role(r.edge)!]}）` : ""}`}>
-              <YenInput value={r.price} onChange={(v) => setRoad(i, { price: v })} unit="円/㎡" />
-            </Field>
+            <div className="col-span-2 sm:col-span-1">
+              <Field label="道路の位置">
+                <Select
+                  value={String(r.edge)}
+                  onChange={(v) => setRoad(i, { edge: Number(v) as Edge })}
+                  options={[r.edge, ...free].sort().map((e) => ({ value: String(e), label: EDGE_LABEL[e] }))}
+                />
+              </Field>
+            </div>
+            <div className="col-span-2 sm:col-span-1">
+              <Field label={`路線価${role(r.edge) ? `（${{ front: "正面", side: "側方", back: "裏面" }[role(r.edge)!]}）` : ""}`}>
+                <YenInput value={r.price} onChange={(v) => setRoad(i, { price: v })} unit="円/㎡" />
+              </Field>
+            </div>
             <Field label="奥行">
               <NumInput value={r.depth} onChange={(v) => setRoad(i, { depth: v })} unit="m" />
             </Field>
@@ -581,7 +586,7 @@ function RoadsEditor({ a, m, patch }: { a: LandAsset; m: RosenkaMethod; patch: (
         </span>
       </Note>
       <details className="text-xs text-stone-600">
-        <summary className="cursor-pointer font-medium text-teal-800">Tips：計算していないことと補正率の入れ方</summary>
+        <summary className="cursor-pointer py-2 font-medium text-teal-800">Tips：計算していないことと補正率の入れ方</summary>
         <ul className="mt-2 list-disc space-y-1 pl-5">
           <li>間口が狭い・奥行が長い補正は、正面の道路の間口を入れたときだけします（財産評価基本通達20-4）。</li>
           <li>角地は、一方が行き止まりの道路の角（準角地）かどうかを区別せず、加算の大きい角地として計算します。</li>
@@ -642,7 +647,7 @@ export function landUsePatch(a: LandAsset, v: LandUse): Partial<LandAsset> {
 function UseTips() {
   return (
     <details className="text-xs text-stone-600 sm:col-span-2">
-      <summary className="cursor-pointer font-medium text-teal-800">Tips：土地の使い方の選び方</summary>
+      <summary className="cursor-pointer py-2 font-medium text-teal-800">Tips：土地の使い方の選び方</summary>
       <ul className="mt-2 list-disc space-y-1 pl-5">
         <li>家族などに無料で貸している土地は、貸していることになりません（固定資産税くらいの額を受け取るだけのときも同じです。使用貸借といいます）。「自分で使っている」を選んでください。</li>
         <li>地代を払わずに（固定資産税くらいの額だけ払って）人の土地を借りて建物を建てているときは、土地を借りている権利は0円なので、この土地は財産に入れません。建物は「家屋」として入れてください。</li>

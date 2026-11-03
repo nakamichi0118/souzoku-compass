@@ -5,8 +5,8 @@ import { HeaderCta } from "./HeaderCta";
 export function SiteHeader() {
   return (
     <header className="sticky top-0 z-30 border-b border-sky-100 bg-white/90 backdrop-blur">
-      <div className="mx-auto flex max-w-6xl items-center gap-6 px-4 py-3">
-        <Link href="/" className="flex items-center gap-2 text-xl font-bold text-sky-950">
+      <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3 md:gap-6">
+        <Link href="/" className="flex shrink-0 items-center gap-2 text-lg font-bold whitespace-nowrap text-sky-950 sm:text-xl">
           <LogoMark size={34} />
           相続コンパス
         </Link>

@@ -238,7 +238,8 @@ export function TaxStep() {
                     style={{ width: `${p.ratio * 100}%` }}
                     title={`${p.person.name} ${p.ratioText}`}
                   >
-                    {p.ratio > 0.12 ? p.person.name : ""}
+                    {/* 名前が入りきらないときは「…」で省く（帯の文字に直接は「…」が付かないため、span で囲む） */}
+                    {p.ratio > 0.12 && <span className="min-w-0 max-w-full truncate">{p.person.name}</span>}
                   </div>
                 ))}
               </div>
@@ -274,7 +275,7 @@ export function TaxStep() {
             </ul>
             <Row label="相続税の総額（100円未満切捨て）" value={r.totalTax} strong />
             <details className="mt-2 text-xs text-stone-600">
-              <summary className="cursor-pointer text-teal-800">速算表（相続税法16条）</summary>
+              <summary className="cursor-pointer py-2 text-teal-800">速算表（相続税法16条）</summary>
               <ul className="mt-2 grid grid-cols-2 gap-1 sm:grid-cols-4">
                 {RATE_TABLE.map((t) => (
                   <li key={t.rate}>
@@ -334,7 +335,7 @@ export function TaxStep() {
             </ul>
             {(roundingTip || supporterTip) && (
               <details className="mt-2 text-xs text-stone-600">
-                <summary className="cursor-pointer text-teal-800">Tips：一人ひとりの税額</summary>
+                <summary className="cursor-pointer py-2 text-teal-800">Tips：一人ひとりの税額</summary>
                 {roundingTip && <p className="mt-2 leading-relaxed">{ROUNDING_TIP}</p>}
                 {supporterTip && <p className="mt-2 leading-relaxed">{SUPPORTER_TIP}</p>}
               </details>

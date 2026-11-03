@@ -5,6 +5,7 @@ import { Clock, MapPin, Phone } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { CompassAvatar } from "@/components/compass/CompassKun";
+import { ProgressBar } from "@/components/compass/ProgressBar";
 import { OFFICE_LABEL, areaOf, cityOf, isTokyoWard, type OfficeKind } from "@/domain/procedures/offices";
 
 interface Office {
@@ -19,6 +20,8 @@ interface Office {
 }
 
 const KEY = "souzoku-compass:offices:v1";
+/** 窓口を調べるのにかかる目安（公式サイトを調べるので 30 秒ほど） */
+const LOOKUP_WAIT = { at: 0, until: 1, expectSec: 30 };
 const readCache = (): Record<string, Office> => {
   try {
     return JSON.parse(kvGet(KEY) ?? "{}");
@@ -113,10 +116,13 @@ export function OfficeLookup({ kind, dept, address, forProperty }: { kind: Offic
             <p className="text-xs text-stone-500">コンパスくんが公式サイトで調べた内容です。行く前に公式サイトか電話で確認してください。</p>
           </div>
         </div>
+      ) : busy ? (
+        // 調べている間は、ボタンの代わりに進み具合を出す（30秒ほどかかる）
+        <ProgressBar message="コンパスくんが公式サイトを調べています" progress={LOOKUP_WAIT} className="mt-2 text-teal-900" />
       ) : (
-        <button type="button" onClick={lookup} disabled={busy} className="mt-2 inline-flex items-center gap-2 rounded-lg border border-sky-300 bg-white px-3 py-1.5 font-semibold text-sky-800 hover:bg-sky-50 disabled:opacity-60">
+        <button type="button" onClick={lookup} className="mt-2 inline-flex items-center gap-2 rounded-lg border border-sky-300 bg-white px-3 py-1.5 font-semibold text-sky-800 hover:bg-sky-50">
           <CompassAvatar size={22} />
-          {busy ? "コンパスくんが公式サイトを調べています…（30秒ほど）" : "住所・電話番号をコンパスくんに調べてもらう"}
+          住所・電話番号をコンパスくんに調べてもらう
         </button>
       )}
       {err && err.key === key && <p className="mt-1 text-rose-700">{err.text}</p>}

@@ -5,27 +5,30 @@ import type { ItemStatus } from "@/lib/planStore";
 /**
  * 一覧の行につける「完了」チェックと「不要」ボタン。
  * locked に理由を渡すと、ほかの画面の進み具合で自動的に決まる項目として、押せなくする（理由は押そうとしたときに表示）
+ * スマホの指でも押し分けられるよう、見た目はそのままで、どちらもまわりの余白（高さ36px）まで押せる。押せる範囲は重ならない
  */
 export function RowStatus({ status, onChange, label, locked }: { status: ItemStatus; onChange: (s: ItemStatus) => void; label: string; locked?: string }) {
   return (
-    <span className="flex shrink-0 items-center gap-1.5" title={locked}>
-      <input
-        type="checkbox"
-        checked={status === "done"}
-        disabled={!!locked}
-        onChange={() => onChange(status === "done" ? "open" : "done")}
-        className="h-5 w-5 accent-emerald-600 disabled:opacity-60"
-        aria-label={`${label}を完了にする`}
-      />
+    <span className="-ml-2 flex shrink-0 items-center" title={locked}>
+      <label className={`grid h-9 w-9 place-items-center ${locked ? "" : "cursor-pointer"}`}>
+        <input
+          type="checkbox"
+          checked={status === "done"}
+          disabled={!!locked}
+          onChange={() => onChange(status === "done" ? "open" : "done")}
+          className="h-5 w-5 accent-emerald-600 disabled:opacity-60"
+          aria-label={`${label}を完了にする`}
+        />
+      </label>
       <button
         type="button"
         onClick={() => onChange(status === "na" ? "open" : "na")}
         disabled={!!locked}
         aria-pressed={status === "na"}
         title={locked ?? "自分には関係ない・やらない場合"}
-        className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold disabled:opacity-40 ${status === "na" ? "border-stone-500 bg-stone-500 text-white" : "border-stone-300 text-stone-500 hover:bg-stone-100"}`}
+        className="group flex h-9 items-center px-1 disabled:opacity-40"
       >
-        不要
+        <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold leading-4 ${status === "na" ? "border-stone-500 bg-stone-500 text-white" : "border-stone-300 text-stone-500 group-hover:bg-stone-100"}`}>不要</span>
       </button>
     </span>
   );

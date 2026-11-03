@@ -16,7 +16,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { StepBar } from "@/components/StepBar";
 import { ConsultLink } from "@/components/compass/ConsultLink";
+import { type Progress, ProgressBar, QUICK, within } from "@/components/compass/ProgressBar";
 import { AppHeader } from "@/components/shell/AppShell";
+import { scrollBelowHeader } from "@/components/ui/scroll";
 import { Button, Check, Field, Note, NumInput, Select, TextInput, fmt } from "@/components/ui";
 import { type Frame, DEFAULT_PAPER, frameCorners, framePairs } from "@/domain/geo/frame";
 import { type LatLng, type Road, fitLot, lotCorners } from "@/domain/geo/lot";
@@ -35,9 +37,11 @@ import { RatioPanel } from "./RatioPanel";
 import { cropAround, loadImage, renderPdfPage } from "./sheet";
 import { EMPTY_NOTES, type ReadCandidate, type RoadNotes, candidatesFor, frontageContext, keyOf, mergeReadings, needsRead, noteFor, notesFromSaved, readingContext, savedRoute, typeNote } from "./wizard";
 
-const MapView = dynamic(() => import("./MapView"), { ssr: false, loading: () => <div className="h-[520px] animate-pulse rounded-xl bg-stone-100" /> });
+const MapView = dynamic(() => import("./MapView"), { ssr: false, loading: () => <div className="h-[60vh] min-h-[360px] animate-pulse rounded-xl bg-stone-100 lg:h-[calc(100vh-12rem)] lg:min-h-[560px]" /> });
 
 const TOKYO_STATION: LatLng = [35.681236, 139.767125];
+/** コンパスくんが路線価図（道路のまわり）を読む待ち時間の目安 */
+const READ_PROGRESS: Progress = { at: 0, until: 1, expectSec: 15 };
 
 type Route = "rosenka" | "ratio";
 interface ReadResult {
@@ -95,10 +99,23 @@ function LandWizard() {
   const api = useRef<MapApi | null>(null);
   const asideRef = useRef<HTMLElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  // 上に固定した見出しの高さ。スマートフォンで、待ちの案内をそのすぐ下に留める（見出しの高さは画面の幅で変わる）
+  const [headH, setHeadH] = useState(0);
+  useEffect(() => {
+    const head = document.querySelector("header");
+    if (!head || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setHeadH(Math.ceil(head.getBoundingClientRect().height)));
+    ro.observe(head);
+    return () => ro.disconnect();
+  }, []);
   const pdfCache = useRef(new Map<string, ArrayBuffer>());
   const [step, setStep] = useState(1);
   const [route, setRoute] = useState<Route | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  /** busy の間の進み具合（バーに出す） */
+  const [prog, setProg] = useState<Progress | null>(null);
+  /** 評価倍率表を探している間の案内（地図の上にも出す） */
+  const [ratioWait, setRatioWait] = useState<{ message: string; progress: Progress } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   // 1. 場所
@@ -158,8 +175,14 @@ function LandWizard() {
   /** 路線価を読む条件（場所・路線価図・ページ・重ね方）。変わったら、前に読んだ路線価は使わずに読み直す */
   const ctx = useMemo(() => readingContext({ property, sheetId, page: pageNo, pairs, frame }), [property, sheetId, pageNo, pairs, frame]);
 
-  async function run<T>(label: string, f: () => Promise<T>): Promise<T | undefined> {
+  /** 案内と進み具合を出す（段階が変わるたびに、その段階の始まりから時間を数える） */
+  function wait(label: string, p: Progress) {
     setBusy(label);
+    setProg({ ...p, since: Date.now() });
+  }
+
+  async function run<T>(label: string, f: () => Promise<T>, p: Progress = QUICK): Promise<T | undefined> {
+    wait(label, p);
     setError(null);
     try {
       return await f();
@@ -167,6 +190,7 @@ function LandWizard() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(null);
+      setProg(null);
     }
   }
 
@@ -338,8 +362,8 @@ function LandWizard() {
     const aside = asideRef.current;
     const overlaid = !!aside && getComputedStyle(aside).position === "absolute";
     const right = overlaid ? aside.offsetWidth + 12 : 0;
-    // スマートフォンでは案内が地図の下にあるので、手順を進めたら地図が見える位置に戻す
-    if (!overlaid && step > 1) wrapRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    // スマートフォンでは案内が地図の下にあるので、手順を進めたら地図が見える位置（固定した見出しのすぐ下）に戻す
+    if (!overlaid && step > 1 && wrapRef.current) scrollBelowHeader(wrapRef.current, 8);
     if ((step === 2 || step === 4) && shape && route === "rosenka") a.fitPoints(shape, { maxZoom: 20, right });
     else if (step === 3 && property) a.flyTo(property, 17);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -415,11 +439,13 @@ function LandWizard() {
     setLocated(null);
     setAlignOpen(false);
     await run("路線価図を探しています", async () => {
-      const r = await locateSheet({ property, candidates: list, town, cache: pdfCache.current, roads: roads ?? [], onStep: (m) => g === gen.current && setBusy(m) });
+      // バーの最後の少しは、選んだ図を地図に重ねる分
+      const r = await locateSheet({ property, candidates: list, town, cache: pdfCache.current, roads: roads ?? [], onStep: (m, p) => g === gen.current && wait(m, within(p, 0, 0.95)) });
       if (g !== gen.current) return;
       setLocated(r);
       const c = list.find((x) => x.no === r.no) ?? (list.length === 1 ? list[0] : undefined);
       if (!c) return;
+      setProg({ at: 0.95, until: 1, expectSec: 3, since: Date.now() });
       const buf = await fetchSheetPdf(c.pdfUrl, pdfCache.current);
       if (g !== gen.current || !(await showSheet(buf, 1, g))) return;
       setPdfData(buf);
@@ -526,7 +552,7 @@ function LandWizard() {
       const d = districtFrom(got.find((r) => r.symbol)?.symbol ?? null);
       if (d && !touchedRef.current) setDistrict(d);
       if (got.length === 0) throw new Error("土地が路線価図の外にあります。3. に戻って、路線価図の重なりを確かめてください。");
-    });
+    }, READ_PROGRESS);
   }
 
   const readKey = frontages.map((f) => `${keyOf(f)}@${frontageContext(ctx, f)}`).join("|");
@@ -593,6 +619,8 @@ function LandWizard() {
     n === 1 ||
     (!!property && !!route && (route === "ratio" ? n === 2 || (n === 3 && (step >= 2 ? ratioReady : savedRatio)) : n === 2 ? !!shape : n === 3 ? !!shape : !!sheet && !!shape));
   const overlayOn = route === "rosenka" && step >= 3 && showOverlay;
+  /** 地図の上に出す待ちの案内（同じ案内は右の手順の欄にも出す） */
+  const waiting = busy ? { message: busy, progress: prog } : route === "ratio" && step >= 2 ? ratioWait : finding ? { message: "この場所の路線価図を探しています", progress: null } : null;
   const wide = route === "ratio" && step >= 2;
 
   return (
@@ -630,7 +658,7 @@ function LandWizard() {
         </Link>
       </div>
 
-      <div ref={wrapRef} className="relative isolate scroll-mt-20">
+      <div ref={wrapRef} className="relative isolate">
         <MapView
           className="h-[60vh] min-h-[360px] w-full rounded-xl border border-stone-300 lg:h-[calc(100vh-12rem)] lg:min-h-[560px]"
           center={center}
@@ -659,9 +687,9 @@ function LandWizard() {
         />
 
         {/* 地図の上：案内・状態 */}
-        <div className={`pointer-events-none absolute left-1/2 top-3 z-[1000] w-[min(36rem,80%)] -translate-x-1/2 space-y-2 ${wide ? "lg:left-[calc((100%-41rem)/2)] lg:w-[min(30rem,40%)]" : "lg:left-[calc((100%-26rem)/2)]"}`}>
+        <div className={`pointer-events-none absolute left-14 right-3 top-3 z-[1000] space-y-2 sm:left-1/2 sm:right-auto sm:w-[min(36rem,80%)] sm:-translate-x-1/2 ${wide ? "lg:left-[calc((100%-41rem)/2)] lg:w-[min(30rem,40%)]" : "lg:left-[calc((100%-26rem)/2)]"}`}>
           {step === 1 && !property && <p className="rounded-lg bg-amber-50/95 px-3 py-2 text-center text-sm font-semibold text-amber-950 shadow">{notice ?? "地図で、評価する土地をクリックしてください。"}</p>}
-          {(busy || finding) && <p className="rounded-lg bg-white/95 px-3 py-2 text-center text-sm text-teal-900 shadow">{busy ?? "この場所の路線価図を探しています"}…</p>}
+          {waiting && <ProgressBar quiet message={waiting.message} progress={waiting.progress} className="rounded-lg bg-white/95 px-3 py-2 text-center text-sm text-teal-900 shadow" />}
           {error && <p className="pointer-events-auto rounded-lg bg-rose-50/95 px-3 py-2 text-sm text-rose-900 shadow">{error}</p>}
         </div>
 
@@ -670,6 +698,12 @@ function LandWizard() {
           ref={asideRef}
           className={`mt-3 rounded-xl bg-white p-4 shadow-xl ring-1 ring-stone-200 lg:absolute lg:bottom-3 lg:right-3 lg:top-3 lg:z-[1000] lg:mt-0 lg:overflow-y-auto lg:bg-white/97 ${wide ? "lg:w-[min(40rem,calc(100%-1.5rem))]" : "lg:w-[25rem]"}`}
         >
+          {/* 待っている間の案内。手順の上に出し、スマートフォンではスクロールしても画面の上に留める（ボタンを押した場所から見えるように） */}
+          {busy && (
+            <div className="pointer-events-none sticky top-[var(--head,5.5rem)] z-20 mb-3 lg:top-0" style={headH ? ({ "--head": `${headH + 4}px` } as React.CSSProperties) : undefined}>
+              <ProgressBar message={busy} progress={prog} className="rounded-lg bg-white/95 px-3 py-2 text-sm text-teal-900 shadow-md ring-1 ring-teal-100" />
+            </div>
+          )}
           <p className="mb-3 text-xs text-stone-500">
             {land.label || "（名称未入力）"}　{land.location}
             {land.areaSqm > 0 ? `　地積 ${land.areaSqm}㎡` : ""}
@@ -680,7 +714,7 @@ function LandWizard() {
               <h2 className="font-bold text-stone-800">1. 土地の場所を選んでください</h2>
               <p className="text-sm text-stone-600">地図で評価する土地をクリックします。住所で探すこともできます。</p>
               <div className="relative flex gap-2">
-                <TextInput value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && search()} placeholder={land.location || "例：福岡市博多区博多駅前4丁目"} />
+                <TextInput className="min-w-0" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && search()} placeholder={land.location || "例：福岡市博多区博多駅前4丁目"} />
                 <Button variant="secondary" className="shrink-0 whitespace-nowrap" onClick={search} disabled={!query.trim()}>
                   検索
                 </Button>
@@ -706,7 +740,7 @@ function LandWizard() {
               {property && (
                 <div className="space-y-2 rounded-lg bg-stone-50 p-3 text-sm">
                   <p className="font-semibold text-stone-800">選んだ場所{town ? `：${town}` : ""}</p>
-                  {finding && <p className="text-stone-600">この場所の路線価図を探しています…</p>}
+                  {finding && <ProgressBar message="この場所の路線価図を探しています" className="text-stone-600" />}
                   {!finding && route === "rosenka" && (
                     <p className="text-stone-700">
                       {found?.sheets.length ? `路線価図のある地域です（候補の図 ${found.sheets.map((s) => s.no).join("・")}）。` : "路線価図で評価します。"}
@@ -906,6 +940,7 @@ function LandWizard() {
                               {line && <span className="block text-[11px] font-normal text-rose-700">{{ front: "正面路線", side: "側方路線", back: "裏面路線" }[line.role]}</span>}
                             </span>
                             <TextInput
+                              className="min-w-0"
                               value={note}
                               disabled={!!busy}
                               onChange={(ev) => {
@@ -927,7 +962,7 @@ function LandWizard() {
                                   title={c.where}
                                   disabled={!!busy}
                                   onClick={() => setReadings((n) => typeNote(n, k, c.notation))}
-                                  className={`rounded-full border px-2 py-0.5 font-mono text-xs ${note === c.notation ? "border-teal-700 bg-teal-700 text-white" : "border-stone-300 hover:border-teal-500"} disabled:opacity-60`}
+                                  className={`rounded-full border px-2.5 py-1.5 font-mono text-xs ${note === c.notation ? "border-teal-700 bg-teal-700 text-white" : "border-stone-300 hover:border-teal-500"} disabled:opacity-60`}
                                 >
                                   {c.notation}
                                 </button>
@@ -1028,6 +1063,7 @@ function LandWizard() {
               cache={pdfCache.current}
               ratioUrl={found?.ratioUrl}
               onReady={setRatioReady}
+              onWait={setRatioWait}
               onUseRosenka={() => {
                 setRoute("rosenka");
                 setStep(2);

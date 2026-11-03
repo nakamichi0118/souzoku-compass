@@ -8,6 +8,7 @@ import type { Asset, AssetKind, Person } from "@/domain/types";
 import { newId, useCase } from "@/lib/store";
 import { usePlan } from "@/lib/planStore";
 import { AssetIcon } from "@/components/my/icons";
+import { revealBelowHeader } from "@/components/ui/scroll";
 import { type DivisionInput, LandEditor, LeaseRatioSelect, RentRatioField, SmallResidential, resetSmallOnKindChange } from "./LandEditor";
 import type { Interview } from "@/domain/procedures/interview";
 
@@ -104,6 +105,12 @@ export function AssetsStep() {
   const [menu, setMenu] = useState(false);
   const [scrollTo, setScrollTo] = useState<string | null>(null);
   const refs = useRef<Record<string, HTMLLIElement | null>>({});
+  // 開いた・閉じた行。上の行が閉じて縮むと、押した行が画面のずっと上へ行くので、見える位置に戻す
+  const toggled = useRef<string | null>(null);
+  const toggle = (id: string, next: string | null) => {
+    toggled.current = id;
+    setOpenId(next);
+  };
   const living = data.persons.filter((p) => !p.predeceased);
   const noHeirs = living.length === 0;
 
@@ -132,6 +139,12 @@ export function AssetsStep() {
       setScrollTo(null);
     }
   }, [scrollTo, data.assets]);
+
+  useEffect(() => {
+    const el = toggled.current ? refs.current[toggled.current] : null;
+    toggled.current = null;
+    if (el) revealBelowHeader(el);
+  }, [openId]);
 
   const add = (kind: AssetKind) => {
     // 保険金・退職金の受取人は空のまま始め、本人に選んでもらう（最初の人に勝手に割り当てない）
@@ -186,7 +199,7 @@ export function AssetsStep() {
                 <span className="text-stone-500">目安 {fmt(h.amount)}円</span>
                 <span className="ml-auto flex flex-wrap gap-1.5">
                   {h.kinds.map((k) => (
-                    <button key={k} type="button" onClick={() => add(k)} className="rounded-full border border-sky-300 bg-white px-3 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-100">
+                    <button key={k} type="button" onClick={() => add(k)} className="rounded-full border border-sky-300 bg-white px-3 py-2 text-xs font-semibold text-sky-800 hover:bg-sky-100">
                       ＋ {kindLabel(k)}
                     </button>
                   ))}
@@ -222,12 +235,14 @@ export function AssetsStep() {
               }}
               className={`scroll-mt-40 rounded-xl border bg-white ${open ? "border-sky-400 shadow-sm" : "border-stone-200"}`}
             >
-              <button type="button" onClick={() => setOpenId(open ? null : a.id)} aria-expanded={open} className="flex w-full items-center gap-2 px-4 py-3 text-left sm:gap-3">
-                <span className="flex w-24 shrink-0 items-center gap-1.5 rounded bg-stone-100 px-2 py-0.5 text-xs font-medium text-stone-700 sm:w-28">
+              <button type="button" onClick={() => toggle(a.id, open ? null : a.id)} aria-expanded={open} className="flex w-full items-center gap-2 px-4 py-3 text-left sm:gap-3">
+                {/* スマートフォンでは種類を絵だけにして、名称に1行を使う */}
+                <span className="flex shrink-0 items-center gap-1.5 rounded bg-stone-100 px-2 py-0.5 text-xs font-medium text-stone-700 sm:w-28">
                   <AssetIcon k={a.kind} className="h-4 w-4 shrink-0" />
-                  <span className="truncate">{kindLabel(a.kind)}</span>
+                  <span className="sr-only sm:hidden">{kindLabel(a.kind)}</span>
+                  <span className="hidden truncate sm:inline">{kindLabel(a.kind)}</span>
                 </span>
-                {/* スマートフォンでは、印（確認待ちなど）を名称の下に回して横にはみ出さないようにする */}
+                {/* スマートフォンでは、印（確認待ちなど）と評価額を名称の下に回して横にはみ出さないようにする */}
                 <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
                   <span className={`min-w-0 grow basis-full truncate font-semibold sm:basis-0 ${a.label ? "text-stone-900" : "text-stone-400"}`}>{a.label || "（名称未入力）"}</span>
                   {missingRecipient && <span className="shrink-0 rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-orange-800">受取人が未設定</span>}
@@ -237,8 +252,8 @@ export function AssetsStep() {
                     </span>
                   )}
                   {(a.pending?.length || line?.valuation.needsConsultation) && <span className="shrink-0 rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-orange-800">確認待ち</span>}
+                  <span className="ml-auto shrink-0 text-right font-bold tabular-nums text-teal-800 sm:w-32">{line?.valuation.needsConsultation ? <span className="text-sm text-orange-700">入力待ち</span> : line ? `${fmt(line.valuation.value)}円` : "—"}</span>
                 </span>
-                <span className="shrink-0 text-right font-bold tabular-nums text-teal-800 sm:w-32">{line?.valuation.needsConsultation ? <span className="text-sm text-orange-700">入力待ち</span> : line ? `${fmt(line.valuation.value)}円` : "—"}</span>
                 <ChevronDown className={`h-4 w-4 shrink-0 text-stone-400 transition ${open ? "rotate-180" : ""}`} aria-hidden />
               </button>
               {open && (
@@ -289,7 +304,7 @@ export function AssetsStep() {
                       <Button variant="danger" onClick={() => remove(a.id)}>
                         削除
                       </Button>
-                      <Button variant="secondary" onClick={() => setOpenId(null)}>
+                      <Button variant="secondary" onClick={() => toggle(a.id, null)}>
                         閉じる
                       </Button>
                     </div>
@@ -307,9 +322,9 @@ export function AssetsStep() {
         </Note>
       )}
 
-      {/* 追加ボタンは画面の下に追従させる */}
-      <div className="sticky bottom-3 z-20 flex justify-end">
-        <div className="relative">
+      {/* 追加ボタンは画面の下に追従させる（ボタンとメニューのほかは、下の行を押せるよう素通しにする） */}
+      <div className="pointer-events-none sticky bottom-3 z-20 flex justify-end">
+        <div className="pointer-events-auto relative">
           {menu && (
             <div className="absolute bottom-full right-0 mb-2 w-[min(22rem,calc(100vw-2rem))] rounded-2xl border border-stone-200 bg-white p-3 shadow-xl">
               <p className="px-1 pb-2 text-xs font-semibold text-stone-500">追加する財産の種類</p>
