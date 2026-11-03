@@ -6,7 +6,8 @@
  *   路線価の道路と間口、倍率、土地の使い方（貸家建付地・貸宅地・借地権・貸家建付借地権）と賃貸割合・借地権割合、
  *   評価に影響する土地の事情と税理士に確かめた補正率、貸家・賃貸中のマンション、マンションの補正の要素、上場株式の4つの価格、
  *   保険金の受取人、債務の負担者、3年以内の贈与と相続時精算課税の贈与、分け方の割合と未分割（一部未分割を含む）、
- *   代償金（特定の財産の時価をもとに決めたときはその財産と時価）、小規模宅地等（特定居住用・特定事業用・貸付事業用）、
+ *   代償金（特定の財産の時価をもとに決めたときはその財産と時価）、小規模宅地等（特定居住用・特定事業用・貸付事業用、
+ *   特例を使う面積、同じ土地を一緒に取得して特例を使う2人目以降の人と人ごとの答え）、
  *   相次相続控除の前の相続の内容）は、そのまま写す。
  * - アプリに入力のしかたがまったくないもの（受取人が相続人等にいない保険金、同じ向きに3本以上の路線 など）は、
  *   Case に入れずに unrepresentable[] に書く。
@@ -36,7 +37,7 @@ import { depthCorrection } from "../../src/domain/valuation/depth";
 import type { Edge, RoadInput } from "../../src/domain/valuation/roads";
 import { type SmallResidentialCheck, judgeSmallResidential, shouldApply, smallLandKind } from "../../src/domain/valuation/smallResidential";
 import type { CondoItemExt } from "./generate";
-import type { EstateItem, Member, Scenario, ScenarioRoad, SmallLandKind } from "./scenario";
+import type { EstateItem, Member, Scenario, ScenarioRoad, SmallLandKind, SmallLandUse, SmallLandUser } from "./scenario";
 
 export interface ToCaseResult {
   /** アプリに入力する相続（作れないときは null） */
@@ -116,17 +117,32 @@ function roadsToEdges(roads: ScenarioRoad[]): { inputs: RoadInput[]; order: Scen
   return { inputs, order, tooMany };
 }
 
+/** はい・いいえの答え（シナリオに書いていなければ「はい」＝要件を満たしている） */
+const yesNo = (x: boolean | undefined): "yes" | "no" => (x === false ? "no" : "yes");
+
 /**
- * 小規模宅地等の確認の質問への答え。シナリオでは要件を満たしている前提なので、「使える」と判定される答えにする。
+ * 小規模宅地等の確認の質問のうち、人ごとの答え（同居していたか・住み続け/続け・持ち続けるか）。
+ * シナリオに書いた人ごとの要件（SmallLandUser）をそのまま「はい」「いいえ」で答える。書いていなければ「はい」。
+ * - 特定居住用：配偶者には人ごとの質問はない。それ以外は同居していたか、申告期限まで住み続け・持ち続けるか
+ * - 特定事業用・貸付事業用：申告期限まで事業（貸付）を続けるか、持ち続けるか
+ */
+function personCheck(kind: SmallLandKind, acquirer: Member | undefined, u: SmallLandUser): SmallResidentialCheck {
+  if (kind === "residence") return acquirer?.relation === "spouse" ? {} : { livedTogether: yesNo(u.livedTogether), keep: yesNo(u.keep) };
+  return { continues: yesNo(u.continues), keep: yesNo(u.keep) };
+}
+
+/**
+ * 小規模宅地等の確認の質問への答え。土地についての答えは、シナリオでは要件を満たしている前提なので「使える」と判定される答えにし、
+ * 人ごとの答えはシナリオに書いたとおりにする（personCheck）。
  * - 特定居住用：自宅の敷地で事情なし。配偶者以外は同居していて住み続け・持ち続ける
  * - 特定事業用：自宅でなく、亡くなった方の事業に使っていた土地。引き継いで続け、持ち続け、3年以内に始めた事業でない
  * - 貸付事業用：貸し続け、持ち続け、3年以内に貸し始めたものでない
  */
-function qualifyingCheck(kind: SmallLandKind, acquirer: Member | undefined): SmallResidentialCheck {
-  if (kind === "business") return { ownHome: "no", business: "yes", continues: "yes", keep: "yes", recent: "no" };
-  if (kind === "rental") return { continues: "yes", keep: "yes", recent: "no" };
-  if (acquirer?.relation === "spouse") return { ownHome: "yes", special: "no" };
-  return { ownHome: "yes", special: "no", livedTogether: "yes", keep: "yes" };
+function qualifyingCheck(kind: SmallLandKind, acquirer: Member | undefined, u: SmallLandUser): SmallResidentialCheck {
+  const own = personCheck(kind, acquirer, u);
+  if (kind === "business") return { ownHome: "no", business: "yes", ...own, recent: "no" };
+  if (kind === "rental") return { ...own, recent: "no" };
+  return { ownHome: "yes", special: "no", ...own };
 }
 
 /** 青空駐車場の答え：自宅の敷地でも、自分の事業に使っていた土地でもない（特例は使えないと判定される） */
@@ -138,9 +154,10 @@ const PARKING_CHECK: SmallResidentialCheck = { ownHome: "no", business: "no" };
  */
 function smallReliefOf(
   a: Pick<LandAsset, "kind" | "use"> | Pick<CondoAsset, "kind" | "rented">,
-  sl: { kind: SmallLandKind; acquirer: string },
+  sl: SmallLandUse,
   check: SmallResidentialCheck,
   persons: Person[],
+  byId: Map<string, Member>,
   approx: (k: string) => void,
   compareKind = true,
 ): SmallLandRelief {
@@ -149,7 +166,15 @@ function smallReliefOf(
   if (compareKind && kind !== sl.kind) approx(FEATURE.smallKindMismatch);
   const acquirer = persons.find((p) => p.id === sl.acquirer && !p.predeceased);
   const applies = shouldApply(judgeSmallResidential(check, acquirer, kind), check);
-  return { applies, acquirerId: sl.acquirer, check };
+  // 特例を使う面積（付表1の⑤）を決めていれば、その面積を入れる（0.01㎡単位）
+  const area = (x: number | undefined) => {
+    if (x === undefined) return {};
+    if (!fitsDigits(x, 2)) approx(FEATURE.areaDigits);
+    return { selectedSqm: Math.round(x * 100) / 100 };
+  };
+  // 同じ土地を一緒に取得して特例を使う2人目以降：人を選び、人ごとの質問に答える（土地についての質問は1人目の答えが使われる）
+  const others = (sl.others ?? []).map((u) => ({ acquirerId: u.acquirer, check: personCheck(sl.kind, byId.get(u.acquirer), u), ...area(u.selectedSqm) }));
+  return { applies, acquirerId: sl.acquirer, check, ...area(sl.selectedSqm), ...(others.length ? { others } : {}) };
 }
 
 /** 日付の n 年前の同じ月日（その年に2月29日がなければ2月28日）。n が0のときは前日（同じ日は前の相続の日として入れられない） */
@@ -439,8 +464,8 @@ function toLand(
   if (sl) {
     // 青空駐車場（建物や構築物のない土地）は、自宅の敷地でも事業に使っていた土地でもないと答える（特例は使えない）
     const parking = it.use === "parking";
-    const check = parking ? PARKING_CHECK : qualifyingCheck(sl.kind, byId.get(sl.acquirer));
-    land.smallResidential = smallReliefOf(land, sl, check, persons, approx, !parking);
+    const check = parking ? PARKING_CHECK : qualifyingCheck(sl.kind, byId.get(sl.acquirer), sl);
+    land.smallResidential = smallReliefOf(land, sl, check, persons, byId, approx, !parking);
   }
   return land;
 }
@@ -467,7 +492,7 @@ function toCondo(it: CondoItemExt, s: Scenario, byId: Map<string, Member>, perso
     registry: { assessedValue: it.buildingFixedAssetValue },
   };
   const sl = it.smallLand;
-  if (sl) condo.smallResidential = smallReliefOf(condo, sl, qualifyingCheck(sl.kind, byId.get(sl.acquirer)), persons, approx);
+  if (sl) condo.smallResidential = smallReliefOf(condo, sl, qualifyingCheck(sl.kind, byId.get(sl.acquirer), sl), persons, byId, approx);
   return condo;
 }
 

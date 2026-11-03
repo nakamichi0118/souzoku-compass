@@ -27,7 +27,13 @@ export function summarizeForAssistant(c: Case, r: TaxResult | null): string {
       r.successive && `相次相続控除 ${r.successive.total.toLocaleString()}円`,
       r.persons.some((p) => p.settlementGifts > 0) && "相続時精算課税の贈与あり",
       r.persons.some((p) => p.transfersIn.length > 0) && "未成年者・障害者控除の一部を扶養義務者から控除",
-      r.assets.some((l) => l.small && l.small.kind !== "residence") && "小規模宅地等（特定事業用・貸付事業用）あり",
+      r.assets.some((l) => [l.small, ...(l.smallExtra ?? [])].some((d) => d && d.kind !== "residence")) && "小規模宅地等（特定事業用・貸付事業用）あり",
+      r.assets.some((l) => (l.smallExtra?.length ?? 0) > 0) && "1つの土地を2人以上が、それぞれの持分に応じて小規模宅地等の特例に使用",
+      c.assets.some(
+        (a) =>
+          (a.kind === "land" || a.kind === "condo") &&
+          (a.smallResidential?.selectedSqm != null || (Array.isArray(a.smallResidential?.others) && a.smallResidential.others.some((o) => o?.selectedSqm != null))),
+      ) && "小規模宅地等で特例を使う面積を指定した土地あり（受け継いだ面積の一部だけに使う）",
     ].filter(Boolean);
     if (extra.length) lines.push(`特記: ${extra.join("、")}`);
     if (r.blockers.length) lines.push(`自動完結できない事項: ${r.blockers.length}件`);

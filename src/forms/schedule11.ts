@@ -11,6 +11,8 @@
  * （租税特別措置法第69条の4）を書く。マンションの「備考」欄には敷地権の割合（例：10000分の169）を書く。
  * 一部の部屋が空いている貸家建付地などに貸付事業用宅地等の特例を使ったときは、貸している部分（特例の対象）と
  * 空いている部分（自用地として評価・特例の対象外）を別の行にする（splitVacant）。
+ * 1つの宅地等を何人かで受け継いで特例を使うときも、宅地等は1行（国税庁 FAQ（相続税申告書第11表）：面積はその土地等の面積、
+ * 価額は特例適用後の金額、特例は「1」）にし、取得財産の価額に、特例を使った人はその人の減額を引いた額（付表1の④−⑦）を書く。
  *
  * 分け方が決まっていない（未分割の）部分は、付表の「分割が確定した財産」には書かず、
  * 第11表の合計表の「② 未分割財産の価額」に法定相続分で取得したものとした額を書く。
@@ -18,6 +20,7 @@
 import type { AssetLine, PersonTax, TaxResult } from "@/domain/tax/engine";
 import type { Case, LandUse } from "@/domain/types";
 import { type Usage, valueAsset } from "@/domain/valuation";
+import { smallLines } from "./attachments";
 import { yen, yenOrBlank } from "./format";
 import type { PageFill, PageKey } from "./render";
 
@@ -119,8 +122,10 @@ function srShare(c: Case, assetId: string, personId: string) {
 /**
  * 一部の部屋が空いている貸家建付地・貸家建付借地権（マンションの人に貸している部屋の敷地を含む）に貸付事業用宅地等の
  * 特例を使ったときは、特例を使う人の分を次の2行に分ける（ほかの人が取得した分は、もとの利用区分のまま3行目にまとめる）。
- *   1行目 貸している部分：特例の対象。価額は付表1の⑧（④ − 減額）。付表1の注4「⑧欄の金額を第11表の付表1の価額欄に転記」
+ *   1行目 貸している部分：特例の対象。価額は付表1の⑧（④ − ⑦）。付表1の注4「⑧欄の金額を第11表の付表1の価額欄に転記」
  *   2行目 空いている部分：特例の対象外。自用地（貸家建付借地権は借地権）として評価した額。別表1の「3 特例の対象とならない宅地等」
+ * 1つの宅地等を何人かで受け継いで、それぞれが特例を使うときは、1行目・2行目に特例を使う人を並べ、取得財産の価額は
+ * 人ごとに書く（1行目はその人の⑧、2行目はその人の持分の空いている部分の額）。
  * 各行の価額の合計（＝第11表・第15表に入る額）と、取得者ごとの金額の合計は、1行で書いたときと変わらない。
  * 分けられないとき（空いている部分の価額が出ないなど）は undefined（これまでどおり1行で書く）
  */
@@ -130,40 +135,55 @@ function splitVacant(
   base: { cat: number; value: number; parts: Part[]; values: ScheduleItem["values"]; lotArea: number; vacantUse: Usage; vacantNote?: string },
 ): ScheduleItem[] | undefined {
   const a = line.asset;
-  const s = line.small;
+  const srs = smallLines(line);
   const rentedLand = line.valuation.rentedLandPart;
   const partlyRented =
     a.kind === "land" ? (a.use === "rentedHouse" || a.use === "rentedLeasehold") && (a.rentRatio ?? 1) < 1 : a.kind === "condo" && !!a.rented && (a.rentRatio ?? 1) < 1;
-  if (!s || s.kind !== "rental" || !(line.reduction > 0) || rentedLand === undefined || !partlyRented) return undefined;
-  const sr = base.parts.find((p) => p.personId === s.acquirerId && !p.undivided);
-  if (!sr) return undefined;
-  const others = base.parts.filter((p) => p !== sr);
-  // 特例を使う人の持分に応じた面積（エンジンと同じく 0.01㎡ 単位）。持分が分からず、ほかに取得した人もいなければ全部
-  const share = srShare(c, a.id, s.acquirerId) ?? (others.length === 0 ? { numerator: 1, denominator: 1 } : undefined);
-  if (!share) return undefined;
+  if (!srs.length || srs.some((x) => x.detail.kind !== "rental") || rentedLand === undefined || !partlyRented) return undefined;
   const lot100 = Math.round(base.lotArea * 100);
-  const share100 = Math.round(((base.lotArea * share.numerator) / share.denominator) * 100);
-  const rented100 = Math.round(s.area * 100);
-  const rentedValue = s.value - line.reduction; // 付表1の⑧
-  const vacantValue = sr.amount + line.reduction - s.value; // 持分の価額 − 貸している部分の価額（④）
-  if (!(rentedValue >= 0) || !(vacantValue > 0) || !(share100 > rented100)) return undefined;
+  const rest = [...base.parts];
+  const rentedParts: Part[] = [];
+  const vacantParts: Part[] = [];
+  let rented100 = 0;
+  let vacant100 = 0;
+  let shares100 = 0;
+  for (const { detail: s, reduction } of srs) {
+    const k = rest.findIndex((p) => p.personId === s.acquirerId && !p.undivided);
+    if (k < 0) return undefined;
+    const [sr] = rest.splice(k, 1);
+    // 特例を使う人の持分に応じた面積（エンジンと同じく 0.01㎡ 単位）。持分が分からず、ほかに取得した人もいなければ全部
+    const share = srShare(c, a.id, s.acquirerId) ?? (base.parts.length === 1 ? { numerator: 1, denominator: 1 } : undefined);
+    if (!share) return undefined;
+    const share100 = Math.round(((base.lotArea * share.numerator) / share.denominator) * 100);
+    const r100 = Math.round(s.area * 100);
+    const rentedValue = s.value - reduction; // 付表1の⑧
+    const vacantValue = sr.amount + reduction - s.value; // 持分の価額 − 貸している部分の価額（④）
+    if (!(rentedValue >= 0) || !(vacantValue > 0) || !(share100 > r100)) return undefined;
+    rentedParts.push({ personId: sr.personId, amount: rentedValue, undivided: false });
+    vacantParts.push({ personId: sr.personId, amount: vacantValue, undivided: false });
+    rented100 += r100;
+    vacant100 += share100 - r100;
+    shares100 += share100;
+  }
   const pick = (ps: Part[]) => ({
     acquirers: ps.filter((p) => !p.undivided).map(({ personId, amount }) => ({ personId, amount })),
     undivided: ps.filter((p) => p.undivided).map(({ personId, amount }) => ({ personId, amount })),
   });
-  const one = (amount: number): Part[] => [{ personId: sr.personId, amount, undivided: false }];
+  const total = (ps: Part[]) => ps.reduce((t, p) => t + p.amount, 0);
+  const rentedValue = total(rentedParts);
+  const vacantValue = total(vacantParts);
   const out: ScheduleItem[] = [
-    { cat: base.cat, value: rentedValue, values: { ...base.values, area: areaText(rented100 / 100), special: SMALL_LAND_SPECIAL_NO }, ...pick(one(rentedValue)) },
+    { cat: base.cat, value: rentedValue, values: { ...base.values, area: areaText(rented100 / 100), special: SMALL_LAND_SPECIAL_NO }, ...pick(rentedParts) },
     {
       cat: base.cat,
       value: vacantValue,
-      values: { ...base.values, use: base.vacantUse, area: areaText((share100 - rented100) / 100), fixed: "", special: "", ...(base.vacantNote ? { note: base.vacantNote } : {}) },
-      ...pick(one(vacantValue)),
+      values: { ...base.values, use: base.vacantUse, area: areaText(vacant100 / 100), fixed: "", special: "", ...(base.vacantNote ? { note: base.vacantNote } : {}) },
+      ...pick(vacantParts),
     },
   ];
   const othersValue = base.value - rentedValue - vacantValue;
-  if (others.length || othersValue !== 0)
-    out.push({ cat: base.cat, value: othersValue, values: { ...base.values, area: areaText(Math.max(0, lot100 - share100) / 100), fixed: "", special: "" }, ...pick(others) });
+  if (rest.length || othersValue !== 0)
+    out.push({ cat: base.cat, value: othersValue, values: { ...base.values, area: areaText(Math.max(0, lot100 - shares100) / 100), fixed: "", special: "" }, ...pick(rest) });
   return out;
 }
 
@@ -207,12 +227,14 @@ function landItems(c: Case, line: AssetLine): ScheduleItem[] {
     const loc = splitLocation(a.location);
     const total = line.valuation.value;
     const land = valueAsset({ ...a, buildingFixedAssetValue: 0 }).value;
-    const sr = line.small?.acquirerId ?? a.smallResidential?.acquirerId;
+    // 特例を使う人ごとの減額（付表1の⑦）。何人かで受け継いでそれぞれが使うときは、その人の分だけ
+    const cuts = new Map<string, number>();
+    for (const x of smallLines(line)) cuts.set(x.detail.acquirerId, (cuts.get(x.detail.acquirerId) ?? 0) + x.reduction);
     const landParts: Part[] = [];
     const bldgParts: Part[] = [];
     for (const p of parts) {
       // 価額は小規模宅地等の減額後。減額前に戻してから土地・家屋に按分し、減額は敷地利用権の行から差し引く
-      const cut = !p.undivided && p.personId === sr ? line.reduction : 0;
+      const cut = p.undivided ? 0 : (cuts.get(p.personId) ?? 0);
       const gross = p.amount + cut;
       const landGross = mulDiv(Math.max(0, gross), Math.max(0, land), total);
       landParts.push({ ...p, amount: landGross - cut });

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ConsultLink } from "@/components/compass/ConsultLink";
 import { Choice } from "@/components/plan/inputs";
 import { Button, Check, Field, Note, NumInput, OptionalNumInput, Select, TextInput, YenInput, fmt } from "@/components/ui";
-import type { Asset, Case, CondoAsset, LandAsset, LandUse, Person } from "@/domain/types";
+import type { Asset, Case, CondoAsset, LandAsset, LandUse, Person, SmallLandAcquirer, SmallLandKind, SmallLandRelief } from "@/domain/types";
 import { DISTRICTS, type District } from "@/domain/valuation/depth";
 import { LEASE_LETTERS, LEASE_RATIO_BY_LETTER, type LeaseLetter, leaseLetterOf } from "@/domain/valuation/lease";
 import { type Edge, type RoadInput, evaluateRoads } from "@/domain/valuation/roads";
@@ -68,11 +68,155 @@ export function resetSmallOnKindChange(a: LandAsset | CondoAsset, p: Partial<Lan
   if (!sr?.check) return {};
   const after = smallLandKind({ ...a, ...p } as LandAsset | CondoAsset);
   if (smallLandKind(a) === after) return {};
-  return { smallResidential: { ...sr, check: undefined, applies: false } };
+  // 一緒に受け継いだ人の答えも、前の種類のためのものなので引き継がない（人と面積は残す）
+  return { smallResidential: { ...sr, check: undefined, applies: false, ...(sr.others ? { others: sr.others.map(withoutAnswers) } : {}) } };
 }
 
 /** 取得する人を変えたときに残す答え（土地と亡くなった方についての答え）。同居・続けるか・持ち続けるか・税理士への確認は引き継がない */
 const keepForNewAcquirer = (c: SmallResidentialCheck): SmallResidentialCheck => ({ ownHome: c.ownHome, special: c.special, business: c.business, recent: c.recent });
+
+/** 一緒に受け継いだ人の答えを消す（人と面積は残す） */
+const withoutAnswers = (o: SmallLandAcquirer): SmallLandAcquirer => ({ acquirerId: o.acquirerId, ...(o.selectedSqm != null ? { selectedSqm: o.selectedSqm } : {}) });
+
+/** 2人目以降の取得者が自分で答えるもの（人ごとの答え）。ほかは土地についての答えで、最初の人の答えを使う */
+const personAnswers = (c: SmallResidentialCheck = {}): SmallResidentialCheck =>
+  Object.fromEntries(
+    Object.entries({ livedTogether: c.livedTogether, keep: c.keep, continues: c.continues, confirmedByAdvisor: c.confirmedByAdvisor }).filter(([, v]) => v !== undefined),
+  ) as SmallResidentialCheck;
+
+/**
+ * 2人目以降の取得者の判定に使う答え。土地についての答え（自宅か・事情・事業に使っていたか・3年以内か）は最初の人の答え、
+ * 人ごとの答え（同居・続けるか・持ち続けるか・税理士への確認）はその人の答え（特例は取得した人ごとに判定する。措置法69条の4第3項）
+ */
+export const otherAcquirerCheck = (lot: SmallResidentialCheck = {}, own: SmallResidentialCheck = {}): SmallResidentialCheck => ({
+  ...keepForNewAcquirer(lot),
+  ...personAnswers(own),
+});
+
+/** 最初の取得者を変えたときの変更。前の人についての答えと面積は引き継がず、その人が「一緒に取得する人」にいれば外す */
+export function firstAcquirerChange(sr: SmallLandRelief, acquirerId: string): Partial<SmallLandRelief> {
+  const others = sr.others?.filter((o) => o.acquirerId !== acquirerId);
+  return { acquirerId, check: keepForNewAcquirer(sr.check ?? {}), selectedSqm: undefined, others: others?.length ? others : undefined };
+}
+
+/**
+ * 最初の人の答えを変えたときの、一緒に受け継いだ人の答え。自宅か・事業に使っていたかが変わると聞くことが変わるので答えを消し、
+ * 事情・3年以内かが変わると判定が変わるので、税理士への確認だけ外す
+ */
+export function othersAfterLotAnswer(others: SmallLandAcquirer[] | undefined, key: keyof SmallResidentialCheck, before: SmallResidentialCheck, v: Answer): SmallLandAcquirer[] | undefined {
+  if (!others?.length || before[key] === v) return others;
+  if (key === "ownHome" || key === "business") return others.map(withoutAnswers);
+  if (key === "special" || key === "recent") return others.map((o) => (o.check?.confirmedByAdvisor ? { ...o, check: { ...o.check, confirmedByAdvisor: false } } : o));
+  return others;
+}
+
+/** 一緒に取得する人を1人増やす（人はこれから選ぶ） */
+export const addOtherAcquirer = (sr: SmallLandRelief): SmallLandRelief => ({ ...sr, others: [...(sr.others ?? []), { acquirerId: "" }] });
+
+/** 一緒に取得する人を外す */
+export function removeOtherAcquirer(sr: SmallLandRelief, i: number): SmallLandRelief {
+  const others = (sr.others ?? []).filter((_, j) => j !== i);
+  return { ...sr, others: others.length ? others : undefined };
+}
+
+/** 一緒に取得する人を選び直す。前の人の答えと面積は引き継がない */
+export const setOtherAcquirerPerson = (sr: SmallLandRelief, i: number, acquirerId: string): SmallLandRelief => ({
+  ...sr,
+  others: (sr.others ?? []).map((o, j) => (j === i ? { acquirerId } : o)),
+});
+
+/**
+ * 一緒に取得する人の答え。人ごとの答えはその人の check に入れ（税理士への確認は外す）、
+ * 3年以内に始めたか（土地についての答え）は最初の人の check に入れる
+ */
+export function answerOtherAcquirer(sr: SmallLandRelief, i: number, key: keyof SmallResidentialCheck, v: Answer): SmallLandRelief {
+  if (key === "ownHome" || key === "special" || key === "business" || key === "recent") {
+    const lot = sr.check ?? {};
+    return { ...sr, check: { ...lot, [key]: v }, others: othersAfterLotAnswer(sr.others, key, lot, v) };
+  }
+  return { ...sr, others: (sr.others ?? []).map((o, j) => (j === i ? { ...o, check: { ...personAnswers(o.check), [key]: v, confirmedByAdvisor: false } } : o)) };
+}
+
+/** 一緒に取得する人の、税理士への確認 */
+export const confirmOtherAcquirer = (sr: SmallLandRelief, i: number, v: boolean): SmallLandRelief => ({
+  ...sr,
+  others: (sr.others ?? []).map((o, j) => (j === i ? { ...o, check: { ...personAnswers(o.check), confirmedByAdvisor: v } } : o)),
+});
+
+/** 特例を使う面積の上限（who が null なら最初の取得者、数なら一緒に取得する人の順番）。空欄（undefined）なら使える面積をすべて使う */
+export function setSelectedSqm(sr: SmallLandRelief, who: number | null, v: number | undefined): SmallLandRelief {
+  if (who == null) return { ...sr, selectedSqm: v };
+  return { ...sr, others: (sr.others ?? []).map((o, j) => (j === who ? { ...o, selectedSqm: v } : o)) };
+}
+
+/** 分け方で決めた、その人が受け継いだ面積（㎡。0.01㎡未満切捨て）。分け方が入っていなければ undefined */
+export function acquiredSqm(a: Extract<Asset, { kind: "land" | "condo" }>, division: DivisionInput | undefined, personId: string | undefined): number | undefined {
+  if (!division || !personId) return undefined;
+  const full = a.kind === "condo" ? (a.smallResidential?.landShareSqm ?? a.landShareSqm) : a.areaSqm;
+  const s = division.allocations.find((x) => x.assetId === a.id)?.shares.find((x) => x.personId === personId);
+  if (!s || !(full > 0) || !Number.isInteger(s.numerator) || !Number.isInteger(s.denominator) || !(s.numerator > 0) || !(s.denominator > 0)) return undefined;
+  return Math.floor((Math.round(full * 100) * s.numerator) / s.denominator) / 100;
+}
+
+type Question = { key: keyof SmallResidentialCheck; q: string; hint?: string };
+
+/** 確認の質問の文（最初の取得者と、一緒に取得する人とで同じ文を使う） */
+const Q = {
+  rentalContinues: (who: string): Question => ({ key: "continues", q: `${who}は、申告期限まで貸し続けますか？`, hint: "申告期限は、亡くなった日から10か月です。" }),
+  keepUse: (what: string): Question => ({ key: "keep", q: `申告期限まで、${what}を持ち続けますか？` }),
+  rentalRecent: { key: "recent", q: "亡くなる前3年以内に貸し始めましたか？" } as Question,
+  livedTogether: (who: string): Question => ({ key: "livedTogether", q: `${who}は、亡くなる直前まで亡くなった方と同じ家に住んでいましたか？`, hint: "住民票が同じでも、実際に一緒に暮らしていなければ「いいえ」です。" }),
+  keepHome: { key: "keep", q: "申告期限（亡くなった日から10か月）まで、この家に住み続け、土地を持ち続けますか？" } as Question,
+  businessContinues: (who: string): Question => ({ key: "continues", q: `${who}は、申告期限（亡くなった日から10か月）までにその事業を引き継ぎ、続けますか？` }),
+  businessRecent: { key: "recent", q: "亡くなる前3年以内に始めた事業ですか？" } as Question,
+};
+
+/** 最初の取得者の答えで、3年以内に始めたかをすでに聞いているか（聞いていなければ、一緒に取得する人の欄で聞く） */
+const firstAsksRecent = (kind: SmallLandKind, lot: SmallResidentialCheck) => kind !== "residence" && lot.continues === "yes" && lot.keep === "yes";
+
+/**
+ * 一緒に取得する人に聞くこと（人ごとの質問だけ）。土地についての質問は最初の人の欄で聞くので出さない。
+ * ただし、事業用・貸付用で3年以内に始めたかを最初の人の欄で聞いていないときは、askRecent の人の欄で聞く（答えは最初の人の check に入る）
+ */
+export function otherAcquirerQuestions(
+  kind: SmallLandKind,
+  lot: SmallResidentialCheck,
+  own: SmallResidentialCheck,
+  person: Person | undefined,
+  what: string,
+  askRecent = true,
+): Question[] {
+  // 親族でない人は、答えによらず使えない（判定の文で知らせる）
+  if (!person || person.relation === "other") return [];
+  const who = person.name ? `${person.name}さん` : "取得する人";
+  if (kind === "residence") {
+    if (lot.ownHome !== "yes" || lot.special !== "no" || person.relation === "spouse") return [];
+    return [Q.livedTogether(who), ...(own.livedTogether === "yes" ? [Q.keepHome] : [])];
+  }
+  const out: Question[] = [kind === "rental" ? Q.rentalContinues(who) : Q.businessContinues(who)];
+  if (own.continues === "yes") out.push(Q.keepUse(what));
+  if (own.continues === "yes" && own.keep === "yes" && askRecent && !firstAsksRecent(kind, lot)) out.push(kind === "rental" ? Q.rentalRecent : Q.businessRecent);
+  return out;
+}
+
+/** 一緒に取得する人の欄で、3年以内に始めたかを聞く人（最初の人の欄で聞いていれば -1。聞く人が何人いても、はじめの1人の欄だけで聞く） */
+export function recentAskedAt(kind: SmallLandKind, lot: SmallResidentialCheck, others: SmallLandAcquirer[] | undefined): number {
+  if (kind === "residence" || firstAsksRecent(kind, lot)) return -1;
+  return (others ?? []).findIndex((o) => o.acquirerId && o.check?.continues === "yes" && o.check?.keep === "yes");
+}
+
+/** 土地についての答えで、誰が取得しても特例を使えないと決まっているか（自宅でも事業用でもない） */
+const lotRuledOut = (kind: SmallLandKind, c: SmallResidentialCheck) => kind !== "rental" && c.ownHome === "no" && c.business === "no";
+
+function Ask({ q, hint, value, onChange }: { q: string; hint?: string; value: Answer | undefined; onChange: (v: Answer) => void }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-sm font-medium text-stone-800">{q}</p>
+      {hint && <p className="text-xs text-stone-500">{hint}</p>}
+      <Choice value={value} onChange={onChange} options={ANSWERS} />
+    </div>
+  );
+}
 
 /** 小規模宅地等の特例の計算に使う、遺産の分け方の入力 */
 export type DivisionInput = Pick<Case, "undivided" | "allocations">;
@@ -117,30 +261,26 @@ export function SmallResidential({
   const j = judgeSmallResidential(check, acquirer, kind, opts);
   // 特例を使うと判定したとき（税理士に確認して使えると分かったときも）は、分け方のために使えないかを確かめる
   const gap = shouldApply(j, check) ? smallLandDivisionGap(division, a.id, sr.acquirerId) : null;
-  const set = (next: { acquirerId?: string; check?: SmallResidentialCheck }) => {
-    const acq = next.acquirerId ?? sr.acquirerId;
-    const c = next.check ?? check;
+  const set = (next: Partial<SmallLandRelief>) => {
+    const n: SmallLandRelief = { ...sr, ...next };
+    const c = n.check ?? {};
     // 自宅でなく事業に使っていた土地なら特定事業用、と答えで種類が変わるので、新しい答えで決め直して判定する
-    const k = smallLandKind({ ...a, smallResidential: { ...sr, check: c } });
-    const jj = judgeSmallResidential(c, living.find((p) => p.id === acq), k, opts);
-    patch({ smallResidential: { ...sr, acquirerId: acq, check: c, applies: shouldApply(jj, c) } });
+    const k = smallLandKind({ ...a, smallResidential: { ...n, check: c } });
+    const jj = judgeSmallResidential(c, living.find((p) => p.id === n.acquirerId), k, opts);
+    patch({ smallResidential: { ...n, check: c, applies: shouldApply(jj, c) } });
   };
   const answer = (k: keyof SmallResidentialCheck, v: Answer) => {
     // 自宅の敷地か・事業に使っていたかを答え直したら、特例の種類や聞くことが変わるので、その先の答えは引き継がない
     const base: SmallResidentialCheck = k === "ownHome" && v !== check.ownHome ? {} : k === "business" && v !== check.business ? { ownHome: check.ownHome } : check;
-    set({ check: { ...base, [k]: v, confirmedByAdvisor: false } });
+    set({ check: { ...base, [k]: v, confirmedByAdvisor: false }, others: othersAfterLotAnswer(sr.others, k, check, v) });
   };
-  const ask = (k: keyof SmallResidentialCheck, q: string, hint?: string) => (
-    <div className="space-y-1">
-      <p className="text-sm font-medium text-stone-800">{q}</p>
-      {hint && <p className="text-xs text-stone-500">{hint}</p>}
-      <Choice value={check[k] as Answer | undefined} onChange={(v) => answer(k, v)} options={ANSWERS} />
-    </div>
-  );
+  const ask = ({ key, q, hint }: Question) => <Ask q={q} hint={hint} value={check[key] as Answer | undefined} onChange={(v) => answer(key, v)} />;
   const isSpouse = acquirer?.relation === "spouse";
   const what = a.kind === "condo" ? "この部屋" : "この土地";
   // 条件は満たしていても、分け方のために特例を使わないときは「使えます」を緑で見せない
   const tone = j.result === "ok" ? (gap ? "info" : "ok") : j.result === "consult" ? "warn" : j.result === "no" ? "info" : null;
+  // 一緒に受け継いだ人・面積の一部の入力は、最初の取得者を選び、土地として特例を使える見込みがあるときだけ出す
+  const more = !!sr.acquirerId && !lotRuledOut(kind, check);
   return (
     <div className="space-y-3 rounded-lg bg-stone-50 p-3 sm:col-span-2">
       <p className="font-bold text-stone-800">小規模宅地等の特例（評価が最大80%下がる）</p>
@@ -149,35 +289,39 @@ export function SmallResidential({
         <Select
           value={sr.acquirerId ?? ""}
           // 取得する人を変えたら、前の人についての答え（同居・続けるか・持ち続けるか）と税理士への確認は引き継がない
-          onChange={(v) => v !== (sr.acquirerId ?? "") && set({ acquirerId: v, check: keepForNewAcquirer(check) })}
+          onChange={(v) => v !== (sr.acquirerId ?? "") && set(firstAcquirerChange(sr, v))}
           options={[{ value: "", label: "選んでください" }, ...living.map((p) => ({ value: p.id, label: `${p.name || "（未入力）"}（${p.relationLabel ?? ""}）` }))]}
         />
       </Field>
       {kind === "rental" ? (
         // 人に貸している土地・部屋（貸付事業用宅地等）：自宅かどうかは聞かない
         <>
-          {ask("continues", "取得する人は、申告期限まで貸し続けますか？", "申告期限は、亡くなった日から10か月です。")}
-          {check.continues === "yes" && ask("keep", `申告期限まで、${what}を持ち続けますか？`)}
-          {check.continues === "yes" && check.keep === "yes" && ask("recent", "亡くなる前3年以内に貸し始めましたか？")}
+          {ask(Q.rentalContinues("取得する人"))}
+          {check.continues === "yes" && ask(Q.keepUse(what))}
+          {check.continues === "yes" && check.keep === "yes" && ask(Q.rentalRecent)}
         </>
       ) : (
         <>
-          {ask("ownHome", "亡くなった方が住んでいた自宅の敷地ですか？")}
+          {ask({ key: "ownHome", q: "亡くなった方が住んでいた自宅の敷地ですか？" })}
           {check.ownHome === "yes" &&
-            ask("special", "老人ホームへの入居、二世帯住宅、建物の一部を貸していた などの事情はありますか？", "亡くなる前に老人ホームへ入っていた場合や、二世帯住宅の場合は、使える範囲の判断が変わります。")}
+            ask({
+              key: "special",
+              q: "老人ホームへの入居、二世帯住宅、建物の一部を貸していた などの事情はありますか？",
+              hint: "亡くなる前に老人ホームへ入っていた場合や、二世帯住宅の場合は、使える範囲の判断が変わります。",
+            })}
           {check.ownHome === "yes" && check.special === "no" && acquirer && !isSpouse && (
             <>
-              {ask("livedTogether", `${acquirer.name || "取得する人"}さんは、亡くなる直前まで亡くなった方と同じ家に住んでいましたか？`, "住民票が同じでも、実際に一緒に暮らしていなければ「いいえ」です。")}
-              {check.livedTogether === "yes" && ask("keep", "申告期限（亡くなった日から10か月）まで、この家に住み続け、土地を持ち続けますか？")}
+              {ask(Q.livedTogether(`${acquirer.name || "取得する人"}さん`))}
+              {check.livedTogether === "yes" && ask(Q.keepHome)}
             </>
           )}
-          {check.ownHome === "no" && ask("business", "亡くなった方が、お店や工場など自分の事業（人に貸す事業は除く）に使っていた土地ですか？")}
+          {check.ownHome === "no" && ask({ key: "business", q: "亡くなった方が、お店や工場など自分の事業（人に貸す事業は除く）に使っていた土地ですか？" })}
           {kind === "business" && (
             // 特定事業用宅地等：事業を引き継いで続けるか → 持ち続けるか → 3年以内に始めた事業か
             <>
-              {ask("continues", "取得する人は、申告期限（亡くなった日から10か月）までにその事業を引き継ぎ、続けますか？")}
-              {check.continues === "yes" && ask("keep", `申告期限まで、${what}を持ち続けますか？`)}
-              {check.continues === "yes" && check.keep === "yes" && ask("recent", "亡くなる前3年以内に始めた事業ですか？")}
+              {ask(Q.businessContinues("取得する人"))}
+              {check.continues === "yes" && ask(Q.keepUse(what))}
+              {check.continues === "yes" && check.keep === "yes" && ask(Q.businessRecent)}
             </>
           )}
         </>
@@ -203,7 +347,142 @@ export function SmallResidential({
           </div>
         </div>
       )}
+      {more && (
+        <>
+          <OtherAcquirers living={living} a={a} sr={sr} kind={kind} what={what} division={division} set={set} />
+          <PartialArea living={living} a={a} sr={sr} division={division} set={set} />
+        </>
+      )}
     </div>
+  );
+}
+
+const detailsCls = "rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm";
+const summaryCls = "cursor-pointer text-sm font-medium text-teal-800";
+const personLabel = (p: Person) => `${p.name || "（未入力）"}（${p.relationLabel ?? ""}）`;
+
+/**
+ * 一つの土地を何人かで受け継ぎ（共有）、2人目以降の人も特例を使うとき。特例は受け継いだ人ごとに判定し、
+ * その人の持分の分だけに使う（措置法69条の4第3項）。土地についての答えは最初の人の欄の答えを使い、ここでは人ごとのことだけ聞く
+ */
+function OtherAcquirers({
+  living,
+  a,
+  sr,
+  kind,
+  what,
+  division,
+  set,
+}: {
+  living: Person[];
+  a: Extract<Asset, { kind: "land" | "condo" }>;
+  sr: SmallLandRelief;
+  kind: SmallLandKind;
+  what: string;
+  division?: DivisionInput;
+  set: (next: SmallLandRelief) => void;
+}) {
+  const others = sr.others ?? [];
+  const lot = sr.check ?? {};
+  const opts = { assetKind: a.kind };
+  const taken = new Set([sr.acquirerId, ...others.map((o) => o.acquirerId)]);
+  const canAdd = others.every((o) => o.acquirerId) && living.some((p) => !taken.has(p.id));
+  const recentAt = recentAskedAt(kind, lot, others.map((o) => (living.some((p) => p.id === o.acquirerId) ? o : { acquirerId: "" })));
+  return (
+    <details className={detailsCls}>
+      <summary className={summaryCls}>
+        {what}を何人かで受け継ぎ、ほかの人も特例を使うとき{others.length > 0 ? `（${others.length}人）` : ""}
+      </summary>
+      <div className="mt-2 space-y-3">
+        <p className="text-xs text-stone-500">使えるかは受け継いだ人ごとに決まり、その人が受け継いだ分だけに使えます。</p>
+        {others.map((o, i) => {
+          const person = living.find((p) => p.id === o.acquirerId);
+          const own = o.check ?? {};
+          const merged = otherAcquirerCheck(lot, own);
+          const jj = judgeSmallResidential(merged, person, kind, opts);
+          const gap = shouldApply(jj, merged) ? smallLandDivisionGap(division, a.id, o.acquirerId) : null;
+          const tone = jj.result === "ok" ? (gap ? "info" : "ok") : jj.result === "consult" ? "warn" : jj.result === "no" ? "info" : null;
+          const options = living.filter((p) => p.id === o.acquirerId || !taken.has(p.id)).map((p) => ({ value: p.id, label: personLabel(p) }));
+          return (
+            <div key={`${i}:${o.acquirerId}`} className="space-y-3 border-t border-stone-100 pt-3">
+              <div className="flex items-end gap-2">
+                <div className="min-w-0 flex-1">
+                  <Field label="一緒に取得する人">
+                    <Select value={o.acquirerId} onChange={(v) => v !== o.acquirerId && set(setOtherAcquirerPerson(sr, i, v))} options={[{ value: "", label: "選んでください" }, ...options]} />
+                  </Field>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => set(removeOtherAcquirer(sr, i))}
+                  aria-label="この人を外す"
+                  title="この人を外す"
+                  className="mb-1 shrink-0 rounded-lg px-3 py-1.5 text-lg leading-none text-stone-500 hover:bg-red-50 hover:text-red-700"
+                >
+                  ×
+                </button>
+              </div>
+              {otherAcquirerQuestions(kind, lot, own, person, what, i === recentAt).map((q) => (
+                <Ask key={q.key} q={q.q} hint={q.hint} value={(q.key === "recent" ? lot.recent : own[q.key]) as Answer | undefined} onChange={(v) => set(answerOtherAcquirer(sr, i, q.key, v))} />
+              ))}
+              {person && tone && <Note tone={tone}>{jj.reason}</Note>}
+              {gap && (
+                <p className="text-xs font-medium text-amber-800">
+                  {gap === "undivided" ? "分け方が決まるまでは、特例を使わずに計算します。" : `${what}の分け方に、この人が入っていません。遺産の分け方を確かめてください。`}
+                </p>
+              )}
+              {person && jj.result === "consult" && (
+                <Check checked={!!own.confirmedByAdvisor} onChange={(v) => set(confirmOtherAcquirer(sr, i, v))} label="税理士に確認し、特例を使えることが分かった" />
+              )}
+            </div>
+          );
+        })}
+        {canAdd && (
+          <button type="button" onClick={() => set(addOtherAcquirer(sr))} className="text-sm font-semibold text-teal-800 hover:underline">
+            ＋ 取得する人を追加
+          </button>
+        )}
+      </div>
+    </details>
+  );
+}
+
+/** 受け継いだ面積の一部だけに特例を使うとき（付表1の⑤「選択特例対象宅地等の面積」）。空欄なら使える面積をすべて使う */
+function PartialArea({
+  living,
+  a,
+  sr,
+  division,
+  set,
+}: {
+  living: Person[];
+  a: Extract<Asset, { kind: "land" | "condo" }>;
+  sr: SmallLandRelief;
+  division?: DivisionInput;
+  set: (next: SmallLandRelief) => void;
+}) {
+  const rows = [
+    { who: null as number | null, id: sr.acquirerId, value: sr.selectedSqm },
+    ...(sr.others ?? []).map((o, i) => ({ who: i as number | null, id: o.acquirerId, value: o.selectedSqm })),
+  ].filter((r) => living.some((p) => p.id === r.id));
+  if (rows.length === 0) return null;
+  const many = rows.length > 1;
+  const entered = rows.some((r) => r.value != null);
+  return (
+    <details className={detailsCls}>
+      <summary className={summaryCls}>受け継いだ面積の一部だけに特例を使うとき{entered ? "（入力あり）" : ""}</summary>
+      <div className="mt-2 space-y-3">
+        <p className="text-xs text-stone-500">空欄なら、使える面積をすべて使います。</p>
+        {rows.map((r) => {
+          const p = living.find((x) => x.id === r.id)!;
+          const got = acquiredSqm(a, division, r.id);
+          return (
+            <Field key={`${r.who ?? "first"}:${r.id}`} label={many ? `${p.name || "（未入力）"}さん：特例を使う面積（㎡）` : "特例を使う面積（㎡）"} hint={got != null ? `受け継いだ面積は${fmt(got)}㎡です` : undefined}>
+              <OptionalNumInput value={r.value} accept={(v) => v > 0} onChange={(v) => set(setSelectedSqm(sr, r.who, v))} />
+            </Field>
+          );
+        })}
+      </div>
+    </details>
   );
 }
 

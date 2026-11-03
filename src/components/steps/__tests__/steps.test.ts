@@ -15,8 +15,8 @@ vi.mock("@/lib/planStore", () => ({ usePlan: () => ({ setStatus: () => {}, statu
 
 const { DivisionStep, legalShareDivision, CompensationBasis } = await import("../DivisionStep");
 const { DebtsStep, newDebt, withDebtAmount } = await import("../DebtsStep");
-const { HeirsStep, priorCreditKinds } = await import("../HeirsStep");
-const { TaxStep, filingMessage, filingNeeded, refundOnlyFiling, SUPPORTER_TIP } = await import("../TaxStep");
+const { HeirsStep, priorCreditKinds, removePerson } = await import("../HeirsStep");
+const { TaxStep, filingMessage, filingNeeded, refundOnlyFiling, SUPPORTER_TIP, ROUNDING_TIP } = await import("../TaxStep");
 const { DocumentsStep, handFilledBlanks, divisionDocUnavailable } = await import("../DocumentsStep");
 
 const render = (c: ComponentType, data: Case, withResult = true) => {
@@ -337,5 +337,94 @@ describe("書類の作成（forms-8・forms-10）", () => {
     expect(divisionDocUnavailable({ ...clone(), persons: [] })).toContain("相続人");
     const ok = render(DocumentsStep, clone());
     expect(ok).not.toMatch(/<button[^>]*disabled=""[^>]*>遺産分割協議書PDFをダウンロード<\/button>/);
+  });
+});
+
+describe("一人ひとりの税額の端数（相基通17-1）", () => {
+  const tip = "一人ひとりの税額は、按分割合の合計が1になるように端数を調整し（相基通17-1）、100円未満を切り捨てるため、同じ課税価格でも100円ほど違うことがあります。";
+
+  it("第1表の Tips に、端数の調整と100円未満の切捨てを1文で入れる", () => {
+    expect(ROUNDING_TIP).toBe(tip);
+    const html = render(TaxStep, clone());
+    expect(html).toContain("Tips：一人ひとりの税額");
+    expect(html).toContain(tip);
+    // Tips の中に1回だけ出す（Tips の外には出さない）
+    expect(html.indexOf(tip)).toBeGreaterThan(html.indexOf("Tips：一人ひとりの税額"));
+    expect(html.split(tip).length).toBe(2);
+  });
+
+  it("一人ひとりの納める税額を、家族全体の額とは別に出す", () => {
+    const c = clone();
+    const r = calculate(c);
+    const html = render(TaxStep, c);
+    const payers = r.persons.filter((p) => p.payable > 0);
+    expect(payers.length).toBeGreaterThan(1);
+    for (const p of payers) expect(html).toContain(`${p.payable.toLocaleString("ja-JP")}<span class="ml-0.5 text-sm">円</span>`);
+    expect(html).toContain("納付すべき税額");
+  });
+
+  it("税額を分ける人が1人だけなら、端数の Tips は出さない", () => {
+    const c: Case = {
+      ...clone(),
+      persons: [{ id: "c1", name: "一郎", relation: "child", relationLabel: "長男", birthDate: "1980-01-01" }],
+      assets: [{ id: "a1", kind: "deposit", label: "預金", amount: 100_000_000 } as Case["assets"][number]],
+      allocations: [{ assetId: "a1", shares: [{ personId: "c1", numerator: 1, denominator: 1 }] }],
+      debts: [],
+      compensation: [],
+      priorGifts: [],
+      decedent: { ...demoCase.decedent, settlementGift: false, priorInheritanceTax: false },
+    };
+    expect(calculate(c).totalTax).toBeGreaterThan(0);
+    expect(render(TaxStep, c)).not.toContain(tip);
+  });
+});
+
+describe("家族を削除したとき、小規模宅地等の特例の取得者から外す", () => {
+  const withOthers = (): Case => {
+    const c = clone();
+    c.assets = c.assets.map((a) =>
+      a.id === "home-land" && a.kind === "land"
+        ? {
+            ...a,
+            smallResidential: {
+              applies: true,
+              acquirerId: "hanako",
+              selectedSqm: 50,
+              check: { ownHome: "yes", special: "no", livedTogether: "no" },
+              others: [
+                { acquirerId: "ichiro", check: { livedTogether: "yes", keep: "yes" }, selectedSqm: 20 },
+                { acquirerId: "sakura", check: { livedTogether: "yes" } },
+              ],
+            },
+          }
+        : a,
+    );
+    return c;
+  };
+  const srOf = (c: Case) => {
+    const a = c.assets.find((x) => x.id === "home-land");
+    return a?.kind === "land" ? a.smallResidential : undefined;
+  };
+
+  it("一緒に取得する人から削除すると、その人の行ごと外し、ほかの人と最初の人はそのまま", () => {
+    const sr = srOf(removePerson(withOthers(), "ichiro"))!;
+    expect(sr.acquirerId).toBe("hanako");
+    expect(sr.selectedSqm).toBe(50);
+    expect(sr.others).toEqual([{ acquirerId: "sakura", check: { livedTogether: "yes" } }]);
+    expect(srOf(removePerson(removePerson(withOthers(), "ichiro"), "sakura"))!.others).toBeUndefined();
+  });
+
+  it("最初の取得者を削除すると、これまでどおり未選択に戻し（土地についての答えは残す）、面積も消す。一緒に取得する人は残す", () => {
+    const sr = srOf(removePerson(withOthers(), "hanako"))!;
+    expect(sr.acquirerId).toBeUndefined();
+    expect(sr.selectedSqm).toBeUndefined();
+    expect(sr.check).toEqual({ ownHome: "yes", special: "no", business: undefined, recent: undefined });
+    expect(sr.others?.map((o) => o.acquirerId)).toEqual(["ichiro", "sakura"]);
+  });
+
+  it("特例に関係のない人を削除しても、特例の入力は変えない", () => {
+    const c = withOthers();
+    const before = srOf(c);
+    expect(srOf(removePerson(c, "jiro"))).toBe(before);
   });
 });

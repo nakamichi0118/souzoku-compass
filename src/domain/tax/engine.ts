@@ -14,7 +14,9 @@
  * 相続税法基本通達 1の2-1（扶養義務者）、11の2-9・11の2-10（代償分割と代償財産の価額）、13-1（相続を放棄した人の葬式費用）、
  * 13-3（負担する人が決まっていない債務）、17-1（按分割合の端数調整）、19の3-5（以前の相続で受けた未成年者控除）、
  * 19の4-4（以前の相続のときと障害者の区分が違うときの障害者控除）、
- * 租税特別措置法69条の4（小規模宅地等の特例。2項 限度面積、4項 未分割の宅地には使えない）、
+ * 租税特別措置法69条の4（小規模宅地等の特例。2項 限度面積、4項 未分割の宅地には使えない。
+ * 1つの宅地を何人かで受け継いだときは、取得した人ごとに要件を見て、その人の持分に応ずる部分だけに使う。
+ * 特例を使う面積は、限度面積の範囲で受け継いだ面積の一部だけにもできる（第11・11の2表の付表1の③〜⑥。国税庁 タックスアンサー No.4124）、
  * 国税庁 質疑応答事例「未分割の場合の課税価格（相続時精算課税適用財産がある場合）」（相続時精算課税の贈与を特別受益として未分割の財産を分ける）。
  */
 import { Fraction, ONE, ZERO, add, div, frac, mul, mulYen, sub, sum } from "../fraction";
@@ -23,7 +25,7 @@ import { floor100, floor1000 } from "../rounding";
 import type { Asset, Case, Debt, PriorGift, Person, SmallLandKind } from "../types";
 import { Valuation, smallResidentialSelection, valueAsset } from "../valuation";
 import { ratio4, ratioText } from "../valuation/lease";
-import { SMALL_LAND_RULE, judgeSmallResidential, shouldApply, smallLandKind } from "../valuation/smallResidential";
+import { SMALL_LAND_RULE, type SmallResidentialCheck, judgeSmallResidential, shouldApply, smallLandKind } from "../valuation/smallResidential";
 
 /** 速算表（相続税法16条） */
 export const RATE_TABLE: readonly { upTo: number; rate: number; deduction: number }[] = [
@@ -64,8 +66,10 @@ export interface AssetLine {
   byPerson: { personId: string; amount: number }[];
   /** byPerson のうち、分け方が決まっていないため法定相続分で取得したものとした部分（第11表の「未分割」）。なければ undefined */
   undivided?: { personId: string; amount: number }[];
-  /** 小規模宅地等の特例の明細（第11・11の2表の付表1） */
+  /** 小規模宅地等の特例の明細（第11・11の2表の付表1）。最初の取得者（SmallLandRelief.acquirerId）の分 */
   small?: SmallResidentialDetail;
+  /** 同じ土地を一緒に受け継いだ2人目以降の取得者の明細（SmallLandRelief.others の順。特例を使わなかった人は入れない）。reduction はすべての合計 */
+  smallExtra?: SmallResidentialDetail[];
 }
 
 export interface SmallResidentialDetail {
@@ -381,11 +385,33 @@ function permutations(n: number): number[][] {
 /** 0.01㎡単位の面積を「12.5」のように書く */
 const sqmText = (area100: number) => String(area100 / 100);
 
-/** 小規模宅地等の特例の候補（限度面積の割り当てに使う形）。area100 は取得者の持分に応ずる面積（0.01㎡単位）、value はその価額 */
+/**
+ * 小規模宅地等の特例の候補（限度面積の割り当てに使う形。土地と取得する人の組ごとに1つ）。
+ * area100 は取得者の持分に応ずる面積（付表1の③。0.01㎡単位）、value はその価額（④）、
+ * cap100 はその人が特例を使える面積の上限（③か、その人が選んだ面積の少ない方）
+ */
 interface SrSlot {
   kind: SmallLandKind;
   area100: number;
+  cap100: number;
   value: number;
+}
+
+/**
+ * 1つの宅地を一緒に受け継いだ2人目以降の人の答え。土地についての答え（自宅の敷地か・事情があるか・事業に使っていたか・
+ * 3年以内に始めたか）は1人目の答えを、人ごとの答え（同居・住み続け・続ける・税理士に確認した）はその人の答えを使う
+ */
+export function mergeAcquirerCheck(lot: SmallResidentialCheck | undefined, own: SmallResidentialCheck | undefined): SmallResidentialCheck {
+  return {
+    ownHome: lot?.ownHome,
+    special: lot?.special,
+    business: lot?.business,
+    recent: lot?.recent,
+    livedTogether: own?.livedTogether,
+    keep: own?.keep,
+    continues: own?.continues,
+    confirmedByAdvisor: own?.confirmedByAdvisor,
+  };
 }
 
 /**
@@ -405,11 +431,11 @@ function fillSmallLand(slots: SrSlot[], order: number[]): number[] {
   const used: Record<SmallLandKind, number> = { residence: 0, business: 0, rental: 0 };
   for (const i of order) {
     const x = slots[i];
-    if (!(x.value > 0) || !(x.area100 > 0)) continue;
+    if (!(x.value > 0) || !(x.cap100 > 0)) continue;
     const room = SR_ROOM100 - SR_WEIGHT.residence * used.residence - SR_WEIGHT.business * used.business - SR_WEIGHT.rental * used.rental;
     let max = x.kind === "rental" ? Math.floor(room / SR_WEIGHT.rental) : SMALL_LAND_RULE[x.kind].limitSqm * 100 - used[x.kind];
     if (x.kind !== "rental" && used.rental > 0) max = Math.min(max, Math.floor(room / SR_WEIGHT[x.kind]));
-    sel[i] = Math.max(0, Math.min(x.area100, max));
+    sel[i] = Math.max(0, Math.min(x.cap100, max));
     used[x.kind] += sel[i];
   }
   return sel;
@@ -418,7 +444,7 @@ function fillSmallLand(slots: SrSlot[], order: number[]): number[] {
 /** 全部の候補をそのまま選ぶと限度面積を超えるか（超えなければ、どの順でも全部選べる） */
 function srBinds(slots: SrSlot[]): boolean {
   const t: Record<SmallLandKind, number> = { residence: 0, business: 0, rental: 0 };
-  for (const x of slots) if (x.value > 0 && x.area100 > 0) t[x.kind] += x.area100;
+  for (const x of slots) if (x.value > 0 && x.cap100 > 0) t[x.kind] += x.cap100;
   if (t.rental > 0) return SR_WEIGHT.residence * t.residence + SR_WEIGHT.business * t.business + SR_WEIGHT.rental * t.rental > SR_ROOM100;
   return t.residence > SMALL_LAND_RULE.residence.limitSqm * 100 || t.business > SMALL_LAND_RULE.business.limitSqm * 100;
 }
@@ -457,7 +483,7 @@ export function calculate(c: Case, opts: EngineOptions = {}): TaxResult {
   // そこで、選べる宅地が少なければ割り当て順をすべて試し、納める相続税の合計（還付される額を引いたもの）がいちばん少ない割り当てにする
   // （同じなら減額が大きい方、それも同じなら既定の順に近い方）。多いときは既定の順（限度面積1㎡あたりの減額が大きい順）のままにする
   const slots = base.sr;
-  const live = slots.flatMap((x, i) => (x.value > 0 && x.area100 > 0 ? [i] : []));
+  const live = slots.flatMap((x, i) => (x.value > 0 && x.cap100 > 0 ? [i] : []));
   if (live.length < 2 || live.length > SR_MAX_PERMUTE || !srBinds(slots)) return base.result;
   const def = defaultSrOrder(slots);
   const liveDef = def.filter((i) => live.includes(i));
@@ -480,6 +506,8 @@ export function calculate(c: Case, opts: EngineOptions = {}): TaxResult {
 
 /** 「12,345円」 */
 const yenText = (n: number) => `${n.toLocaleString()}円`;
+/** 「長男さん」。名前がなければ「名前が入っていない人」 */
+const personText = (p: Person | undefined) => (p?.name ? `${p.name}さん` : "名前が入っていない人");
 
 /**
  * 相続税の計算の本体。srOrder は小規模宅地等の特例の候補（見つけた順の番号）に限度面積を割り当てる順番で、
@@ -583,15 +611,22 @@ function compute(
   const undividedBy = new Map<string, number>();
   const addTo = (m: Map<string, number>, id: string, v: number) => m.set(id, (m.get(id) ?? 0) + v);
   const undividedLabels: string[] = [];
-  // 小規模宅地等の特例を受ける宅地（限度面積は、全部の評価が終わってからまとめて割り当てる）
+  // 小規模宅地等の特例を受ける宅地と取得する人の組（限度面積は、全部の評価が終わってからまとめて割り当てる）。
+  // 1つの宅地を何人かで受け継いだときは、特例を使う人ごとに1つずつ（付表1の1行ずつ）。見つけた順は、土地ごとに1人目、2人目以降（others の順）
   const srCandidates: {
     line: AssetLine;
     part: { personId: string; amount: number };
     landPart: number;
     area: number;
     area100: number;
+    /** 特例を使える面積の上限（0.01㎡単位）。③か、その人が選んだ面積の少ない方 */
+    cap100: number;
     acquirerId: string;
     kind: SmallLandKind;
+    /** SmallLandRelief.acquirerId の人（付表1の line.small）か、others の人（line.smallExtra）か */
+    first: boolean;
+    /** 案内に使う土地の名前。1つの土地で2人以上が特例を使うときは「「自宅」（長男さんの分）」のように人の名前を添える */
+    label: string;
   }[] = [];
   const allocateHint = "申告期限までに分け方が決まらないときは、遺産の分け方の画面で「分け方がまだ決まっていない」にチェックを入れてください（法定相続分で受け継いだものとして計算します）。";
   // 1回目：財産ごとに評価し、分け方で決まった割合（decided）と決まっていない割合（undecided）を調べる
@@ -788,98 +823,178 @@ function compute(
 
     if (a.kind !== "land" && a.kind !== "condo") continue;
     const sr = a.smallResidential;
-    if (!sr?.acquirerId) continue;
-    const acquirer = c.persons.find((p) => p.id === sr.acquirerId && !p.predeceased);
+    if (!sr) continue;
     const kind = smallLandKind(a);
-    // 確認の質問に答えている場合は、保存された「適用する」ではなく今の答えと取得者で判定し直す（取得者を変えたときなど）
-    const srOn = sr.check ? shouldApply(judgeSmallResidential(sr.check, acquirer, kind), sr.check) : sr.applies;
-    if (!srOn) continue;
-    // 特例は取得者が分け方で受け継ぐと決まった部分だけに使える（措置法69条の4第4項）
-    const k = parts.findIndex((p) => p.personId === sr.acquirerId && !p.undivided);
-    if (k < 0) {
-      if (parts.some((p) => p.personId === sr.acquirerId && p.undivided)) {
-        warnings.push(
-          `${label}は分け方が決まっていないため、小規模宅地等の特例を使わずに計算しています（特例は、受け継ぐ人が決まった宅地だけに使えます）。申告書と一緒に「申告期限後3年以内の分割見込書」を出しておけば、分け方が決まった日の翌日から4か月以内に「更正の請求」をして、特例を使えます。`,
-        );
-      } else {
-        warnings.push(`${label}の小規模宅地等の特例の取得者が、この土地を取得していません。`);
+    // 特例を使う人：1人目（acquirerId）と、この土地を一緒に受け継いだ2人目以降（others）。
+    // 1つの宅地を何人かで受け継いだときは、取得した人ごとに要件を見て、その人の持分に応ずる部分だけに使う（タックスアンサー No.4124）
+    const users: { acquirerId: string; selectedSqm: unknown; first: boolean }[] = [];
+    const named = new Set<string>();
+    if (sr.acquirerId) {
+      named.add(sr.acquirerId);
+      const acquirer = c.persons.find((p) => p.id === sr.acquirerId && !p.predeceased);
+      // 確認の質問に答えている場合は、保存された「適用する」ではなく今の答えと取得者で判定し直す（取得者を変えたときなど）
+      const srOn = sr.check ? shouldApply(judgeSmallResidential(sr.check, acquirer, kind), sr.check) : sr.applies;
+      if (srOn) users.push({ acquirerId: sr.acquirerId, selectedSqm: sr.selectedSqm, first: true });
+    }
+    for (const o of Array.isArray(sr.others) ? sr.others : []) {
+      const id = o?.acquirerId;
+      if (!id) continue; // まだ人を選んでいない行
+      const who = c.persons.find((p) => p.id === id);
+      if (!who) {
+        // 相続人の画面で消した人など。その人の分は計算に入れない（止めはしない）
+        warnings.push(`${label}の小規模宅地等の特例を一緒に使う人に、家族の一覧にいない人が入っているため、その人の分は計算に入れていません。土地の画面で選び直してください。`);
+        continue;
       }
-      continue;
+      if (named.has(id)) {
+        warnings.push(`${label}の小規模宅地等の特例を使う人に、${personText(who)}が2回入っています。1回分だけ計算しています。`);
+        continue;
+      }
+      named.add(id);
+      // 土地についての答えは1人目の答え、人ごとの答えはその人の答えで判定する
+      const merged = mergeAcquirerCheck(sr.check, o.check);
+      if (shouldApply(judgeSmallResidential(merged, who.predeceased ? undefined : who, kind), merged)) users.push({ acquirerId: id, selectedSqm: o.selectedSqm, first: false });
     }
-    const share = valid.find((s) => s.personId === sr.acquirerId)!;
-    const part = byPerson.find((b) => b.personId === sr.acquirerId)!;
-    let landPart = amounts[k];
-    let fullArea: number;
-    if (a.kind === "condo") {
-      // マンションは敷地利用権部分だけが特例の対象
-      const landOnly = valueAsset({ ...a, buildingFixedAssetValue: 0 }).value;
-      landPart = Number((BigInt(landPart) * BigInt(Math.max(0, landOnly))) / BigInt(Math.max(1, valuation.value)));
-      fullArea = sr.landShareSqm ?? a.landShareSqm;
-    } else {
-      fullArea = a.areaSqm;
-    }
-    let area = (fullArea * share.numerator) / share.denominator;
-    // 貸付事業用：空室（一時的なものを除く）の部分は貸付事業に使っていないので対象外（措置法通達69の4-24の2）。
-    // 貸している部分の面積＝面積×賃貸割合（0.01㎡未満切捨て）。価額は、全体の評価額を面積で割るのではなく、
-    // 貸している部分だけを貸家建付地（貸家建付借地権）として評価した額（valuation.rentedLandPart）×取得者の持分
-    // （国税庁 情報「貸家建付地等の一部が空室の場合」の設例：空いている部分は自用地として評価し、特例の対象にしない）
-    const rent4 =
-      kind === "rental" && (a.kind === "condo" || a.use === "rentedHouse" || a.use === "rentedLeasehold") ? ratio4(a.rentRatio ?? 1) : 10000;
-    if (rent4 > 0 && rent4 < 10000 && area > 0) {
+    if (!users.length) continue;
+    // 1つの土地で2人以上を選んでいるときは、案内に人の名前を添える
+    const several = named.size > 1;
+    const whoText = (id: string) => personText(c.persons.find((p) => p.id === id));
+    const undividedNames: string[] = [];
+    let rentNoted = false;
+    let areaMissing = false;
+    for (const u of users) {
+      // 特例は取得者が分け方で受け継ぐと決まった部分だけに使える（措置法69条の4第4項）
+      const k = parts.findIndex((p) => p.personId === u.acquirerId && !p.undivided);
+      if (k < 0) {
+        if (parts.some((p) => p.personId === u.acquirerId && p.undivided)) undividedNames.push(whoText(u.acquirerId));
+        else
+          warnings.push(
+            several ? `${label}の小規模宅地等の特例を使う${whoText(u.acquirerId)}が、この土地を取得していません。` : `${label}の小規模宅地等の特例の取得者が、この土地を取得していません。`,
+          );
+        continue;
+      }
+      const share = valid.find((s) => s.personId === u.acquirerId)!;
+      const part = byPerson.find((b) => b.personId === u.acquirerId)!;
+      let landPart = amounts[k];
+      let fullArea: number;
+      if (a.kind === "condo") {
+        // マンションは敷地利用権部分だけが特例の対象
+        const landOnly = valueAsset({ ...a, buildingFixedAssetValue: 0 }).value;
+        landPart = Number((BigInt(landPart) * BigInt(Math.max(0, landOnly))) / BigInt(Math.max(1, valuation.value)));
+        fullArea = sr.landShareSqm ?? a.landShareSqm;
+      } else {
+        fullArea = a.areaSqm;
+      }
+      // ③ 取得者の持分に応ずる宅地等の面積
+      let area = (fullArea * share.numerator) / share.denominator;
+      // 貸付事業用：空室（一時的なものを除く）の部分は貸付事業に使っていないので対象外（措置法通達69の4-24の2）。
+      // 貸している部分の面積＝面積×賃貸割合（0.01㎡未満切捨て）。価額は、全体の評価額を面積で割るのではなく、
+      // 貸している部分だけを貸家建付地（貸家建付借地権）として評価した額（valuation.rentedLandPart）×取得者の持分
+      // （国税庁 情報「貸家建付地等の一部が空室の場合」の設例：空いている部分は自用地として評価し、特例の対象にしない）
+      const rent4 =
+        kind === "rental" && (a.kind === "condo" || a.use === "rentedHouse" || a.use === "rentedLeasehold") ? ratio4(a.rentRatio ?? 1) : 10000;
+      if (rent4 > 0 && rent4 < 10000 && area > 0) {
+        const area100 = Math.round(area * 100);
+        const rented100 = Number((BigInt(area100) * BigInt(rent4)) / 10000n);
+        const rentedLand = valuation.rentedLandPart;
+        landPart =
+          rentedLand !== undefined && Number.isSafeInteger(rentedLand)
+            ? Number((BigInt(Math.max(0, rentedLand)) * BigInt(share.numerator)) / BigInt(share.denominator))
+            : // 貸している部分の評価額が分からないとき（ふつうは起きない）は、これまでどおり面積の割合で分ける
+              Number((BigInt(Math.max(0, landPart)) * BigInt(rented100)) / BigInt(area100));
+        area = rented100 / 100;
+        if (!rentNoted) {
+          warnings.push(
+            `${label}は空き部屋があるため、小規模宅地等の特例（貸付事業用）は貸している部分（面積の${ratioText(rent4)}）だけに使っています（空いている部分は、貸していない土地として評価します）。`,
+          );
+        }
+        rentNoted = true;
+      }
+      if (!(area > 0)) {
+        // 面積が分からないと、限度面積までの減額を計算できない
+        if (!areaMissing) blockers.push(`「${a.label || "名称未入力の土地"}」に小規模宅地等の特例を使うには、${a.kind === "condo" ? "敷地権の面積" : "地積"}を入れてください。`);
+        areaMissing = true;
+        continue;
+      }
       const area100 = Math.round(area * 100);
-      const rented100 = Number((BigInt(area100) * BigInt(rent4)) / 10000n);
-      const rentedLand = valuation.rentedLandPart;
-      landPart =
-        rentedLand !== undefined && Number.isSafeInteger(rentedLand)
-          ? Number((BigInt(Math.max(0, rentedLand)) * BigInt(share.numerator)) / BigInt(share.denominator))
-          : // 貸している部分の評価額が分からないとき（ふつうは起きない）は、これまでどおり面積の割合で分ける
-            Number((BigInt(Math.max(0, landPart)) * BigInt(rented100)) / BigInt(area100));
-      area = rented100 / 100;
+      // ⑤ 特例を使う面積の上限（その人が選んだ面積）。受け継いだ面積（③）より大きければ③まで使う
+      let cap100 = area100;
+      if (u.selectedSqm !== undefined && u.selectedSqm !== null) {
+        const v = u.selectedSqm;
+        const v100 = typeof v === "number" && Number.isFinite(v) ? Math.floor(v * 100 + 1e-6) : NaN;
+        if (!(v100 > 0)) {
+          blockers.push(
+            `${label}で${whoText(u.acquirerId)}が小規模宅地等の特例を使う面積が正しくありません。0より大きい面積（㎡）を入れるか、空けてください（空けると、使えるだけ使います）。`,
+          );
+          continue;
+        }
+        cap100 = Math.min(area100, v100);
+      }
+      srCandidates.push({
+        line,
+        part,
+        landPart,
+        area,
+        area100,
+        cap100,
+        acquirerId: u.acquirerId,
+        kind,
+        first: u.first,
+        label: several ? `${label}（${whoText(u.acquirerId)}の分）` : label,
+      });
+    }
+    if (undividedNames.length) {
       warnings.push(
-        `${label}は空き部屋があるため、小規模宅地等の特例（貸付事業用）は貸している部分（面積の${ratioText(rent4)}）だけに使っています（空いている部分は、貸していない土地として評価します）。`,
+        `${several ? `${label}（${undividedNames.join("・")}の分）` : label}は分け方が決まっていないため、小規模宅地等の特例を使わずに計算しています（特例は、受け継ぐ人が決まった宅地だけに使えます）。申告書と一緒に「申告期限後3年以内の分割見込書」を出しておけば、分け方が決まった日の翌日から4か月以内に「更正の請求」をして、特例を使えます。`,
       );
     }
-    if (!(area > 0)) {
-      // 面積が分からないと、限度面積までの減額を計算できない
-      blockers.push(`「${a.label || "名称未入力の土地"}」に小規模宅地等の特例を使うには、${a.kind === "condo" ? "敷地権の面積" : "地積"}を入れてください。`);
-      continue;
-    }
-    srCandidates.push({ line, part, landPart, area, area100: Math.round(area * 100), acquirerId: sr.acquirerId, kind });
   }
 
-  // 限度面積（措置法69条の4第2項）を、srOrder の順に、なければ既定の順に割り当てる
-  const srSlots: SrSlot[] = srCandidates.map((x) => ({ kind: x.kind, area100: x.area100, value: x.landPart }));
+  // 限度面積（措置法69条の4第2項）を、srOrder の順に、なければ既定の順に割り当てる。土地と取得する人の組ごとに、その人の上限（cap100）まで
+  const srSlots: SrSlot[] = srCandidates.map((x) => ({ kind: x.kind, area100: x.area100, cap100: x.cap100, value: x.landPart }));
   const srOrdered = srOrder ?? defaultSrOrder(srSlots);
   const selected = fillSmallLand(srSlots, srOrdered);
+  // 付表1の明細と減額（⑥ ＝ ④ × ⑤ ／ ③）。1人目は line.small、2人目以降は line.smallExtra（others の順）に入れ、
+  // 土地の減額（reduction）はその合計。各人の取得価額からは、その人の減額だけを引く
+  srCandidates.forEach((x, i) => {
+    if (!(x.landPart > 0) || !(x.cap100 > 0) || selected[i] <= 0) return;
+    const rule = SMALL_LAND_RULE[x.kind];
+    const sel = smallResidentialSelection(x.landPart, x.area, selected[i] / 100, rule.rate);
+    const detail: SmallResidentialDetail = {
+      acquirerId: x.acquirerId,
+      kind: x.kind,
+      rate: rule.rate,
+      area: x.area,
+      value: x.landPart,
+      selectedArea: sel.selectedArea,
+      selectedValue: sel.selectedValue,
+    };
+    x.line.reduction += sel.reduction;
+    if (x.first) x.line.small = detail;
+    else (x.line.smallExtra ??= []).push(detail);
+    x.part.amount -= sel.reduction;
+  });
   const srUsed: string[] = [];
   const srSkipped: string[] = [];
   for (const i of srOrdered) {
     const x = srCandidates[i];
-    const label = `「${x.line.asset.label}」`;
-    if (!(x.landPart > 0) || !(x.area100 > 0)) continue;
-    if (selected[i] <= 0) {
-      srSkipped.push(label);
-      continue;
-    }
-    const rule = SMALL_LAND_RULE[x.kind];
-    const sel = smallResidentialSelection(x.landPart, x.area, selected[i] / 100, rule.rate);
-    srUsed.push(selected[i] < x.area100 ? `${label}は残り${sqmText(selected[i])}㎡分` : `${label}に${sqmText(x.area100)}㎡`);
-    x.line.reduction = sel.reduction;
-    x.line.small = { acquirerId: x.acquirerId, kind: x.kind, rate: rule.rate, area: x.area, value: x.landPart, selectedArea: sel.selectedArea, selectedValue: sel.selectedValue };
-    x.part.amount -= sel.reduction;
+    if (!(x.landPart > 0) || !(x.cap100 > 0)) continue;
+    if (selected[i] <= 0) srSkipped.push(x.label);
+    else srUsed.push(selected[i] < x.cap100 ? `${x.label}は残り${sqmText(selected[i])}㎡分` : `${x.label}に${sqmText(selected[i])}㎡`);
   }
-  const srLive = srCandidates.filter((x) => x.landPart > 0 && x.area100 > 0);
+  const srLive = srCandidates.filter((x) => x.landPart > 0 && x.cap100 > 0);
   if (srLive.length > 1 && srBinds(srSlots)) {
+    // 1つの土地を2人以上で使うときは、どの人の分に割り当てるかも選べる
+    const sharedLot = new Set(srLive.map((x) => x.line)).size < srLive.length;
     warnings.push(
-      `${smallLandLimitText(new Set(srLive.map((x) => x.kind)))}${srOrder ? "家族全体で納める相続税がいちばん少なくなるように" : srLive.every((x) => x.kind === "residence") ? "1㎡あたりの価額が高い土地から順に" : "減額できる額が大きい土地から順に"}、${srUsed.join("、")}を割り当てています${srSkipped.length ? `（${srSkipped.join("・")}には適用していません）` : ""}。どの土地に割り当てるかは受け継ぐ人全員の合意で選べるので、別の割り当てにしたいときは税理士にご相談ください。`,
+      `${smallLandLimitText(new Set(srLive.map((x) => x.kind)))}${srOrder ? "家族全体で納める相続税がいちばん少なくなるように" : srLive.every((x) => x.kind === "residence") ? "1㎡あたりの価額が高い土地から順に" : "減額できる額が大きい土地から順に"}、${srUsed.join("、")}を割り当てています${srSkipped.length ? `（${srSkipped.join("・")}には適用していません）` : ""}。どの土地${sharedLot ? "（どの人の分）" : ""}に割り当てるかは受け継ぐ人全員の合意で選べるので、別の割り当てにしたいときは税理士にご相談ください。`,
     );
-  } else if (srLive.length === 1 && srLive[0].area100 > SMALL_LAND_RULE[srLive[0].kind].limitSqm * 100) {
+  } else if (srLive.length === 1 && srLive[0].cap100 > SMALL_LAND_RULE[srLive[0].kind].limitSqm * 100) {
     const x = srLive[0];
     const limit = SMALL_LAND_RULE[x.kind].limitSqm;
     warnings.push(
       x.kind === "residence"
-        ? `小規模宅地等の特例は330㎡までのため、「${x.line.asset.label}」は330㎡分だけ適用しています。`
-        : `小規模宅地等の特例は、${SMALL_LAND_KIND_TEXT[x.kind]}では${limit}㎡までのため、「${x.line.asset.label}」は${limit}㎡分だけ適用しています。`,
+        ? `小規模宅地等の特例は330㎡までのため、${x.label}は330㎡分だけ適用しています。`
+        : `小規模宅地等の特例は、${SMALL_LAND_KIND_TEXT[x.kind]}では${limit}㎡までのため、${x.label}は${limit}㎡分だけ適用しています。`,
     );
   }
 
@@ -1377,6 +1492,22 @@ function compute(
     const diff = p.afterCredits - p.settlementCredit;
     p.payable = diff >= 0 ? floor100(diff) : 0;
     p.refund = diff >= 0 ? 0 : -diff;
+  }
+  // 課税価格が同じでも、納める税額が端数だけで少し違うことがある：按分割合は合計がちょうど1になるよう端数を誰かに寄せ（相基通17-1）、
+  // 各人の税額は100円未満を切り捨てる（国税通則法119条）。切り捨てる前の差が100円未満なのに納める額が違うときだけ、理由を知らせる
+  const sameTaxable = new Map<number, PersonTax[]>();
+  for (const p of persons) {
+    if (p.taxable <= 0 || p.afterCredits < p.settlementCredit) continue;
+    sameTaxable.set(p.taxable, [...(sameTaxable.get(p.taxable) ?? []), p]);
+  }
+  for (const group of sameTaxable.values()) {
+    if (group.length < 2) continue;
+    const pays = group.map((p) => p.payable);
+    const pre = group.map((p) => p.afterCredits - p.settlementCredit);
+    if (Math.max(...pays) === Math.min(...pays) || Math.max(...pre) - Math.min(...pre) >= 100) continue;
+    warnings.push(
+      `${group.map((p) => personText(p.person)).join("・")}は課税価格が同じですが、納める相続税が${yenText(Math.max(...pays) - Math.min(...pays))}違います。各人の割合（按分割合）は、合計がちょうど1になるように小さな端数をどなたかに寄せ（相続税法基本通達17-1）、そのうえで各人の税額の100円未満を切り捨てるため、このような差が出ます。計算の誤りではありません。`,
+    );
   }
 
   const totalPayable = persons.reduce((a, p) => a + p.payable, 0);

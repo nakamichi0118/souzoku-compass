@@ -247,6 +247,25 @@ export interface SmallLandRelief {
   check?: SmallResidentialCheck;
   /** マンション：特例の対象にする敷地権の面積（未設定は敷地権の面積） */
   landShareSqm?: number;
+  /**
+   * 取得する人が、受け継いだ面積のうち特例を使う面積の上限（㎡。付表1の⑤「選択特例対象宅地等の面積」に入れる面積）。
+   * 未設定なら、限度面積の範囲でできるだけ使う（ほかの土地との割り当てはエンジンが決める）
+   */
+  selectedSqm?: number;
+  /**
+   * この土地を一緒に受け継ぎ、特例を使うほかの人（共有で取得したとき）。
+   * check からは人ごとの答え（livedTogether・keep・continues・confirmedByAdvisor）だけを使い、
+   * 土地についての答え（ownHome・special・business・recent）は最初の人の check を使う
+   */
+  others?: SmallLandAcquirer[];
+}
+
+/** 小規模宅地等の特例を使う2人目以降の取得者 */
+export interface SmallLandAcquirer {
+  acquirerId: string;
+  check?: SmallResidentialCheck;
+  /** この人が特例を使う面積の上限（㎡）。未設定なら限度面積の範囲でできるだけ使う */
+  selectedSqm?: number;
 }
 
 export interface BuildingAsset extends AssetBase {

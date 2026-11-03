@@ -1,9 +1,34 @@
 /** 税理士に相談するときに伝える内容を、入力内容から書き出す */
-import { type TaxResult, isValidISODate } from "@/domain/tax/engine";
-import type { Case } from "@/domain/types";
-import { judgeSmallResidential, smallLandKind } from "@/domain/valuation/smallResidential";
+import { type TaxResult, isValidISODate, mergeAcquirerCheck } from "@/domain/tax/engine";
+import type { Case, Person, SmallLandKind, SmallLandRelief } from "@/domain/types";
+import { type SmallResidentialCheck, judgeSmallResidential, smallLandKind } from "@/domain/valuation/smallResidential";
 
 const yen = (n: number) => `${n.toLocaleString("ja-JP")}円`;
+
+/**
+ * 小規模宅地等の特例で税理士に確かめたいこと。1つの土地を何人かで受け継いで特例を使うときは、2人目以降の人も
+ * 本人の答え（土地についての答えは1人目の答え）で判定し、人の名前を添える。理由が同じ人はまとめて1行にする
+ */
+function smallLandConsult(lotName: string, sr: SmallLandRelief, kind: SmallLandKind, living: Person[]): string[] {
+  const who: { id?: string; check: SmallResidentialCheck }[] = [];
+  const seen = new Set<string>();
+  if (sr.check) who.push({ id: sr.acquirerId, check: sr.check });
+  if (sr.acquirerId) seen.add(sr.acquirerId);
+  for (const o of Array.isArray(sr.others) ? sr.others : []) {
+    if (!o?.acquirerId || seen.has(o.acquirerId) || !living.some((p) => p.id === o.acquirerId)) continue;
+    seen.add(o.acquirerId);
+    who.push({ id: o.acquirerId, check: mergeAcquirerCheck(sr.check, o.check) });
+  }
+  const several = seen.size > 1;
+  const byReason = new Map<string, string[]>();
+  for (const w of who) {
+    const person = living.find((p) => p.id === w.id);
+    const j = judgeSmallResidential(w.check, person, kind);
+    if (j.result !== "consult") continue;
+    byReason.set(j.reason, [...(byReason.get(j.reason) ?? []), person?.name ? `${person.name}さん` : "取得する人"]);
+  }
+  return [...byReason].map(([reason, names]) => `「${lotName}」の小規模宅地等の特例${several ? `（${names.join("・")}の分）` : ""}：${reason}`);
+}
 
 export function consultPoints(c: Case, r: TaxResult | null): string[] {
   const out: string[] = [];
@@ -16,9 +41,8 @@ export function consultPoints(c: Case, r: TaxResult | null): string[] {
         `土地「${a.label || a.location}」（${a.areaSqm}㎡）：路線価方式で${roads.length >= 2 ? `${roads.length}つの道路に面する土地として` : ""}評価${v ? ` ${yen(v)}` : ""}。間口が狭い・奥行が長い・形がいびつ・がけ地などの減額ができるか確認したい。`,
       );
     }
-    if ((a.kind === "land" || a.kind === "condo") && a.smallResidential?.check) {
-      const j = judgeSmallResidential(a.smallResidential.check, living.find((p) => p.id === a.smallResidential?.acquirerId), smallLandKind(a));
-      if (j.result === "consult") out.push(`「${a.label || a.location}」の小規模宅地等の特例：${j.reason}`);
+    if ((a.kind === "land" || a.kind === "condo") && a.smallResidential) {
+      out.push(...smallLandConsult(a.label || a.location, a.smallResidential, smallLandKind(a), living));
     }
     if (a.kind === "unlistedStock") out.push(`非上場株式「${a.label}」の評価をお願いしたい。`);
     if (a.foreign) out.push(`国外の財産「${a.label}」がある。`);

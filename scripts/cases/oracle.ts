@@ -5,7 +5,8 @@
  * 拠り所：
  *   民法 886・887・889・890・900・901・939 条
  *   相続税法 3・12・13・15〜21 条、21 条の 15・16、55 条
- *   租税特別措置法 69 条の 4（小規模宅地等）
+ *   租税特別措置法 69 条の 4（小規模宅地等。1つの宅地を何人かで取得したときは取得者ごとの要件と持分：国税庁タックスアンサー No.4124、
+ *   申告書第11・11の2表の付表1 の ③取得者の持分に応ずる面積・⑤選択特例対象宅地等の面積（③以下）・⑥④×⑤/③）
  *   財産評価基本通達（以下「評基通」）15〜18・20-4・21-2・25・26・27・89・93・169、付表1〜3・6・7
  *   「居住用の区分所有財産の評価について」（令和5年9月28日 法令解釈通達）
  *   相続税法基本通達（以下「相基通」）1の2-1・11の2-9・11の2-10・13-1・13-3・15-3・15-4・17-1・19-3・19の2-3・19の3-1〜5・19の4-4 など
@@ -571,8 +572,10 @@ interface SmallCand {
   label: string;
   kind: SmallLandKind;
   acquirer: string;
-  shareArea: Q; // 取得者の持分に応ずる面積
-  shareValue: number; // 取得者の持分に応ずる価額
+  shareArea: Q; // ③ 取得者の持分に応ずる面積
+  shareValue: number; // ④ 取得者の持分に応ずる価額
+  /** ⑤ に入れられる面積の上限 = min(③, その人が選んだ面積)。選んでいなければ ③ */
+  cap: Q;
 }
 interface SmallSel {
   cand: SmallCand;
@@ -581,6 +584,31 @@ interface SmallSel {
 }
 
 const SMALL_LIMIT: Record<SmallLandKind, number> = { residence: 330, business: 400, rental: 200 };
+
+/**
+ * 小規模宅地等の特例の、取得した人ごとの要件（措法69条の4第3項）。満たさないときは理由、満たすときは null。
+ *   1号 特定事業用：申告期限までに亡くなった方の事業を引き継ぎ、申告期限まで営み、宅地等を申告期限まで有している
+ *   2号 特定居住用：配偶者は要件なし。同居していた親族（イ）は、申告期限まで引き続きその家屋に住み、宅地等を有している。
+ *       同居していない親族（ロ：いわゆる家なき子）の要件はシナリオで扱わない（livedTogether=false は使えない親族とする）
+ *   4号 貸付事業用：申告期限までに貸付事業を引き継ぎ、申告期限まで行い、宅地等を申告期限まで有している
+ * 土地についての要件（自宅の敷地・事業や貸付に使っていた・3年以内に始めたものでない）は、シナリオで smallLand を付けた時点で満たしている
+ */
+export function smallPersonFails(
+  kind: SmallLandKind,
+  m: Pick<Member, "relation">,
+  u: { livedTogether?: boolean; keep?: boolean; continues?: boolean },
+): string | null {
+  if (kind === "residence") {
+    if (m.relation === "spouse") return null;
+    if (u.livedTogether === false) return "亡くなる直前に同居していない（家なき子の要件は扱わない）";
+    if (u.keep === false) return "申告期限まで住み続け・持ち続けない";
+    return null;
+  }
+  const what = kind === "business" ? "事業" : "貸付事業";
+  if (u.continues === false) return `申告期限まで${what}を引き継いで続けない`;
+  if (u.keep === false) return "申告期限まで持ち続けない";
+  return null;
+}
 const SMALL_RATE: Record<SmallLandKind, Q> = { residence: Qn(80, 100), business: Qn(80, 100), rental: Qn(50, 100) };
 
 /**
@@ -1170,6 +1198,9 @@ export function expected(s: Scenario): Expected {
   }
 
   /* ---------- 9. 小規模宅地等の候補（措法69条の4） ---------- */
+  // 候補は（土地, 取得者）の組ごと（付表1の1行ずつ）。1つの宅地を何人かで取得したときは、取得者ごとにその人の要件を見て、
+  // その人の持分に応ずる部分だけが対象（措法69条の4第3項「…親族が相続又は遺贈により取得した持分の割合に応ずる部分に限る」、
+  // タックスアンサー No.4124）。土地の要件（自宅の敷地・事業や貸付に使っていた）は土地ごと、人の要件は人ごと
   const cands: SmallCand[] = [];
   for (const v of vals) {
     const it = v.item;
@@ -1180,29 +1211,59 @@ export function expected(s: Scenario): Expected {
       notes.push(`${it.label}：未分割のため小規模宅地等の特例は使えない（措法69条の4第4項、分割見込書で後から適用可）`);
       continue;
     }
-    const m = byId.get(sl.acquirer);
-    if (!m || m.predeceased || m.relation === "other") {
-      notes.push(`${it.label}：取得者が被相続人の親族でないため小規模宅地等の特例は使えない`);
-      continue;
+    const users = [sl, ...(sl.others ?? [])];
+    const several = users.length > 1;
+    const seenUser = new Set<string>();
+    for (const u of users) {
+      const who = several ? `${it.label}（${nameOf(u.acquirer)}の分）` : it.label;
+      if (seenUser.has(u.acquirer)) {
+        notes.push(`${who}：同じ人が2回書かれている（1回分だけ）`);
+        continue;
+      }
+      seenUser.add(u.acquirer);
+      const m = byId.get(u.acquirer);
+      if (!m || m.predeceased || m.relation === "other") {
+        notes.push(`${who}：取得者が被相続人の親族でないため小規模宅地等の特例は使えない`);
+        continue;
+      }
+      // 分割で取得した持分だけ（未分割の残りは特例の対象にならない。措法69条の4第4項）
+      const f = itemShare.get(it.id)?.get(u.acquirer);
+      if (!f || f.n === 0n) {
+        notes.push(`${who}：小規模宅地等の取得者がこの土地を（分割で）取得していない`);
+        continue;
+      }
+      const why = smallPersonFails(sl.kind, m, u);
+      if (why) {
+        notes.push(`${who}：${why}ので、この人の持分には小規模宅地等の特例を使えない`);
+        continue;
+      }
+      const landValue = it.type === "condo" ? (condoLand.get(it.id) ?? 0) : v.value;
+      let shareValue = yenFloor(landValue, f);
+      let shareArea = qmul(v.area, f);
+      // 貸付事業用で空室がある（賃貸割合<1）とき：貸付事業に使っている部分だけが対象（措通69の4-24の2。一時的な空室は賃貸割合に含めて入力する）。
+      // 対象の価額 = 貸している部分の価額（自用地 × 賃貸割合 × (1 − 借地権割合 × 0.3) など）× 持分（円未満切捨て）、
+      // 対象の面積 = 持分の面積 × 賃貸割合（0.01㎡未満切捨て）。空室の部分は自用地（借地権）のまま特例の外（情報 平成22.7.13 06）
+      if (sl.kind === "rental" && v.rented) {
+        const rentedArea = Qn(qfloor(qmul(qmul(shareArea, v.rented.ratio), Qn(100))), 100);
+        shareValue = yenFloor(v.rented.value, f);
+        notes.push(`${who}：貸付事業用は貸している部分（賃貸割合 ${qstr(v.rented.ratio)}）の ${qnum(rentedArea)}㎡・${fmt(shareValue)}円だけ`);
+        shareArea = rentedArea;
+      }
+      // 付表1 ⑤ 選択特例対象宅地等の面積 ≦ ③。その人が特例を使う面積を決めていれば、⑤ はその面積まで
+      let cap = shareArea;
+      if (u.selectedSqm !== undefined) {
+        const chosen = decQ(u.selectedSqm);
+        if (qcmp(chosen, ZERO) <= 0) {
+          notes.push(`${who}：特例を使う面積が0以下（使わない）`);
+          continue;
+        }
+        if (qcmp(chosen, shareArea) < 0) {
+          cap = chosen;
+          notes.push(`${who}：特例を使う面積は ${u.selectedSqm}㎡まで（持分に応ずる面積 ${qnum(shareArea)}㎡のうち）`);
+        }
+      }
+      cands.push({ itemId: it.id, label: who, kind: sl.kind, acquirer: u.acquirer, shareArea, shareValue, cap });
     }
-    const f = itemShare.get(it.id)?.get(sl.acquirer);
-    if (!f || f.n === 0n) {
-      notes.push(`${it.label}：小規模宅地等の取得者がこの土地を取得していない`);
-      continue;
-    }
-    const landValue = it.type === "condo" ? (condoLand.get(it.id) ?? 0) : v.value;
-    let shareValue = yenFloor(landValue, f);
-    let shareArea = qmul(v.area, f);
-    // 貸付事業用で空室がある（賃貸割合<1）とき：貸付事業に使っている部分だけが対象（措通69の4-24の2。一時的な空室は賃貸割合に含めて入力する）。
-    // 対象の価額 = 貸している部分の価額（自用地 × 賃貸割合 × (1 − 借地権割合 × 0.3) など）× 持分（円未満切捨て）、
-    // 対象の面積 = 持分の面積 × 賃貸割合（0.01㎡未満切捨て）。空室の部分は自用地（借地権）のまま特例の外（情報 平成22.7.13 06）
-    if (sl.kind === "rental" && v.rented) {
-      const rentedArea = Qn(qfloor(qmul(qmul(shareArea, v.rented.ratio), Qn(100))), 100);
-      shareValue = yenFloor(v.rented.value, f);
-      notes.push(`${it.label}：貸付事業用は貸している部分（賃貸割合 ${qstr(v.rented.ratio)}）の ${qnum(rentedArea)}㎡・${fmt(shareValue)}円だけ`);
-      shareArea = rentedArea;
-    }
-    cands.push({ itemId: it.id, label: it.label, kind: sl.kind, acquirer: sl.acquirer, shareArea, shareValue });
   }
 
   /* ---------- 10. 課税価格と税額 ---------- */
@@ -1515,8 +1576,9 @@ function chooseSmallLand(cands: SmallCand[], score: (sel: SmallSel[]) => { net: 
         }
       }
       if (qcmp(max, ZERO) <= 0) continue;
+      // ⑤ は ③（取得者の持分に応ずる面積）とその人が選んだ面積（cap）の小さい方まで、さらに限度面積の残りまで
       let area: Q;
-      if (qcmp(c.shareArea, max) <= 0) area = c.shareArea;
+      if (qcmp(c.cap, max) <= 0) area = c.cap;
       else area = Qn(qfloor(qmul(max, Qn(100))), 100); // 0.01㎡未満切捨て
       if (qcmp(area, ZERO) <= 0) continue;
       // 小規模宅地等の価額 = 持分の価額 × 選んだ面積 / 持分の面積（円未満切捨て）、減額 = その × 割合（円未満切捨て）
@@ -1554,7 +1616,7 @@ function chooseSmallLand(cands: SmallCand[], score: (sel: SmallSel[]) => { net: 
   for (const o of orders) {
     const sel = fill(o);
     const key = sel
-      .map((x) => `${x.cand.itemId}:${qstr(x.area)}`)
+      .map((x) => `${x.cand.itemId}/${x.cand.acquirer}:${qstr(x.area)}`)
       .sort()
       .join("|");
     if (seen.has(key)) continue;

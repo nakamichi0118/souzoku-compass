@@ -21,6 +21,7 @@ export const CASE_LIMITS = {
   sheetPoints: 50,
   pending: 30,
   progress: 50,
+  smallLandOthers: 10,
 } as const;
 
 /** 送られたデータ全体の大きさ（バイト）の上限。保存できるデータは90万文字までで、日本語は1文字3バイトのため、その3倍 */
@@ -46,12 +47,27 @@ const landMethod = z.looseObject({
   edgeOn: many(z.boolean(), CASE_LIMITS.shape, "土地の辺").optional(),
 });
 
+/** 小規模宅地等の特例を使う面積（㎡）。空き（null）は「使えるだけ使う」。0や負の数・数でない値の案内は計算の側で出す */
+const SELECTED_SQM_ERROR = "小規模宅地等の特例を使う面積は、0以上の数（㎡）で入れてください。";
+const selectedSqm = z.number({ error: SELECTED_SQM_ERROR }).min(0, SELECTED_SQM_ERROR).nullable().optional();
+
+/** 小規模宅地等の特例（1つの土地を一緒に受け継いで特例を使う2人目以降の人と、特例を使う面積） */
+const smallLandRelief = z.looseObject({
+  selectedSqm,
+  others: many(
+    z.looseObject({ acquirerId: z.string().max(100), selectedSqm }),
+    CASE_LIMITS.smallLandOthers,
+    "1つの土地で小規模宅地等の特例を一緒に使う人",
+  ).optional(),
+});
+
 const asset = z.looseObject({
   id,
   kind: z.string().max(40),
   pending: many(z.string().max(500), CASE_LIMITS.pending, "確認待ちの項目").optional(),
   method: landMethod.optional(),
   rosenkaSheet: z.looseObject({ points: many(z.looseObject({}), CASE_LIMITS.sheetPoints, "路線価図の基準点").optional() }).optional(),
+  smallResidential: smallLandRelief.optional(),
 });
 
 const debt = z.looseObject({

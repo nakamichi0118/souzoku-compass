@@ -7,7 +7,7 @@ import type { PersonTax, TaxResult } from "@/domain/tax/engine";
 import type { Case, Person } from "@/domain/types";
 import { ageAt, wareki, yen, yenOrBlank } from "./format";
 import type { PageFill } from "./render";
-import { build06, build07, build09, build10, buildF1 } from "./attachments";
+import { build06, build07, build09, build10, buildF1, smallLines } from "./attachments";
 import { buildSchedule11 } from "./schedule11";
 import { build13, build15, build5, filingPersons } from "./schedules";
 
@@ -252,8 +252,9 @@ export function formsNotGenerated(c: Case, r: TaxResult): { form: string; reason
     const ratio = rentedLand ? a.rentRatio : a.kind === "condo" && a.rented ? a.rentRatio : undefined;
     return ratio !== undefined && ratio < 1;
   };
-  const shared = r.assets.some((l) => l.small && l.byPerson.filter((b) => b.amount > 0).length > 1);
-  if (shared || r.assets.some((l) => l.small && l.reduction > 0 && partlyRented(l)))
+  // 特例を使う人が1人目でも2人目以降でも同じ（smallLines は line.small と line.smallExtra の両方を見る）
+  const shared = r.assets.some((l) => smallLines(l).length > 0 && l.byPerson.filter((b) => b.amount > 0).length > 1);
+  if (shared || r.assets.some((l) => smallLines(l).length > 0 && partlyRented(l)))
     out.push({
       form: "第11・11の2表の付表1（別表1）（小規模宅地等についての課税価格の計算明細）",
       reason: shared ? "小規模宅地等の特例を使う土地を2人以上で分けて取得しています" : "小規模宅地等の特例を使う貸している土地に、空いている部屋があります（賃貸割合が1ではありません）",

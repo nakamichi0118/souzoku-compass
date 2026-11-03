@@ -15,6 +15,7 @@ import {
   condoCorrection,
   ageAt,
   isSupporter,
+  smallPersonFails,
   TABLES,
 } from "./oracle";
 
@@ -790,5 +791,172 @@ describe("税理士に確かめた補正率", () => {
     // 95,000×0.88 = 83,600 → 奥行長大（52.5/20=2.6）0.98 → 81,928 → ×0.78 = 63,903 × 1,050㎡
     expect(tp(one(landR("l", roads, 1050, { needsReduction: "largeLot", advisorRate: 0.78 })), "a")).toBe(Math.floor(67_098_150 / 1000) * 1000);
     expect(tp(one(landR("l", roads, 1050, { needsReduction: "largeLot", advisorRate: 1 })), "a")).toBe(Math.floor((81_928 * 1050) / 1000) * 1000);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* 小規模宅地等：1つの宅地を何人かで取得して、それぞれの持分に使う／使う面積を選ぶ（付表1の⑤）    */
+/* ------------------------------------------------------------------ */
+
+describe("小規模宅地等：共有で何人も使う・使う面積を選ぶ（措法69条の4、付表1）", () => {
+  // 倍率方式の宅地（1㎡あたり10万円）。貸家建付地は借地権割合0.5（1㎡あたり 17万×0.85 … のように面積×単価で作る）
+  const lot = (id: string, area: number, perSqm: number, extra: Partial<LandItem> = {}): EstateItem =>
+    ({
+      id,
+      type: "land",
+      label: id,
+      areaSqm: area,
+      landUse: "宅地",
+      valuation: { kind: "multiplier", fixedAssetValue: area * perSqm, rate: 1, ...(extra.use === "rentedHouse" ? { leaseRatio: 0.5 } : {}) },
+      use: "self",
+      ...extra,
+    }) as EstateItem;
+  const notesOf = (e: ReturnType<typeof expected>) => e.notes.join("\n");
+
+  it("取得した人ごとの要件（措法69条の4第3項）：配偶者は要件なし、同居の親族は住み続け・持ち続け、事業用・貸付用は続け・持ち続け", () => {
+    expect(smallPersonFails("residence", { relation: "spouse" }, { livedTogether: false, keep: false })).toBeNull();
+    expect(smallPersonFails("residence", { relation: "child" }, {})).toBeNull();
+    expect(smallPersonFails("residence", { relation: "child" }, { livedTogether: false })).toMatch(/同居していない/);
+    expect(smallPersonFails("residence", { relation: "child" }, { keep: false })).toMatch(/住み続け/);
+    expect(smallPersonFails("rental", { relation: "spouse" }, { continues: false })).toMatch(/貸付事業/);
+    expect(smallPersonFails("rental", { relation: "child" }, { keep: false })).toMatch(/持ち続けない/);
+    expect(smallPersonFails("business", { relation: "child" }, { continues: false })).toMatch(/事業/);
+    expect(smallPersonFails("business", { relation: "child" }, {})).toBeNull();
+  });
+
+  it("自宅400㎡を配偶者と同居の子が半分ずつ：330㎡までを子の持分（200㎡）から割り当て、配偶者は残り130㎡", () => {
+    const h = lot("h", 400, 100_000, { smallLand: { kind: "residence", acquirer: "s", others: [{ acquirer: "a" }] } });
+    const e = expected(
+      scen([mem("s", "spouse"), mem("a", "child")], [h, cash("d", 100_000_000), cash("e", 30_000_000)], {
+        h: [
+          ["s", 1, 2],
+          ["a", 1, 2],
+        ],
+        d: [["a", 1, 1]],
+        e: [["s", 1, 1]],
+      }),
+    );
+    // 子：2,000万 − 200㎡×10万×80%（1,600万） + 1億。配偶者：2,000万 − 130㎡×10万×80%（1,040万） + 3,000万
+    expect(tp(e, "a")).toBe(104_000_000);
+    expect(tp(e, "s")).toBe(39_600_000);
+  });
+
+  it("配偶者と別居の子（持ち家あり）が共有：子の持分には使えず、配偶者の持分200㎡だけ", () => {
+    const h = lot("h", 400, 100_000, { smallLand: { kind: "residence", acquirer: "s", others: [{ acquirer: "a", livedTogether: false }] } });
+    const e = expected(
+      scen([mem("s", "spouse"), mem("a", "child")], [h, cash("d", 100_000_000), cash("e", 30_000_000)], {
+        h: [
+          ["s", 1, 2],
+          ["a", 1, 2],
+        ],
+        d: [["a", 1, 1]],
+        e: [["s", 1, 1]],
+      }),
+    );
+    expect(tp(e, "a")).toBe(120_000_000);
+    expect(tp(e, "s")).toBe(34_000_000);
+    expect(notesOf(e)).toMatch(/aの分）：亡くなる直前に同居していない/);
+  });
+
+  it("1人目に書いた人が要件を満たさなくても、2人目以降の人は自分の要件で使える", () => {
+    const h = lot("h", 300, 100_000, { smallLand: { kind: "residence", acquirer: "a", livedTogether: false, others: [{ acquirer: "s" }] } });
+    const e = expected(
+      scen([mem("s", "spouse"), mem("a", "child")], [h, cash("d", 50_000_000)], {
+        h: [
+          ["a", 1, 3],
+          ["s", 2, 3],
+        ],
+        d: [["a", 1, 1]],
+      }),
+    );
+    expect(tp(e, "a")).toBe(10_000_000 + 50_000_000);
+    expect(tp(e, "s")).toBe(20_000_000 - 16_000_000);
+  });
+
+  it("同居の子2人の共有で、1人は申告期限までに持分を売る：売る人の持分には使えない", () => {
+    const h = lot("h", 200, 100_000, { smallLand: { kind: "residence", acquirer: "a", others: [{ acquirer: "b", keep: false }] } });
+    const e = expected(
+      scen([mem("a", "child"), mem("b", "child")], [h, cash("d", 60_000_000)], {
+        h: [
+          ["a", 1, 2],
+          ["b", 1, 2],
+        ],
+        d: [
+          ["a", 1, 2],
+          ["b", 1, 2],
+        ],
+      }),
+    );
+    expect(tp(e, "a")).toBe(10_000_000 - 8_000_000 + 30_000_000);
+    expect(tp(e, "b")).toBe(10_000_000 + 30_000_000);
+  });
+
+  it("使う面積を選ぶ：300㎡のうち150㎡だけ（付表1の⑤）→ 減額は150㎡分", () => {
+    const h = lot("h", 300, 100_000, { smallLand: { kind: "residence", acquirer: "s", selectedSqm: 150 } });
+    const e = expected(scen([mem("s", "spouse"), mem("a", "child")], [h, cash("d", 80_000_000)], { h: [["s", 1, 1]], d: [["a", 1, 1]] }));
+    expect(tp(e, "s")).toBe(30_000_000 - 12_000_000);
+  });
+
+  it("使う面積の上限は持分に応ずる面積（③）まで：持分より広い面積を入れても③まで", () => {
+    const h = lot("h", 300, 100_000, { smallLand: { kind: "residence", acquirer: "s", selectedSqm: 500 } });
+    const e = expected(scen([mem("s", "spouse"), mem("a", "child")], [h, cash("d", 80_000_000)], { h: [["s", 1, 1]], d: [["a", 1, 1]] }));
+    expect(tp(e, "s")).toBe(30_000_000 - 24_000_000);
+  });
+
+  it("自宅の一部（165㎡まで）とアパート：限度面積の残り（200−165×200/330＝100㎡）をアパートに", () => {
+    const h = lot("h", 300, 100_000, { smallLand: { kind: "residence", acquirer: "a", selectedSqm: 165 } });
+    // アパートの敷地：4,000万×(1−0.5×0.3) = 3,400万（1㎡17万）。貸付事業用は1㎡8.5万の減額
+    const p = lot("p", 200, 200_000, { use: "rentedHouse", smallLand: { kind: "rental", acquirer: "a" } });
+    const e = expected(scen([mem("a", "child")], [h, p], { h: [["a", 1, 1]], p: [["a", 1, 1]] }));
+    // 自宅165㎡ 1,320万 ＋ アパート100㎡ 850万（面積を選ばないと、自宅300㎡→換算181.81㎡でアパートは18.18㎡だけ）
+    expect(tp(e, "a")).toBe(floorK(30_000_000 + 34_000_000 - 13_200_000 - 8_500_000));
+  });
+
+  it("アパートの敷地を配偶者と子が共有し、2人とも貸付を続ける：200㎡を子の120㎡（入れた150㎡は持分まで）、配偶者の80㎡に", () => {
+    const p = lot("p", 240, 200_000, { use: "rentedHouse", smallLand: { kind: "rental", acquirer: "s", others: [{ acquirer: "a", selectedSqm: 150 }] } });
+    const e = expected(
+      scen([mem("s", "spouse"), mem("a", "child")], [p, cash("d", 100_000_000), cash("e", 30_000_000)], {
+        p: [
+          ["s", 1, 2],
+          ["a", 1, 2],
+        ],
+        d: [["a", 1, 1]],
+        e: [["s", 1, 1]],
+      }),
+    );
+    // 4,800万×0.85 = 4,080万、各 2,040万（1㎡17万）
+    expect(tp(e, "a")).toBe(20_400_000 - 10_200_000 + 100_000_000);
+    expect(tp(e, "s")).toBe(20_400_000 - 6_800_000 + 30_000_000);
+  });
+
+  it("共有の貸付事業用で、1人は申告期限までに貸付をやめる：やめる人の持分には使えない", () => {
+    const p = lot("p", 200, 200_000, { use: "rentedHouse", smallLand: { kind: "rental", acquirer: "a", others: [{ acquirer: "b", continues: false }] } });
+    const e = expected(
+      scen([mem("a", "child"), mem("b", "child")], [p], {
+        p: [
+          ["a", 1, 2],
+          ["b", 1, 2],
+        ],
+      }),
+    );
+    expect(tp(e, "a")).toBe(17_000_000 - 8_500_000);
+    expect(tp(e, "b")).toBe(17_000_000);
+  });
+
+  it("一部が未分割の宅地：分割で取得した持分だけが対象（未分割の残りと、分割で取得していない人には使えない）", () => {
+    const h = lot("h", 400, 100_000, { smallLand: { kind: "residence", acquirer: "s", others: [{ acquirer: "b" }] } });
+    const s = scen([mem("s", "spouse"), mem("a", "child"), mem("b", "child")], [h, cash("d", 60_000_000)], { h: [["s", 1, 2]], d: [["a", 1, 1]] });
+    if (s.division.kind === "agreed") s.division.partlyUndivided = true;
+    const e = expected(s);
+    const n = notesOf(e);
+    expect(n).toMatch(/h：1\/2 が未分割/);
+    expect(n).toMatch(/bの分）：小規模宅地等の取得者がこの土地を（分割で）取得していない/);
+    expect(n).toMatch(/小規模宅地等：h（sの分）（residence、s）200\.00㎡ 減額 16,000,000/);
+  });
+
+  it("未分割の相続では、共有で使う人がいても特例は使えない", () => {
+    const h = lot("h", 200, 100_000, { smallLand: { kind: "residence", acquirer: "s", others: [{ acquirer: "a" }] } });
+    const e = expected(scen([mem("s", "spouse"), mem("a", "child")], [h, cash("d", 40_000_000)], null));
+    expect(e.totalTaxablePrice).toBe(60_000_000);
   });
 });

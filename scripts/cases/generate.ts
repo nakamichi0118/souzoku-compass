@@ -12,7 +12,8 @@
  *   npx tsx scripts/cases/generate.ts --n 200 --seed 1 --out /tmp/claude-0/cases/small.json
  *
  * 決まりごと（scenario.ts に書いていないもの）
- * - smallLand（小規模宅地等の特例）は、取得者が要件（配偶者・同居親族・家なき子・事業や貸付の継続など）を満たしている前提で付ける。
+ * - smallLand（小規模宅地等の特例）は、1人目の取得者が要件（配偶者・同居親族・家なき子・事業や貸付の継続など）を満たしている前提で付ける
+ *   （src/domain/__tests__/cases.test.ts が、1人目の「適用する」を確かめる）。要件を満たさない人は others（2人目以降）にだけ書く。
  *   取得者は、その土地を（少なくとも一部）取得する人。共有で取得して取得者の持分だけ特例を使う例もある（タグ「小規模宅地（共有取得）」）。
  * - 孫養子かつ代襲相続人（二重資格）は relation "adoptedChild"・grandchildAdopted: true・substituteOf: 先に亡くなった子 で表す。
  * - 数次相続（diedAfter のある人）は、亡くなった時点では生きていた相続人なので、遺産を分ける相手になりうる（その人の相続人が協議する）。
@@ -31,7 +32,11 @@
  * - 代償分割と一部未分割を組み合わせるときは、代償金を払う人が分割で取得する額が代償金より十分大きいものだけ作る。
  * - 乱数のケースで、あとから足した事柄（貸家建付借地権・補正率・一部未分割・代償金の時価・前の相続の控除）は別の乱数列（extra）で決める。
  *   二度目の見直しで足した事柄（障害者控除の区分の変化・代償分割＋一部未分割・未分割＋精算課税）はさらに別の乱数列（extra2）で決める。
+ *   三度目の見直しで足した事柄（小規模宅地等を共有で何人も使う・面積の一部だけに使う）は別の乱数列（extra3）で決める。
  *   元からある事柄の乱数列は変わらない。
+ * - smallLand.others は、同じ宅地を一緒に取得して自分の持分にも特例を使う2人目以降。人ごとの要件（同居・住み続け/続け・持ち続け）は
+ *   書かなければ満たしている。livedTogether: false は同居していない親族で、家なき子の要件は扱わず使えないものとする。
+ *   selectedSqm は特例を使う面積の上限（付表1の⑤。持分に応ずる面積より大きければその面積まで）。
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -50,6 +55,8 @@ import type {
   ScenarioGift,
   ScenarioRoad,
   SmallLandKind,
+  SmallLandUse,
+  SmallLandUser,
 } from "./scenario";
 import { BANKS, COMPANIES, FEMALE_NAMES, INSURERS, KANJI_NUM, MALE_NAMES, PLACES, SURNAMES, type Place } from "./names";
 
@@ -817,10 +824,16 @@ export class Builder {
     if (!it) throw new Error(`${this.id}: 財産がない ${id}`);
     return it;
   }
-  smallLand(itemId: string, kind: SmallLandKind, acquirer: string): void {
+  /**
+   * 小規模宅地等の特例を使う。o で1人目の人ごとの要件・特例を使う面積（selectedSqm）と、
+   * 同じ土地を一緒に取得して自分の持分にも特例を使う2人目以降（others）を書ける
+   */
+  smallLand(itemId: string, kind: SmallLandKind, acquirer: string, o: Omit<SmallLandUser, "acquirer"> & { others?: SmallLandUser[] } = {}): void {
     const it = this.item(itemId);
     if (it.type !== "land" && it.type !== "condo") throw new Error(`${this.id}: 小規模宅地は土地かマンションだけ`);
-    it.smallLand = { kind, acquirer };
+    const sl: SmallLandUse = { kind, acquirer, ...o };
+    if (o.others) sl.others = o.others.map((x) => ({ ...x }));
+    it.smallLand = sl;
   }
 
   // ── 債務・葬式費用 ──
@@ -955,6 +968,14 @@ function roughAcquired(s: Scenario): Map<string, number> {
   return got;
 }
 
+/** 小規模宅地等を使う人についてのタグ（共有で何人も使う・面積を選んだ・要件を満たさない人がいる） */
+function smallUserTags(sl: SmallLandUse, t: Set<string>): void {
+  const users = [sl, ...(sl.others ?? [])];
+  if (sl.others?.length) t.add("小規模宅地（共有で何人も使う）");
+  if (users.some((u) => u.selectedSqm !== undefined)) t.add("小規模宅地（使う面積を選んだ）");
+  if (users.some((u) => u.livedTogether === false || u.keep === false || u.continues === false)) t.add("小規模宅地（要件を満たさない取得者）");
+}
+
 export function autoTags(s: Scenario): string[] {
   const t = new Set<string>();
   const ms = s.members;
@@ -1040,6 +1061,7 @@ export function autoTags(s: Scenario): string[] {
         if (it.rented && ((it as CondoItemExt).rentRatio ?? 1) < 1) t.add("空室のある貸付");
         if (it.smallLand) smallKinds.add(it.smallLand.kind);
         if (it.smallLand?.kind === "residence") residenceArea += it.landShareSqm;
+        if (it.smallLand) smallUserTags(it.smallLand, t);
         break;
       case "land": {
         const v = it.valuation;
@@ -1075,7 +1097,9 @@ export function autoTags(s: Scenario): string[] {
           if (s.division.kind === "agreed") {
             const sh = s.division.shares[it.id] ?? [];
             if (sh.length > 1) t.add("小規模宅地（共有取得）");
+            if (s.division.partlyUndivided && sh.reduce((x, y) => x + y.n / y.d, 0) < 1 - 1e-9) t.add("小規模宅地（一部が未分割の宅地）");
           }
+          smallUserTags(it.smallLand, t);
         }
         break;
       }
@@ -3370,6 +3394,206 @@ const EDGES: [string, string[], EdgeFn][] = [
     b.give(L, c2);
     b.split({ [c1]: 1, [c2]: 1 });
   }],
+  // ── 小規模宅地等：1つの宅地を何人かで取得して、それぞれの持分に特例を使う（付表1の1行ずつ）／特例を使う面積を選ぶ ──
+  // 共有者ごとに要件を見て、その人の持分に応ずる部分だけに使う（措法69条の4第3項、タックスアンサー No.4124）。
+  // 選んだ面積（付表1の⑤）は持分に応ずる面積（③）まで。限度面積の割り当ては、家族の税が最も少なくなるように（土地と取得者の組ごと）
+  ["小規模宅地：自宅を配偶者と同居の子が半分ずつ共有し、2人とも自分の持分に特例（300㎡、限度内）", ["小規模宅地", "共有で何人も使う"], (b) => {
+    b.dec({ age: 80, male: true });
+    const sp = b.spouse({ age: 77 });
+    const c1 = b.child({ age: 50, male: true });
+    const c2 = b.child({ age: 47 });
+    const h = home(b, { price: 300_000, frontage: 12, depth: 25, bldg: 4_500_000 });
+    b.deposit(70_000_000);
+    b.funeral(1_800_000, sp);
+    b.give(h.L, { [sp]: 1, [c1]: 1 });
+    b.give(h.B, { [sp]: 1, [c1]: 1 });
+    b.smallLand(h.L, "residence", sp, { others: [{ acquirer: c1 }] });
+    b.split({ [sp]: 1, [c1]: 1, [c2]: 2 });
+  }],
+  ["小規模宅地：自宅400㎡を配偶者と同居の子が半分ずつ共有（330㎡までを、子の持分から先に割り当てると家族の税が少ない）", ["小規模宅地", "共有で何人も使う"], (b) => {
+    b.dec({ age: 83, male: true });
+    const sp = b.spouse({ age: 80 });
+    const c1 = b.child({ age: 54 });
+    const h = home(b, { price: 350_000, frontage: 16, depth: 25, bldg: 5_200_000 });
+    b.deposit(120_000_000);
+    b.listed(3_000, { close: 3_120, monthAvg: 3_080, prevMonthAvg: 3_010, prev2MonthAvg: 2_990 });
+    b.funeral(2_100_000, sp);
+    b.give(h.L, { [sp]: 1, [c1]: 1 });
+    b.give(h.B, sp);
+    b.smallLand(h.L, "residence", sp, { others: [{ acquirer: c1 }] });
+    b.split({ [sp]: 1, [c1]: 1 });
+  }],
+  ["小規模宅地：自宅を配偶者2/3・別居の子（持ち家あり）1/3で共有。子の持分には特例を使えない", ["小規模宅地", "共有で何人も使う"], (b) => {
+    b.dec({ age: 78, male: false });
+    const sp = b.spouse({ age: 80 });
+    const c1 = b.child({ age: 49 });
+    const h = home(b, { price: 380_000, frontage: 12, depth: 20, bldg: 3_900_000 });
+    b.deposit(65_000_000);
+    b.funeral(1_600_000, sp);
+    b.give(h.L, { [sp]: 2, [c1]: 1 });
+    b.give(h.B, sp);
+    b.smallLand(h.L, "residence", sp, { others: [{ acquirer: c1, livedTogether: false }] });
+    b.split({ [sp]: 1, [c1]: 1 });
+  }],
+  ["小規模宅地：自宅480㎡を配偶者1/2・同居の長男1/4・別居の長女1/4で共有（長女は使えない。330㎡までを長男の120㎡から）", ["小規模宅地", "共有で何人も使う"], (b) => {
+    b.dec({ age: 85, male: true });
+    const sp = b.spouse({ age: 82 });
+    const c1 = b.child({ age: 57, male: true });
+    const c2 = b.child({ age: 54, male: false });
+    const h = home(b, { price: 190_000, frontage: 16, depth: 30, bldg: 2_800_000 });
+    b.deposit(95_000_000);
+    b.funeral(1_700_000, sp);
+    b.give(h.L, { [sp]: 2, [c1]: 1, [c2]: 1 });
+    b.give(h.B, sp);
+    b.smallLand(h.L, "residence", sp, { others: [{ acquirer: c1 }, { acquirer: c2, livedTogether: false }] });
+    b.split({ [sp]: 1, [c1]: 1, [c2]: 1 });
+  }],
+  ["小規模宅地：同居の子2人が自宅を共有。1人は申告期限前に持分を売る（その人の持分には使えない）", ["小規模宅地", "共有で何人も使う"], (b) => {
+    b.dec({ age: 90, male: false });
+    b.spouse({ age: 93, predeceased: true });
+    const c1 = b.child({ age: 62 });
+    const c2 = b.child({ age: 59 });
+    const h = home(b, { price: 420_000, frontage: 10, depth: 20, bldg: 2_200_000 });
+    b.deposit(52_000_000);
+    b.funeral(1_500_000, c1);
+    b.give(h.L, { [c1]: 1, [c2]: 1 });
+    b.give(h.B, { [c1]: 1, [c2]: 1 });
+    b.smallLand(h.L, "residence", c1, { others: [{ acquirer: c2, keep: false }] });
+    b.split({ [c1]: 1, [c2]: 1 });
+  }],
+  ["小規模宅地：自宅の土地の一部の面積だけに特例を使う（300㎡のうち200㎡）", ["小規模宅地", "使う面積を選んだ"], (b) => {
+    b.dec({ age: 81, male: true });
+    const sp = b.spouse({ age: 78 });
+    const c1 = b.child({ age: 51 });
+    const h = home(b, { price: 290_000, frontage: 12, depth: 25, bldg: 4_100_000 });
+    b.deposit(75_000_000);
+    b.funeral(1_900_000, sp);
+    b.give(h.L, sp);
+    b.give(h.B, sp);
+    b.smallLand(h.L, "residence", sp, { selectedSqm: 200 });
+    b.split({ [sp]: 1, [c1]: 2 });
+  }],
+  ["小規模宅地：同居の子が自宅の一部（165㎡まで）に、別の子がアパートの敷地に特例（限度面積の残り100㎡をアパートに）", ["小規模宅地", "使う面積を選んだ"], (b) => {
+    b.dec({ age: 84, male: true });
+    b.spouse({ age: 82, predeceased: true });
+    const c1 = b.child({ age: 55, male: true });
+    const c2 = b.child({ age: 52 });
+    const h = home(b, { price: 240_000, frontage: 12, depth: 25, bldg: 4_000_000 });
+    const L = b.landR({ label: `アパートの土地（${b.location()}）`, price: 330_000, frontage: 10, depth: 15, use: "rentedHouse", rentRatio: 1 });
+    const B = b.building(22_000_000, { label: "アパート（木造2階建・6室）", rented: true, rentRatio: 1 });
+    b.deposit(60_000_000);
+    b.funeral(1_700_000, c1);
+    b.give(h.L, c1);
+    b.give(h.B, c1);
+    b.give(L, c2);
+    b.give(B, c2);
+    b.smallLand(h.L, "residence", c1, { selectedSqm: 165 });
+    b.smallLand(L, "rental", c2);
+    b.split({ [c1]: 1, [c2]: 1 });
+  }],
+  ["小規模宅地：配偶者が自宅の一部（165㎡まで）とアパートの敷地を取得（配偶者の税は0円なので、限度面積はアパートを先に）", ["小規模宅地", "使う面積を選んだ"], (b) => {
+    b.dec({ age: 79, male: true });
+    const sp = b.spouse({ age: 76 });
+    const c1 = b.child({ age: 49, male: true });
+    const h = home(b, { price: 240_000, frontage: 12, depth: 25, bldg: 4_000_000 });
+    const L = b.landR({ label: `アパートの土地（${b.location()}）`, price: 330_000, frontage: 10, depth: 15, use: "rentedHouse", rentRatio: 1 });
+    const B = b.building(22_000_000, { label: "アパート（木造2階建・6室）", rented: true, rentRatio: 1 });
+    b.deposit(60_000_000);
+    b.funeral(1_700_000, sp);
+    b.give(h.L, sp);
+    b.give(h.B, sp);
+    b.give(L, c1);
+    b.give(B, c1);
+    b.smallLand(h.L, "residence", sp, { selectedSqm: 165 });
+    b.smallLand(L, "rental", c1);
+    b.split({ [sp]: 1, [c1]: 1 });
+  }],
+  ["小規模宅地：アパートの敷地を配偶者と子が共有し、2人とも貸付を続ける（200㎡まで。子は持分より広い面積を入れた）", ["小規模宅地", "共有で何人も使う", "使う面積を選んだ"], (b) => {
+    b.dec({ age: 82, male: true });
+    const sp = b.spouse({ age: 79 });
+    const c1 = b.child({ age: 53 });
+    const L = b.landR({ label: `アパートの土地（${b.location()}）`, price: 280_000, frontage: 12, depth: 20, use: "rentedHouse", rentRatio: 1 });
+    const B = b.building(26_000_000, { label: "アパート（鉄骨2階建・8室）", rented: true, rentRatio: 1 });
+    b.deposit(80_000_000);
+    b.debt(12_000_000, { [sp]: 1, [c1]: 1 }, "アパートローン（みなと銀行）");
+    b.funeral(1_800_000, sp);
+    b.give(L, { [sp]: 1, [c1]: 1 });
+    b.give(B, { [sp]: 1, [c1]: 1 });
+    b.smallLand(L, "rental", sp, { others: [{ acquirer: c1, selectedSqm: 150 }] });
+    b.split({ [sp]: 1, [c1]: 1 });
+  }],
+  ["小規模宅地：アパートの敷地を子2人が共有。1人は申告期限までに貸付をやめる（その人の持分には使えない）", ["小規模宅地", "共有で何人も使う"], (b) => {
+    b.dec({ age: 86, male: false });
+    const c1 = b.child({ age: 60 });
+    const c2 = b.child({ age: 57 });
+    const L = b.landR({ label: `貸家の土地（${b.location()}）`, price: 310_000, frontage: 10, depth: 20, use: "rentedHouse", rentRatio: 1 });
+    const B = b.building(9_000_000, { label: "貸家（一戸建て2棟）", rented: true, rentRatio: 1 });
+    b.deposit(45_000_000);
+    b.funeral(1_400_000, c1);
+    b.give(L, { [c1]: 1, [c2]: 1 });
+    b.give(B, { [c1]: 1, [c2]: 1 });
+    b.smallLand(L, "rental", c1, { others: [{ acquirer: c2, continues: false }] });
+    b.split({ [c1]: 1, [c2]: 1 });
+  }],
+  ["小規模宅地：店舗の土地を子2人が共有し、2人とも事業を引き継ぐ（特定事業用、400㎡まで）", ["小規模宅地", "共有で何人も使う"], (b) => {
+    b.dec({ age: 74, male: true });
+    const sp = b.spouse({ age: 72 });
+    const c1 = b.child({ age: 46, male: true });
+    const c2 = b.child({ age: 43, male: true });
+    const L = b.landR({ label: `店舗の土地（${b.location()}）`, district: "普通商業・併用住宅地区", price: 380_000, frontage: 14, depth: 25 });
+    const B = b.building(7_000_000, { label: "店舗の建物" });
+    b.deposit(40_000_000);
+    b.otherAsset(4_000_000, "商品・器具備品（事業用財産）");
+    b.funeral(1_800_000, sp);
+    b.give(L, { [c1]: 1, [c2]: 1 });
+    b.give(B, { [c1]: 1, [c2]: 1 });
+    b.smallLand(L, "business", c1, { others: [{ acquirer: c2 }] });
+    b.split({ [sp]: 1 });
+  }],
+  ["小規模宅地：マンションを配偶者と同居の子が共有し、2人とも敷地権の持分に特例", ["小規模宅地", "共有で何人も使う", "マンション"], (b) => {
+    b.dec({ age: 77, male: true });
+    const sp = b.spouse({ age: 74 });
+    const c1 = b.child({ age: 46 });
+    const M = b.condo({ landValue: 36_000_000, buildingFixedAssetValue: 14_000_000, builtYears: 12, builtMonths: 3, totalFloors: 20, floor: 11, landShareSqm: 28.4, exclusiveAreaSqm: 90.2 });
+    b.deposit(55_000_000);
+    b.funeral(1_600_000, sp);
+    b.give(M, { [sp]: 1, [c1]: 1 });
+    b.smallLand(M, "residence", sp, { others: [{ acquirer: c1 }] });
+    b.split({ [sp]: 1, [c1]: 1 });
+  }],
+  ["小規模宅地：自宅の一部が未分割（配偶者1/2・同居の子1/4は分割済み、残り1/4は未分割で特例を使えない）", ["小規模宅地", "共有で何人も使う", "一部未分割"], (b) => {
+    b.dec({ age: 84, male: true });
+    const sp = b.spouse({ age: 81 });
+    const c1 = b.child({ age: 55 });
+    const c2 = b.child({ age: 52 });
+    const h = home(b, { price: 320_000, frontage: 12, depth: 25, bldg: 3_600_000 });
+    const D1 = b.deposit(40_000_000);
+    b.deposit(36_000_000);
+    b.funeral(1_800_000, sp);
+    b.givePart(h.L, [{ who: sp, n: 1, d: 2 }, { who: c1, n: 1, d: 4 }]);
+    b.give(h.B, sp);
+    b.give(D1, { [c1]: 1, [c2]: 1 });
+    b.smallLand(h.L, "residence", sp, { others: [{ acquirer: c1 }] });
+    b.partlyUndivided();
+  }],
+  ["小規模宅地：共有の自宅で同居の子が使う面積を100㎡までと決めた（配偶者の持分と貸家の敷地にも割り当て）", ["小規模宅地", "共有で何人も使う", "使う面積を選んだ"], (b) => {
+    b.dec({ age: 80, male: false });
+    const sp = b.spouse({ age: 83 });
+    const c1 = b.child({ age: 52 });
+    const c2 = b.child({ age: 49 });
+    const h = home(b, { price: 270_000, frontage: 16, depth: 25, bldg: 4_400_000 });
+    const L = b.landR({ label: `貸家の土地（${b.location()}）`, price: 300_000, frontage: 10, depth: 15, use: "rentedHouse", rentRatio: 1 });
+    const B = b.building(8_500_000, { label: "貸家（一戸建て）", rented: true, rentRatio: 1 });
+    b.deposit(90_000_000);
+    b.funeral(2_000_000, sp);
+    b.give(h.L, { [sp]: 1, [c1]: 1 });
+    b.give(h.B, { [sp]: 1, [c1]: 1 });
+    b.give(L, c2);
+    b.give(B, c2);
+    b.smallLand(h.L, "residence", sp, { others: [{ acquirer: c1, selectedSqm: 100 }] });
+    b.smallLand(L, "rental", c2);
+    b.split({ [sp]: 1, [c1]: 1, [c2]: 1 });
+  }],
 ];
 
 function edgeScenarios(seed: number): Scenario[] {
@@ -3428,7 +3652,7 @@ interface RandCtx {
  * 乱数のケースを1件作る。rng は元からある事柄、extra はあとから足した事柄（貸家建付借地権・税理士に確かめた補正率・
  * 一部未分割・代償金の時価・前の相続で受けた控除）に使う別の乱数列。extra を分けたので、足した事柄のない部分は前と同じになる
  */
-function randomScenario(id: string, rng: Rng, extra: Rng, extra2: Rng): Scenario {
+function randomScenario(id: string, rng: Rng, extra: Rng, extra2: Rng, extra3: Rng): Scenario {
   const famType = rng.weighted<FamType>([
     ["spouseChildren", 55], ["childrenOnly", 30], ["siblings", 6], ["parents", 3], ["grandSub", 3], ["other", 3],
   ]);
@@ -3824,7 +4048,84 @@ function randomScenario(id: string, rng: Rng, extra: Rng, extra2: Rng): Scenario
   // ── 分け方 ──
   ctx.settlementTo = settlementTo;
   randomDivision(b, ctx, extra, extra2);
+  randomSmallLandUsers(b, extra3);
   return b.build();
+}
+
+/** 面積 × 持分 が 0.01㎡ 単位でちょうど割り切れるか（付表1の③が丸めなしで書ける持分だけを使う） */
+function exactShareArea(area: number, n: number, d: number): boolean {
+  return (Math.round(area * 100) * n) % d === 0;
+}
+
+/**
+ * 小規模宅地等の特例を、1つの宅地を共有で取得した何人もが使う・取得した面積の一部だけに使う（三度目の見直しで足した事柄。
+ * 別の乱数列 extra3 で決めるので、選ばれなかったケースは前と同じ）。実際の申告200件の見直しでは、面積の一部だけに使う人が5件（2.5%）、
+ * 1つの宅地を共有して2人以上が使うものが3件（1.5%）あった。
+ * - 共有：配偶者が1人で取得した自宅の敷地（特定居住用）を配偶者と子の共有にし、子も自分の持分に使う（同居して住み続ける子、
+ *   別居で持ち家がある子＝使えない、申告期限までに持分を売る子＝使えない）。配偶者のいない家族では、ほかに特例を使う土地がなく
+ *   330㎡以下の自宅の敷地を子2人の共有にする（限度面積に届かないので、割り当ての選び方で結果が変わらない）
+ * - 一部の面積：特例を使う人のうち1人が、持分に応ずる面積の4〜9割（1㎡単位）だけを選ぶ
+ * 限度面積に届くときに、同じ土地を同じ立場の人（配偶者でない人どうし）で分ける形は作らない（家族の税額が同じになり、選び方が決まらないため）
+ */
+function randomSmallLandUsers(b: Builder, extra3: Rng): void {
+  if (b.isUndivided) return;
+  const info = heirInfo(b.members);
+  const sp = info.spouse;
+  const kids = [...info.shares.keys()].filter((id) => {
+    const m = b.member(id);
+    return id !== sp && (m.relation === "child" || m.relation === "adoptedChild") && !m.renounced && !m.diedAfter && !m.nonResident;
+  });
+  const smallItems = b.estate.filter((it): it is LandItem | CondoItemExt => (it.type === "land" || it.type === "condo") && !!it.smallLand);
+  const areaOf = (it: LandItem | CondoItemExt) => (it.type === "land" ? it.areaSqm : it.landShareSqm);
+  const coOwn = extra3.chance(0.03);
+  const partial = extra3.chance(0.045);
+  const answer = extra3.next();
+  const weightPick = extra3.next();
+  const ratio = extra3.range(0.4, 0.9);
+  const pickUser = extra3.next();
+  if (coOwn && kids.length) {
+    const homeIt = smallItems.find((it) => it.smallLand!.kind === "residence" && (b.shares[it.id] ?? []).length === 1);
+    const sl = homeIt?.smallLand;
+    const sh = homeIt ? b.shares[homeIt.id] : undefined;
+    if (homeIt && sl && sh && sh[0].who === sl.acquirer && sh[0].n === sh[0].d) {
+      const area = areaOf(homeIt);
+      if (sp && sl.acquirer === sp) {
+        const kid = kids[0];
+        // 配偶者：子 ＝ 1:1・2:1・3:1 のうち、持分の面積が0.01㎡単位で割り切れるもの
+        const ws = ([[1, 1], [2, 1], [3, 1]] as const).filter(([x, y]) => exactShareArea(area, x, x + y) && exactShareArea(area, y, x + y));
+        if (ws.length) {
+          const [x, y] = ws[Math.floor(weightPick * ws.length)];
+          b.give(homeIt.id, { [sp]: x, [kid]: y });
+          const u: SmallLandUser = answer < 0.65 ? { acquirer: kid } : answer < 0.85 ? { acquirer: kid, livedTogether: false } : { acquirer: kid, keep: false };
+          sl.others = [u];
+        }
+      } else if (!sp && kids.includes(sl.acquirer) && smallItems.length === 1 && area <= 330 && exactShareArea(area, 1, 2)) {
+        const kid = kids.find((id) => id !== sl.acquirer);
+        if (kid) {
+          b.give(homeIt.id, { [sl.acquirer]: 1, [kid]: 1 });
+          sl.others = [answer < 0.7 ? { acquirer: kid } : answer < 0.85 ? { acquirer: kid, livedTogether: false } : { acquirer: kid, keep: false }];
+        }
+      }
+    }
+  }
+  if (partial && smallItems.length) {
+    // 特例を使う人（土地と人の組）から1つ選び、持分に応ずる面積の4〜9割（1㎡単位）だけに使う
+    const slots: { u: SmallLandUser; area: number }[] = [];
+    for (const it of smallItems) {
+      const sl = it.smallLand!;
+      if (it.type === "land" && it.use === "parking") continue;
+      for (const u of [sl, ...(sl.others ?? [])]) {
+        const x = (b.shares[it.id] ?? []).find((y) => y.who === u.acquirer);
+        if (!x || !exactShareArea(areaOf(it), x.n, x.d)) continue;
+        const shareArea = (Math.round(areaOf(it) * 100) * x.n) / x.d / 100;
+        if (shareArea >= 10) slots.push({ u, area: shareArea });
+      }
+    }
+    if (slots.length) {
+      const t = slots[Math.floor(pickUser * slots.length)];
+      t.u.selectedSqm = Math.max(1, Math.floor(t.area * ratio));
+    }
+  }
 }
 
 /** 税理士に確かめた補正率（不整形地補正率・規模格差補正率）。確かめていない（相談で止まる）こともある */
@@ -4073,7 +4374,15 @@ export function generateScenarios(n = 1000, seed = 20261108): Scenario[] {
   const out = [...edges];
   for (let i = 1; out.length < n; i++) {
     const id = `R${String(i).padStart(4, "0")}`;
-    out.push(randomScenario(id, new Rng(mixSeed(seed, i)), new Rng(mixSeed(seed ^ 0x5bd1e995, i)), new Rng(mixSeed(seed ^ 0x27d4eb2f, i))));
+    out.push(
+      randomScenario(
+        id,
+        new Rng(mixSeed(seed, i)),
+        new Rng(mixSeed(seed ^ 0x5bd1e995, i)),
+        new Rng(mixSeed(seed ^ 0x27d4eb2f, i)),
+        new Rng(mixSeed(seed ^ 0x165667b1, i)),
+      ),
+    );
   }
   return out;
 }
@@ -4241,9 +4550,21 @@ export function validateScenario(s: Scenario): string[] {
       }
     }
     if ((it.type === "land" || it.type === "condo") && it.smallLand) {
-      if (!alive(it.smallLand.acquirer)) err(`${it.id} 小規模宅地の取得者がいない`);
+      const sl = it.smallLand;
+      const users = [sl, ...(sl.others ?? [])];
+      const seenUsers = new Set<string>();
+      for (const u of users) {
+        if (!alive(u.acquirer)) err(`${it.id} 小規模宅地の取得者 ${u.acquirer} がいない`);
+        if (seenUsers.has(u.acquirer)) err(`${it.id} 小規模宅地の取得者 ${u.acquirer} が2回`);
+        seenUsers.add(u.acquirer);
+        if (s.division.kind === "agreed" && !(s.division.shares[it.id] ?? []).some((x) => x.who === u.acquirer)) err(`${it.id} 小規模宅地の取得者 ${u.acquirer} が取得していない`);
+        if (u.selectedSqm !== undefined && !(u.selectedSqm > 0 && Math.abs(Math.round(u.selectedSqm * 100) - u.selectedSqm * 100) < 1e-6))
+          err(`${it.id} 特例を使う面積 ${u.selectedSqm}（0より大きく0.01㎡単位）`);
+        if (sl.kind === "residence" && u.continues !== undefined) err(`${it.id} 特定居住用に事業・貸付を続けるかの答え`);
+        if (sl.kind !== "residence" && u.livedTogether !== undefined) err(`${it.id} 事業用・貸付用に同居の答え`);
+      }
+      if (sl.livedTogether === false || sl.keep === false || sl.continues === false) err(`${it.id} 小規模宅地の1人目の取得者が要件を満たさない（others に書く）`);
       if (s.division.kind === "undivided") err(`${it.id} 未分割なのに小規模宅地`);
-      else if (!(s.division.shares[it.id] ?? []).some((x) => x.who === it.smallLand!.acquirer)) err(`${it.id} 小規模宅地の取得者が取得していない`);
     }
   }
 
@@ -4357,6 +4678,8 @@ function main(): void {
     log("ランダムのケースの分布");
     for (const g of ["家族:配偶者と子", "家族:子のみ", "家族:兄弟姉妹", "家族:父母", "家族:祖父母", "家族:配偶者のみ", "家族:相続人なし"]) log(`  ${g.padEnd(14, "　")} ${pct(count((s) => s.tags.includes(g)))}`);
     log(`  代襲（孫）     ${pct(count((s) => s.tags.includes("代襲（孫）")))}`);
+    // 実際の申告200件の見直し：面積の一部だけに使う 2.5%、1つの宅地を共有して2人以上が使う 1.5%
+    log(`  小規模宅地を共有で何人も使う ${pct(count((s) => s.tags.includes("小規模宅地（共有で何人も使う）")))}・使う面積を選んだ ${pct(count((s) => s.tags.includes("小規模宅地（使う面積を選んだ）")))}`);
     log(`  自宅のあるケースで特定居住用の特例 ${((100 * withRes.length) / Math.max(1, homeCases.length)).toFixed(1)}%（${withRes.length}/${homeCases.length}）`);
     log(`  遺産総額（おおまかな評価）: 10%点 ${q(0.1)}・中央値 ${q(0.5)}・90%点 ${q(0.9)}・99%点 ${q(0.99)}・最大 ${q(1)}`);
   }

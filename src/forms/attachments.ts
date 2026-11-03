@@ -1,9 +1,10 @@
 /**
  * 第6表（未成年者控除額・障害者控除額の計算書）、第7表（相次相続控除額の計算書）、第9表（生命保険金などの明細書）、
  * 第10表（退職手当金などの明細書）、第11・11の2表の付表1（小規模宅地等についての課税価格の計算明細書）と付表1（続）。
+ * 付表1の宅地等の明細は、1つの宅地等を何人かで受け継いでそれぞれが特例を使うときは、取得者ごとに1行ずつ書く。
  * 金額は計算エンジンの結果をそのまま写す（第7表の各人の按分額だけは、様式の⑨×⑫を整数で計算して書く）。
  */
-import type { AssetLine, PersonTax, TaxResult } from "@/domain/tax/engine";
+import type { AssetLine, PersonTax, SmallResidentialDetail, TaxResult } from "@/domain/tax/engine";
 import type { Case, DeemedAsset, SmallLandKind } from "@/domain/types";
 import { wareki, yen } from "./format";
 import type { PageFill } from "./render";
@@ -210,17 +211,37 @@ export function build07(c: Case, r: TaxResult): PageFill[] {
 
 // ---------------------------------------------------------------- 付表1
 
+/** 付表1の「2 小規模宅地等の明細」の1行：特例を使う1人の、1つの宅地等の分 */
+export interface SmallLine {
+  line: AssetLine;
+  detail: SmallResidentialDetail;
+  /** ⑦ 課税価格の計算に当たって減額される金額（この人の分） */
+  reduction: number;
+}
+
+/**
+ * 1つの宅地等で特例を使う人の行（付表1の③〜⑧は取得者の持分に応ずる分なので、取得者ごとに1行）。
+ * 並びは1人目（line.small）、2人目以降（line.smallExtra。SmallLandRelief.others の順）。1人目が使わないときは2人目から。
+ * ⑦は ⑥ × 減額割合（1円未満切捨て。エンジンと同じ計算）。1人だけなら土地の減額そのもの。合計は土地の減額（line.reduction）
+ */
+export function smallLines(line: AssetLine): SmallLine[] {
+  if (!(line.reduction > 0)) return [];
+  const ds = [line.small, ...(line.smallExtra ?? [])].filter((d): d is SmallResidentialDetail => !!d);
+  return ds.map((detail) => ({ line, detail, reduction: ds.length === 1 ? line.reduction : Math.floor((detail.selectedValue * detail.rate) / 100) }));
+}
+
 /**
  * 1 特例の適用にあたっての同意：特例の対象となり得る宅地等を取得した全員の氏名（措置法施行令40条の2第5項3号）。
- * 特例を受ける人だけでなく、自宅の敷地として特例の取得者を選んだ土地・マンションを一緒に取得した人も含める。
- * 並びは申告書の人の順。
+ * 特例を受ける人（1つの宅地等を何人かで受け継いで、それぞれが使うときは全員）だけでなく、
+ * 特例を使うと選んだ土地・マンションを一緒に取得した人も含める。1人1回、並びは申告書の人の順。
  */
 export function agreeingPersonIds(r: TaxResult): string[] {
   const ids = new Set<string>();
   for (const l of r.assets) {
-    if (l.small && l.reduction > 0) ids.add(l.small.acquirerId);
+    for (const x of smallLines(l)) ids.add(x.detail.acquirerId);
     const a = l.asset;
-    if ((a.kind === "land" || a.kind === "condo") && a.smallResidential?.acquirerId) {
+    const sr = a.kind === "land" || a.kind === "condo" ? a.smallResidential : undefined;
+    if (sr && (sr.acquirerId || (Array.isArray(sr.others) && sr.others.some((o) => o?.acquirerId)))) {
       for (const b of l.byPerson) if (b.amount > 0) ids.add(b.personId);
     }
   }
@@ -233,47 +254,49 @@ export function agreeingPersonIds(r: TaxResult): string[] {
 const KIND_NO: Record<SmallLandKind, string> = { residence: "1", business: "2", rental: "4" };
 
 /** ① の「事業内容」。貸付事業用は貸しているものから書く。特定事業用は事業の内容を聞いていないため空欄（手書きで記入する） */
-function businessText(l: AssetLine): string {
-  if (l.small?.kind !== "rental") return "";
-  const a = l.asset;
+function businessText(x: SmallLine): string {
+  if (x.detail.kind !== "rental") return "";
+  const a = x.line.asset;
   return a.kind === "land" && a.use === "leasedLand" ? "貸地" : "貸家";
 }
 
-/** 付表1に書ける宅地等の数と同意の氏名の数。書ききれない分は付表1（続）に書く（付表1は3件・6人、付表1（続）は5件・6人） */
+/** 付表1に書ける宅地等の行数と同意の氏名の数。書ききれない分は付表1（続）に書く（付表1は3行・6人、付表1（続）は5行・6人） */
 const F1_LOTS = 3;
 const F1C_LOTS = 5;
 const F1_NAMES = 6;
 
 export function buildF1(c: Case, r: TaxResult): PageFill[] {
-  const lots = r.assets.filter((l) => l.small && l.reduction > 0);
-  if (lots.length === 0) return [];
+  // 1行 ＝ 1つの宅地等 × 特例を使う1人（共有で何人かが使うときは、同じ宅地等が人数分の行になる）
+  const rows = r.assets.flatMap(smallLines);
+  if (rows.length === 0) return [];
   const name = new Map(c.persons.map((p) => [p.id, p.name]));
   const agree = agreeingPersonIds(r).map((id) => name.get(id) ?? "");
-  // ⑩ 種類ごとの「⑤選択した面積」の合計
-  const areaOf = (k: SmallLandKind) => sum(lots.filter((l) => l.small!.kind === k).map((l) => l.small!.selectedArea));
-  const has = (k: SmallLandKind) => lots.some((l) => l.small!.kind === k);
-  // 付表1に書ききれない宅地等（4件目から）・同意の氏名（7人目から）は、様式の注意書きどおり付表1（続）に続けて書く（黙って省かない）
-  const restLots = chunk(lots.slice(F1_LOTS), F1C_LOTS);
+  // ⑩ 種類ごとの「⑤選択した面積」の合計（全員・全部の宅地等の分）
+  const areaOf = (k: SmallLandKind) => sum(rows.filter((x) => x.detail.kind === k).map((x) => x.detail.selectedArea));
+  const has = (k: SmallLandKind) => rows.some((x) => x.detail.kind === k);
+  // 付表1に書ききれない行（4行目から）・同意の氏名（7人目から）は、様式の注意書きどおり付表1（続）に続けて書く（黙って省かない）
+  const restRows = chunk(rows.slice(F1_LOTS), F1C_LOTS);
   const restNames = chunk(agree.slice(F1_NAMES), F1_NAMES);
-  const fill = (values: PageFill["values"], names: string[], group: AssetLine[]) => {
+  const fill = (values: PageFill["values"], names: string[], group: SmallLine[]) => {
     names.forEach((who, j) => (values[`agree${j}`] = who));
-    group.forEach((l, j) => {
-      const s = l.small!;
+    group.forEach((x, j) => {
+      const { line: l, detail: s } = x;
       // 減額割合（⑨）は種類ごとに様式に印字済み（80/100・50/100）
       values[`b${j}.kind`] = KIND_NO[s.kind];
       values[`b${j}.acquirer`] = name.get(s.acquirerId) ?? "";
-      values[`b${j}.business`] = businessText(l);
+      values[`b${j}.business`] = businessText(x);
       values[`b${j}.location`] = "location" in l.asset ? l.asset.location : l.asset.label;
       values[`b${j}.area`] = sqm(s.area);
       values[`b${j}.value`] = yen(s.value);
+      // ⑤ 特例を使う面積。受け継いだ面積（③）の一部だけに使うときは③より小さい
       values[`b${j}.selArea`] = sqm(s.selectedArea);
       values[`b${j}.selValue`] = yen(s.selectedValue);
-      values[`b${j}.reduction`] = yen(l.reduction);
-      values[`b${j}.taxable`] = yen(s.value - l.reduction);
+      values[`b${j}.reduction`] = yen(x.reduction);
+      values[`b${j}.taxable`] = yen(s.value - x.reduction);
     });
     return values;
   };
-  const first = fill({ "d.name": c.decedent.name }, agree.slice(0, F1_NAMES), lots.slice(0, F1_LOTS));
+  const first = fill({ "d.name": c.decedent.name }, agree.slice(0, F1_NAMES), rows.slice(0, F1_LOTS));
   // 「限度面積要件」の判定（付表1だけにある欄）：⑩ 種類ごとの面積の合計、⑪ 貸付事業用宅地等がなければイ、あればロ
   if (has("residence")) first.area1 = sqm(areaOf("residence"));
   if (has("business")) first.area2 = sqm(areaOf("business"));
@@ -287,8 +310,8 @@ export function buildF1(c: Case, r: TaxResult): PageFill[] {
     first.limitB4 = sqm(areaOf("rental"));
   }
   const pages: PageFill[] = [{ page: "t11_11_2_f1", values: first }];
-  for (let i = 0; i < Math.max(restLots.length, restNames.length); i++) {
-    pages.push({ page: "t11_11_2_f1c", values: fill({ "d.name": c.decedent.name }, restNames[i] ?? [], restLots[i] ?? []) });
+  for (let i = 0; i < Math.max(restRows.length, restNames.length); i++) {
+    pages.push({ page: "t11_11_2_f1c", values: fill({ "d.name": c.decedent.name }, restNames[i] ?? [], restRows[i] ?? []) });
   }
   return pages;
 }

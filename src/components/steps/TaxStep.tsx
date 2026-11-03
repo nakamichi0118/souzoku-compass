@@ -12,6 +12,13 @@ import { unallocatedAssets } from "@/lib/progress";
 import { useCase } from "@/lib/store";
 import { summarizeForAssistant } from "@/lib/summary";
 
+/**
+ * 一人ひとりの税額の端数。按分割合は合計が1になるように端数を調整してよく（相基通17-1）、納める税額は100円未満を切り捨てる（国税通則法119条）ため、
+ * 課税価格が同じ人どうしでも税額が100円ほど違うことがある
+ */
+export const ROUNDING_TIP =
+  "一人ひとりの税額は、按分割合の合計が1になるように端数を調整し（相基通17-1）、100円未満を切り捨てるため、同じ課税価格でも100円ほど違うことがあります。";
+
 /** 引ききれない未成年者控除・障害者控除を差し引ける人（扶養義務者。相続税法1条の2・民法877条） */
 export const SUPPORTER_TIP =
   "未成年者控除・障害者控除のうち、本人の相続税から引ききれない分は、本人の扶養義務者（本人の配偶者・直系血族（親・子・祖父母・孫）・兄弟姉妹）の相続税から差し引けます（相続税法19条の3・19条の4）。おじ・おばなどで本人と生計を一にしていた人の分は、税理士にご相談ください。";
@@ -66,6 +73,9 @@ export function TaxStep() {
   const maxBar = Math.max(1, ...payers.map((p) => p.computed + p.surcharge));
   const basicPart = Math.min(r.basicDeduction, r.totalTaxable);
   const deadline = data.decedent.deathDate ? nextOpenDay(monthsDeadline(data.decedent.deathDate, 10)) : null;
+  // 第1表の Tips：端数の調整（税額を分ける人が2人以上のとき）と、扶養義務者として差し引いた控除（あるとき）
+  const roundingTip = r.totalTax > 0 && payers.length > 1;
+  const supporterTip = r.persons.some((p) => transfersInTotal(p) > 0 || p.minorExcess > 0 || p.disabilityExcess > 0);
 
   // 確認待ちの財産や、取得する人が決まっていない財産があるうちは、税額は暫定
   const pendingAssets = data.assets.filter((a) => a.pending?.length || r.assets.find((l) => l.asset.id === a.id)?.valuation.needsConsultation);
@@ -322,10 +332,11 @@ export function TaxStep() {
                 </li>
               ))}
             </ul>
-            {r.persons.some((p) => transfersInTotal(p) > 0 || p.minorExcess > 0 || p.disabilityExcess > 0) && (
+            {(roundingTip || supporterTip) && (
               <details className="mt-2 text-xs text-stone-600">
-                <summary className="cursor-pointer text-teal-800">Tips：扶養義務者として差し引いた控除</summary>
-                <p className="mt-2 leading-relaxed">{SUPPORTER_TIP}</p>
+                <summary className="cursor-pointer text-teal-800">Tips：一人ひとりの税額</summary>
+                {roundingTip && <p className="mt-2 leading-relaxed">{ROUNDING_TIP}</p>}
+                {supporterTip && <p className="mt-2 leading-relaxed">{SUPPORTER_TIP}</p>}
               </details>
             )}
           </section>

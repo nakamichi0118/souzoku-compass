@@ -6,6 +6,7 @@ import { civilHeirIds } from "@/domain/heirs";
 import type { TaxResult } from "@/domain/tax/engine";
 import type { Case } from "@/domain/types";
 import { buildDivisionDoc } from "@/documents/division";
+import { smallLines } from "@/forms/attachments";
 import { formsNotGenerated } from "@/forms/filing";
 import { divisionStatus, siteRightRatio } from "@/forms/schedule11";
 import { useCase } from "@/lib/store";
@@ -28,7 +29,7 @@ export function handFilledBlanks(result: TaxResult | null): string[] {
   return [
     "マイナンバー（個人番号）欄",
     ...(result?.persons.some((p) => p.successiveCredit > 0) ? ["第7表の前の相続で亡くなった方の氏名・続柄・申告書を出した税務署"] : []),
-    ...(result?.assets.some((l) => l.small?.kind === "business" && l.reduction > 0) ? ["第11・11の2表の付表1の事業内容（お店や工場などの事業の種類）"] : []),
+    ...(result?.assets.some((l) => smallLines(l).some((x) => x.detail.kind === "business")) ? ["第11・11の2表の付表1の事業内容（お店や工場などの事業の種類）"] : []),
     // 全部または一部の分け方が決まっているときは、第11表に分割の日を書く
     ...(result && divisionStatus(result) !== "3" ? ["第11表の分割の日（遺産分割協議がまとまった日）"] : []),
     // マンションの敷地利用権の備考には敷地権の割合を書く。登記申請の画面で割合を入れていなければ空欄になる

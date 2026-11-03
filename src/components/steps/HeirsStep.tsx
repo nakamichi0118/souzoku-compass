@@ -3,7 +3,7 @@
 import { Button, Card, Check, Field, Note, Select, TextInput, YenInput, fmt } from "@/components/ui";
 import { type HeirResult, determineHeirs, isSurchargeTarget } from "@/domain/heirs";
 import { toString as fracText } from "@/domain/fraction";
-import type { Person, PriorCredit, Relation } from "@/domain/types";
+import type { Case, Person, PriorCredit, Relation, SmallLandAcquirer } from "@/domain/types";
 import { ageAt, wareki } from "@/forms/format";
 import { newId, useCase } from "@/lib/store";
 import { Choice } from "@/components/plan/inputs";
@@ -23,6 +23,49 @@ const RELATIONS: { value: Relation; label: string; hint: string }[] = [
 ];
 const relLabel = (r: Relation) => RELATIONS.find((x) => x.value === r)?.label ?? r;
 
+/** 特例を使う2人目以降の取得者から、その人の行を外す（だれもいなくなれば undefined） */
+const withoutPerson = (others: SmallLandAcquirer[] | undefined, id: string) => {
+  const rest = (others ?? []).filter((o) => o.acquirerId !== id);
+  return rest.length ? rest : undefined;
+};
+
+/** 家族を削除したとき：その人を指している入力を外す（指したままにしない） */
+export function removePerson(c: Case, id: string): Case {
+  return {
+    ...c,
+    persons: c.persons.filter((x) => x.id !== id).map((x) => (x.substituteOf === id ? { ...x, substituteOf: undefined } : x)),
+    allocations: c.allocations.map((a) => ({ ...a, shares: a.shares.filter((s) => s.personId !== id) })),
+    // 削除した人を指したままにしない（贈与・債務の負担者・保険金の受取人・特例の取得者は「未選択」に戻し、選び直してもらう）
+    priorGifts: c.priorGifts.map((g) => (g.personId === id ? { ...g, personId: "" } : g)),
+    debts: c.debts.map((d) => (d.bearers.some((b) => b.personId === id) ? { ...d, bearers: d.bearers.map((b) => (b.personId === id ? { ...b, personId: "" } : b)) } : d)),
+    assets: c.assets.map((a) => {
+      if ((a.kind === "insurance" || a.kind === "retirement") && a.recipientId === id) return { ...a, recipientId: "" };
+      if (a.kind === "land" || a.kind === "condo") {
+        const sr = a.smallResidential;
+        if (!sr) return a;
+        // 一緒に受け継いだ人（特例を使う2人目以降）からは、その人の行ごと外す
+        const othersPatch = sr.others?.some((o) => o.acquirerId === id) ? { others: withoutPerson(sr.others, id) } : {};
+        if (sr.acquirerId === id) {
+          const check = sr.check;
+          return {
+            ...a,
+            smallResidential: {
+              ...sr,
+              ...othersPatch,
+              acquirerId: undefined,
+              // 特例を使う面積はその人のための入力なので残さない
+              selectedSqm: undefined,
+              check: check ? { ownHome: check.ownHome, special: check.special, business: check.business, recent: check.recent } : undefined,
+            },
+          };
+        }
+        if ("others" in othersPatch) return { ...a, smallResidential: { ...sr, ...othersPatch } };
+      }
+      return a;
+    }),
+  };
+}
+
 export function HeirsStep() {
   const { data, update, result } = useCase();
   const persons = data.persons;
@@ -39,23 +82,7 @@ export function HeirsStep() {
       persons: [...c.persons.map((x) => (x.id === parent.id ? { ...x, hasChildren: true } : x)), { id: newId(), name: "", relation, relationLabel: relLabel(relation), substituteOf: parent.id }],
     }));
   };
-  const remove = (id: string) =>
-    update((c) => ({
-      ...c,
-      persons: c.persons.filter((x) => x.id !== id).map((x) => (x.substituteOf === id ? { ...x, substituteOf: undefined } : x)),
-      allocations: c.allocations.map((a) => ({ ...a, shares: a.shares.filter((s) => s.personId !== id) })),
-      // 削除した人を指したままにしない（贈与・債務の負担者・保険金の受取人・特例の取得者は「未選択」に戻し、選び直してもらう）
-      priorGifts: c.priorGifts.map((g) => (g.personId === id ? { ...g, personId: "" } : g)),
-      debts: c.debts.map((d) => (d.bearers.some((b) => b.personId === id) ? { ...d, bearers: d.bearers.map((b) => (b.personId === id ? { ...b, personId: "" } : b)) } : d)),
-      assets: c.assets.map((a) => {
-        if ((a.kind === "insurance" || a.kind === "retirement") && a.recipientId === id) return { ...a, recipientId: "" };
-        if ((a.kind === "land" || a.kind === "condo") && a.smallResidential?.acquirerId === id) {
-          const check = a.smallResidential.check;
-          return { ...a, smallResidential: { ...a.smallResidential, acquirerId: undefined, check: check ? { ownHome: check.ownHome, special: check.special, business: check.business, recent: check.recent } : undefined } };
-        }
-        return a;
-      }),
-    }));
+  const remove = (id: string) => update((c) => removePerson(c, id));
 
   let civil: HeirResult | undefined, tax: HeirResult | undefined;
   try {

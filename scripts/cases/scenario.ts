@@ -102,6 +102,34 @@ export type SmallLandKind =
   | "business" // 特定事業用（400㎡・80%）
   | "rental"; // 貸付事業用（200㎡・50%）
 
+/**
+ * 小規模宅地等の特例を使う人1人（申告書第11・11の2表の付表1の1行）。人ごとの要件の答えは、書かなければ満たしている。
+ * 1つの宅地を何人かで取得したときは、取得した人ごとに要件を見て、その人の持分に応ずる部分だけに使う（措法69条の4第3項、タックスアンサー No.4124）
+ */
+export interface SmallLandUser {
+  acquirer: string;
+  /**
+   * この人が特例を使う面積の上限（㎡、0.01㎡単位。付表1の⑤「選択特例対象宅地等の面積」）。
+   * 持分に応ずる面積（③）より大きければ③まで。書かなければ限度面積の範囲でできるだけ使う
+   */
+  selectedSqm?: number;
+  /**
+   * 特定居住用：亡くなる直前まで一緒に住んでいた（配偶者は見ない）。
+   * false は同居していない親族。持ち家がない親族（いわゆる家なき子）の要件はシナリオで扱わず、持ち家があるなどで使えないものとする
+   */
+  livedTogether?: boolean;
+  /** 申告期限まで持ち続ける（特定居住用は住み続けることも含む）。false なら申告期限までに売る・引っ越す */
+  keep?: boolean;
+  /** 特定事業用・貸付事業用：申告期限までに事業（貸付）を引き継ぎ、申告期限まで続ける。false ならやめる */
+  continues?: boolean;
+}
+
+/**
+ * 小規模宅地等の特例を使う土地（マンションの敷地権を含む）。種類は土地ごと、使う人は1人目（acquirer など）と、
+ * 同じ土地を一緒に取得して自分の持分にも特例を使う2人目以降（others）
+ */
+export type SmallLandUse = SmallLandUser & { kind: SmallLandKind; others?: SmallLandUser[] };
+
 export type EstateItem =
   | { id: string; type: "deposit" | "cash" | "household" | "other"; label: string; amount: number; foreign?: boolean }
   | { id: string; type: "listedStock"; label: string; shares: number; prices: { close: number; monthAvg: number; prevMonthAvg: number; prev2MonthAvg: number } }
@@ -118,7 +146,7 @@ export type EstateItem =
       /** 貸家建付地・貸家建付借地権の賃貸割合（0〜1、既定1） */
       rentRatio?: number;
       /** 小規模宅地等の特例を使う */
-      smallLand?: { kind: SmallLandKind; acquirer: string };
+      smallLand?: SmallLandUse;
       /** 配偶者居住権が設定されている */
       spouseResidenceRight?: boolean;
       /**
@@ -151,7 +179,7 @@ export type EstateItem =
       landShareSqm: number;
       exclusiveAreaSqm: number;
       rented?: boolean;
-      smallLand?: { kind: SmallLandKind; acquirer: string };
+      smallLand?: SmallLandUse;
     };
 
 export interface ScenarioDebt {
