@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
+import { MilestoneView } from "@/components/my/MilestoneView";
 import { MonthCalendar } from "@/components/plan/MonthCalendar";
 import { AppShell, PageHead } from "@/components/shell/AppShell";
 import { Panel } from "@/components/ui/Panel";
@@ -12,8 +14,60 @@ import { naId } from "@/lib/planStore";
 import { useOverall } from "@/lib/overall";
 import { daysLeftLabel } from "@/lib/taskStatus";
 
+type View = "steps" | "month";
+/** このブラウザだけで覚える（アカウントには保存しない） */
+const VIEW_KEY = "souzoku-compass-calendar-view";
+
+/**
+ * 「手続きごと」「月ごと」のどちらで見るか。覚えられないブラウザでも「手続きごと」で表示する。
+ * 覚えた表示は最初の描画から使う（画面を移ってきたときに、一瞬「手続きごと」が見えないように）。
+ * サーバーと最初の描画は記録を読み込むまで中身を出さないので、サーバーとの食い違いは起きない
+ */
+function useCalendarView(): [View, (v: View) => void] {
+  const [view, setView] = useState<View>(() => {
+    try {
+      return typeof window !== "undefined" && localStorage.getItem(VIEW_KEY) === "month" ? "month" : "steps";
+    } catch {
+      // 保存領域が使えないときは「手続きごと」
+      return "steps";
+    }
+  });
+  const choose = (v: View) => {
+    setView(v);
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      // 覚えられなくても、表示は切り替える
+    }
+  };
+  return [view, choose];
+}
+
+export function ViewSwitch({ view, onChange }: { view: View; onChange: (v: View) => void }) {
+  const opts: [View, string][] = [
+    ["steps", "手続きごと"],
+    ["month", "月ごと"],
+  ];
+  return (
+    <div className="mb-4 inline-flex rounded-full bg-stone-100 p-1" role="group" aria-label="カレンダーの表示">
+      {opts.map(([v, label]) => (
+        <button
+          key={v}
+          type="button"
+          aria-pressed={view === v}
+          onClick={() => onChange(v)}
+          className={`min-h-10 touch-manipulation rounded-full px-4 text-sm font-semibold transition ${view === v ? "bg-white text-sky-900 shadow-sm" : "text-stone-600 hover:text-stone-900"}`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function CalendarPage() {
   const o = useOverall();
+  const [view, setView] = useCalendarView();
   if (!o.loaded) return <AppShell>{null}</AppShell>;
   if (!o.heard || !o.valid)
     return (
@@ -40,10 +94,11 @@ export function CalendarPage() {
 
   return (
     <AppShell wide>
-      <PageHead title="カレンダー" say="手続きの期限と目安の日を、月ごとに並べました。オレンジは法律上の期限がある日です。" />
+      <PageHead title="カレンダー" say="手続きの期限と目安の日を、手続きごと・月ごとに並べました。オレンジは法律上の期限がある日です。" />
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <section className="rounded-2xl border border-sky-100 bg-white p-4 shadow-sm sm:p-5">
-          <MonthCalendar tasks={o.live} done={o.done} today={o.now} />
+          <ViewSwitch view={view} onChange={setView} />
+          {view === "month" ? <MonthCalendar tasks={o.live} done={o.done} today={o.now} /> : <MilestoneView tasks={o.live} done={o.done} today={o.now} death={o.iv.deathDate} />}
           <p className="mt-3 flex flex-wrap gap-4 text-xs text-stone-500">
             <span>
               <span className="mr-1 inline-block h-2 w-2 rounded-full bg-orange-500" />

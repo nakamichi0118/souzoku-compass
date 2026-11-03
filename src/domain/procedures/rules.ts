@@ -105,6 +105,17 @@ export const VACANT_HOME_LAST_SALE = "2027-12-31";
  */
 export const saleCostDue = (death: ISODate) => yearsDeadline(nextOpenDay(monthsDeadline(death, 10)), 3);
 
+/** 相続登記の義務が始まった日（不動産登記法の改正。令和3年法律第24号） */
+export const REGISTRATION_START = "2024-04-01";
+/**
+ * 相続登記の期限。取得を知った日（ここでは亡くなった日）から3年。2024年4月1日より前の相続は、
+ * 施行日（2024年4月1日）から3年の 2027年3月31日 と、知った日から3年 の遅い方（改正法附則5条6項）
+ */
+export const registrationDue = (death: ISODate): ISODate => {
+  const d = yearsDeadline(death, 3);
+  return d < "2027-03-31" ? "2027-03-31" : d;
+};
+
 export const RULES: Rule[] = [
   // ---------------------------------------------------------------- 亡くなってすぐ
   {
@@ -615,11 +626,14 @@ export const RULES: Rule[] = [
     docs: ["kosekiDecedent", "kosekiHeirs", "juminhyoJokyo", "juminhyoHeir", "hyokaCert", "inkan"],
     title: "不動産の相続登記",
     category: "不動産",
-    due: y(3),
+    due: registrationDue,
     hard: true,
     applies: hasRealEstate,
     important: always,
-    what: "2024年4月から相続登記が義務になりました。相続で不動産を取得したことを知った日から3年以内に登記しないと、10万円以下の過料の対象になります。遺産分割が決まったら早めに申請しましょう。",
+    what: ({ iv }) =>
+      `2024年4月から相続登記が義務になりました。相続で不動産を取得したことを知った日から3年以内に登記しないと、10万円以下の過料の対象になります。${
+        iv.deathDate < REGISTRATION_START ? "2024年3月以前に亡くなった方の不動産は、2027年3月31日までに登記します。" : ""
+      }遺産分割が決まったら早めに申請しましょう。`,
     where: "不動産の所在地を管轄する法務局",
     bring: ["登記申請書", "戸籍謄本または法定相続情報一覧図の写し", "遺産分割協議書", "固定資産評価証明書", "取得する人の住民票"],
     law: "不動産登記法76条の2",

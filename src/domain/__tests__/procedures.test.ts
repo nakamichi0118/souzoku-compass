@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { addDays, addMonths, isClosedDay, monthsDeadline, skipWeekend, withinDays, isValidDate, jpDate } from "../procedures/dates";
 import { blankInterview, demoInterview, estimate, needsFinalReturn, type Interview } from "../procedures/interview";
-import { VACANT_HOME_LAST_SALE, blueFilerDue, blueReturnDue, buildTasks, newBusinessBlueDue, saleCostDue, vacantHomeDue, type Task } from "../procedures/rules";
+import { VACANT_HOME_LAST_SALE, blueFilerDue, blueReturnDue, buildTasks, newBusinessBlueDue, saleCostDue, vacantHomeDue, type Task, registrationDue } from "../procedures/rules";
 import { googleEventUrl, icsStamp, toICS } from "../procedures/calendar";
 import { decodeFeed, decodeInterview, encodeInterview } from "../procedures/share";
 import { DOCS } from "../procedures/documents";
@@ -289,5 +289,17 @@ describe("休日と月末の期限（レビュー指摘）", () => {
     expect(nextOpenDay("2026-11-03")).toBe("2026-11-04"); // 文化の日
     expect(nextOpenDay("2026-12-29")).toBe("2027-01-04"); // 年末年始
     expect(nextOpenDay("2026-11-06")).toBe("2026-11-06");
+  });
+});
+
+describe("相続登記の期限（不動産登記法76条の2、改正法附則5条6項）", () => {
+  it("亡くなった日（取得を知った日）から3年", () => {
+    expect(registrationDue("2026-03-15")).toBe("2029-03-15");
+    expect(registrationDue("2024-04-01")).toBe("2027-04-01");
+  });
+  it("2024年4月1日より前の相続は、2027年3月31日まで", () => {
+    expect(registrationDue("2023-06-10")).toBe("2027-03-31");
+    expect(registrationDue("2024-03-31")).toBe("2027-03-31");
+    expect(registrationDue("2010-01-05")).toBe("2027-03-31");
   });
 });
