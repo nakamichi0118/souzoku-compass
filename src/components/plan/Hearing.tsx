@@ -87,7 +87,7 @@ export function Hearing() {
       <PageHead title="最初に、状況を教えてください" say="いくつかの質問に答えるだけで、あなたの手続きの道筋が見えてきます！金額はだいたいで大丈夫です。" />
 
       <div className="mt-6 space-y-5">
-        <Card title="1. 亡くなった方">
+        <Card title="1. 亡くなった方の情報">
           <Q label="いまの状況にいちばん近いものは？" hint="すでに済んだ時期の手続きは、最初から「完了」にしておきます（あとで戻せます）。">
             <Choice
               value={a("stage")}
@@ -105,7 +105,7 @@ export function Hearing() {
           <Q label="亡くなった方は、あなたから見て？" hint="窓口に電話するときの伝え方の文例に使います。">
             <Choice value={a("myRelation")} onChange={(v) => pick("myRelation", v)} options={["父", "母", "夫", "妻", "祖父", "祖母", "その他"].map((x) => ({ value: x, label: x }))} />
           </Q>
-          <Q label="亡くなった方の最後の住所" hint="死亡届や相続税申告の提出先（市区町村役場・税務署など）を調べるのに使います。この端末にだけ保存されます。">
+          <Q label="亡くなった方の最後の住所" hint="死亡届や相続税申告の提出先（市区町村役場・税務署など）を調べるのに使います。">
             <TextInput value={iv.address} onChange={(e) => set("address", e.target.value)} placeholder="例：東京都千代田区架空町一丁目2番3号" />
           </Q>
           <Q label="亡くなった日" hint="期限はこの日から数えます。">
@@ -180,35 +180,43 @@ export function Hearing() {
           <p className="mb-3 text-sm text-stone-600">
             相続税がかかりそうかを判定するための目安です。分からないものは0のままで構いません。あとから見つかった財産も、「財産と相続税」で登録すると、必要な手続きと集める書類が自動で追加されます。
           </p>
-          <div className="grid gap-x-6 sm:grid-cols-2">
-            <Q label="自宅（土地・建物）" hint="固定資産税の通知書の評価額や、近所の相場から。">
+          <div className="grid gap-x-6 sm:grid-cols-2 sm:[&>*:nth-child(2)]:border-t-0 sm:[&>*:nth-child(2)]:pt-0">
+            <Q align label="自宅（土地・建物）" hint="固定資産税の通知書の評価額や、近所の相場から。">
               <ManYen value={iv.homeValue} onChange={(v) => set("homeValue", v)} />
             </Q>
-            <Q label="自宅以外の土地・建物">
+            <Q align label="自宅以外の土地・建物">
               <ManYen value={iv.otherRealEstate} onChange={(v) => set("otherRealEstate", v)} />
             </Q>
-            <Q label="預貯金・現金">
+            <Q align label="預貯金・現金">
               <ManYen value={iv.deposits} onChange={(v) => set("deposits", v)} />
             </Q>
-            <Q label="株式・投資信託">
+            <Q align label="株式・投資信託">
               <ManYen value={iv.securities} onChange={(v) => set("securities", v)} />
             </Q>
-            <Q label="生命保険金（亡くなった方が保険料を払っていたもの）">
+            <Q align label="生命保険金（亡くなった方が保険料を払っていたもの）">
               <ManYen value={iv.insurance} onChange={(v) => set("insurance", v)} />
             </Q>
-            <Q label="その他（車・貴金属・貸したお金など）">
+            <Q align label="その他（車・貴金属・貸したお金など）">
               <ManYen value={iv.otherAssets} onChange={(v) => set("otherAssets", v)} />
             </Q>
-            <Q label="借金・未払いの税金や医療費">
+            <Q align label="借金・未払いの税金や医療費">
               <ManYen value={iv.debtAmount} onChange={(v) => set("debtAmount", v)} />
             </Q>
-            <Q label="葬儀費用">
+            <Q align label="葬儀費用">
               <ManYen value={iv.funeralCost} onChange={(v) => set("funeralCost", v)} />
             </Q>
           </div>
           {iv.homeValue > 0 && (
             <Q label="自宅は、配偶者か同居している家族が受け継ぎますか？" hint="受け継ぐ場合は、小規模宅地等の特例で自宅の土地の評価が最大80%下がる可能性があります。">
-              <YesNo value={a("homeToFamily")} onChange={(v) => pick("homeToFamily", v)} />
+              <Choice
+                value={a("homeToFamily")}
+                onChange={(v) => pick("homeToFamily", v)}
+                options={[
+                  { value: true, label: "はい" },
+                  { value: false, label: "いいえ" },
+                  { value: "unknown", label: "まだわからない" },
+                ]}
+              />
             </Q>
           )}
         </Card>
@@ -255,7 +263,7 @@ export function Hearing() {
           <Q label="亡くなる前に入院するなど、医療費が多くかかりましたか？">
             <YesNo value={a("highMedical")} onChange={(v) => pick("highMedical", v)} />
           </Q>
-          <Q label="亡くなった方は世帯主で、同じ世帯に2人以上が残りますか？">
+          <Q label="亡くなった方は世帯主で、同じ世帯に2人以上が残りますか？" hint="2人以上残るときは、14日以内に役所へ「世帯主の変更届」を出します。残るのが1人なら届出は要りません。">
             <YesNo value={a("householdHead")} onChange={(v) => pick("householdHead", v)} />
           </Q>
           <Q label="賃貸住宅に住んでいましたか？">
@@ -274,7 +282,7 @@ export function Hearing() {
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-stone-200 bg-white/95 px-4 py-3 backdrop-blur">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
           <p className="text-sm text-stone-600">
-            {!dateOk ? "亡くなった日を入力してください。" : unanswered > 0 ? `まだ選んでいない質問が${unanswered}つあります（選ばなければ「いいえ・ない」として扱います）。` : "答えはこの端末にだけ保存されます。"}
+            {!dateOk ? "亡くなった日を入力してください。" : unanswered > 0 ? `まだ選んでいない質問が${unanswered}つあります（選ばなければ「いいえ・ない」として扱います）。` : "答えはあとから変えられます。"}
           </p>
           <button
             id="hearing-finish"

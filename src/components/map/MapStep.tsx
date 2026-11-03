@@ -10,13 +10,17 @@
  */
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { StepBar } from "@/components/StepBar";
 import { AppHeader } from "@/components/shell/AppShell";
-import { Button, Check, Field, Note, Select, TextInput, YenInput, fmt } from "@/components/ui";
+import { Button, Check, Field, Note, NumInput, Select, TextInput, fmt } from "@/components/ui";
 import type { LandAsset } from "@/domain/types";
 import { parseRouteNotation } from "@/domain/valuation/rosenka";
+import { DISTRICTS, type District } from "@/domain/valuation/depth";
+import { type Edge, type RoadInput, evaluateRoads } from "@/domain/valuation/roads";
+import { type Lot, type Road, edgeDepth, edgeDirection, edgeOutside, fitLot, lotCorners, roadEdges } from "@/domain/geo/lot";
+import { ConsultLink } from "@/components/compass/ConsultLink";
 import { DEFAULT_PAPER, type Frame, frameCorners, framePairs } from "@/domain/geo/frame";
 import { useCase } from "@/lib/store";
 import type { GeoPair, MapApi, Sheet } from "./MapView";
@@ -46,7 +50,7 @@ export function MapStep() {
       <AppHeader />
       <StepBar current="assets" />
       <main className="mx-auto max-w-[1600px] space-y-3 px-4 pb-8 pt-4">
-        <h1 className="text-xl font-bold text-stone-900">地図で土地を選び、路線価を確認する</h1>
+        <h1 className="text-xl font-bold text-stone-900">地図で土地の形と路線価を確認する</h1>
         <Suspense fallback={<p className="text-stone-500">読み込み中…</p>}>
           <MapWorkspace />
         </Suspense>
@@ -86,22 +90,34 @@ function MapWorkspace() {
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<{ title: string; lat: number; lng: number }[]>([]);
   const [town, setTown] = useState<string | null>(null);
-  const [reading, setReading] = useState<ReadResult | null>(null);
   const [found, setFound] = useState<FindResult | null>(null);
   const [finding, setFinding] = useState(false);
-  const [notation, setNotation] = useState(land?.rosenkaSheet?.notation ?? "");
   const [menu, setMenu] = useState(false);
   const [panel, setPanel] = useState(true);
+  const router = useRouter();
+  const saved = land?.method.type === "rosenka" ? land.method : undefined;
+  const [roads, setRoads] = useState<Road[] | null>(null);
+  const [showRoads, setShowRoads] = useState(true);
+  const [lot, setLot] = useState<Lot | null>(saved?.lot ?? null);
+  const [edgeOn, setEdgeOn] = useState<boolean[]>(edgesOf(saved?.roads));
+  const [notes, setNotes] = useState<Record<number, string>>(notationsOf(saved?.roads));
+  const [cands, setCands] = useState<Record<number, ReadResult["candidates"]>>({});
+  const [district, setDistrict] = useState<District>(saved?.district ?? "普通住宅地区");
 
   // 土地を切り替えたら保存済みの位置合わせを読み直す
   useEffect(() => {
     setPairs(land?.rosenkaSheet?.points ?? []);
     setFrame(land?.rosenkaSheet?.frame ?? (land?.geo ? { center: [land.geo.lat, land.geo.lng], scale: DEFAULT_SCALE, rotation: 0 } : null));
     setSheetUrl(land?.rosenkaSheet?.url ?? "");
-    setNotation(land?.rosenkaSheet?.notation ?? "");
     setSheet(null);
-    setReading(null);
     setSheetProperty(null);
+    const m = land?.method.type === "rosenka" ? land.method : undefined;
+    setLot(m?.lot ?? null);
+    setEdgeOn(edgesOf(m?.roads));
+    setNotes(notationsOf(m?.roads));
+    setCands({});
+    setDistrict(m?.district ?? "普通住宅地区");
+    if (land?.geo) void loadRoads([land.geo.lat, land.geo.lng]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assetId]);
 
@@ -154,7 +170,39 @@ function MapWorkspace() {
     }
   }
 
+  /** 地点の周りの道路の中心線（国土地理院）を読み込む */
+  async function loadRoads(ll: [number, number]): Promise<Road[]> {
+    try {
+      const res = await fetch(`/api/geo/roads?lat=${ll[0]}&lng=${ll[1]}`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+      setRoads(json.roads);
+      return json.roads as Road[];
+    } catch {
+      setRoads([]);
+      return [];
+    }
+  }
+
+  /** 枠を動かした・大きさを変えたときに、道路に面している辺を判定し直す */
+  function changeLot(next: Lot, rs = roads ?? []) {
+    setLot(next);
+    if (rs.length > 0) {
+      const on = roadEdges(next, rs).map((e) => e.touches);
+      setEdgeOn(on.some(Boolean) ? on : [true, false, false, false]);
+    } else setEdgeOn((o) => (o.some(Boolean) ? o : [true, false, false, false]));
+  }
+
+  async function placeLot(ll: [number, number]) {
+    const rs = await loadRoads(ll);
+    const l = fitLot(ll, rs, land?.areaSqm);
+    changeLot(l, rs);
+    setCands({});
+    api.current?.flyTo(l.center, 19);
+  }
+
   async function setPropertyAt(ll: [number, number]) {
+    void placeLot(ll);
     patchLand({ geo: { lat: ll[0], lng: ll[1] } });
     if (!frame) setFrame({ center: ll, scale: DEFAULT_SCALE, rotation: 0 });
     setMode("idle");
@@ -226,10 +274,7 @@ function MapWorkspace() {
 
   function onMapClick(ll: [number, number]) {
     if (mode === "property" || (mode === "idle" && !property)) void setPropertyAt(ll);
-    else if (mode === "idle") {
-      setFrame((f) => ({ scale: DEFAULT_SCALE, rotation: 0, ...f, center: ll }));
-      void findAt(ll);
-    }
+    else if (mode === "idle") void setPropertyAt(ll);
     else if (mode === "mapPoint" && pendingImg) {
       setPairs((p) => [...p, { img: pendingImg, latlng: ll }]);
       setPendingImg(null);
@@ -237,38 +282,61 @@ function MapWorkspace() {
     }
   }
 
-  /** 路線価図上の土地の位置：位置合わせ済みなら地図の位置から計算、未済なら路線価図上でクリックした点 */
-  const sheetPointOfProperty = (): [number, number] | null => {
-    if (property && effectivePairs.length >= 2) return api.current?.toSheet(property) ?? null;
-    return sheetProperty;
-  };
+  const roadList: Edge[] = ([0, 1, 2, 3] as Edge[]).filter((e) => edgeOn[e]);
+  const roadInputs: RoadInput[] = lot
+    ? roadList.map((e) => ({ edge: e, price: parseRouteNotation(notes[e] ?? "")?.routePrice ?? 0, depth: edgeDepth(lot, e), notation: notes[e] || undefined }))
+    : [];
+  const evaluation = evaluateRoads(district, roadInputs);
+  const canRead = !!sheet && !!lot && effectivePairs.length >= 2;
 
-  async function readWithClaude() {
-    const at = sheetPointOfProperty();
-    if (!sheet || !at) {
-      setError("路線価図上の土地の位置が分かりません。位置合わせをするか、路線価図で土地の位置をクリックしてください。");
-      return;
-    }
-    setSheetProperty(at);
+  /** 枠の各辺の外側（道路の上）の点を路線価図の上の点に直し、そこに付いた路線価をコンパスくんが読む */
+  async function readRoads() {
+    if (!sheet || !lot) return;
     await run("コンパスくんが路線価図を読んでいます", async () => {
-      const fd = new FormData();
-      fd.append("image", await cropAround(sheet, at), "crop.png");
-      const res = await fetch("/api/rosenka/read", { method: "POST", body: fd });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "読み取れませんでした。");
-      setReading(json);
+      const results = await Promise.all(
+        roadList.map(async (e) => {
+          const at = api.current?.toSheet(edgeOutside(lot, e, 4));
+          if (!at || at[0] < 0 || at[0] > 1 || at[1] < 0 || at[1] > 1) return [e, null] as const;
+          const fd = new FormData();
+          fd.append("image", await cropAround(sheet, at, 640, 480), "crop.png");
+          fd.append("target", "road");
+          const res = await fetch("/api/rosenka/read", { method: "POST", body: fd });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error ?? "読み取れませんでした。");
+          return [e, json as ReadResult] as const;
+        }),
+      );
+      const nextC: Record<number, ReadResult["candidates"]> = {};
+      const nextN = { ...notes };
+      for (const [e, r] of results) {
+        if (!r) continue;
+        nextC[e] = r.candidates;
+        const first = r.candidates.find((c) => parseRouteNotation(c.notation));
+        if (first && !nextN[e]) nextN[e] = first.notation;
+      }
+      setCands(nextC);
+      setNotes(nextN);
+      if (results.every(([, r]) => !r)) throw new Error("土地の位置が路線価図の外にあります。位置合わせで路線価図を土地に重ねてください。");
     });
   }
 
-  const parsed = parseRouteNotation(notation);
-
   function applyToLand() {
-    if (!land || !parsed) return;
-    const m = land.method.type === "rosenka" ? land.method : { type: "rosenka" as const, depthCorrection: 1 };
+    if (!land || !lot || !evaluation) return;
+    const prev = land.method.type === "rosenka" ? land.method : undefined;
     patchLand({
-      method: { ...m, type: "rosenka", routePrice: parsed.routePrice },
-      rosenkaSheet: { url: sheetUrl || undefined, page: pdfData ? pageNo : undefined, points: pairs, frame: frame ?? undefined, notation },
+      areaSqm: land.areaSqm > 0 ? land.areaSqm : Math.round(lot.width * lot.depth * 100) / 100,
+      method: {
+        type: "rosenka",
+        routePrice: evaluation.front.price,
+        depthCorrection: evaluation.front.depthRate,
+        otherCorrection: prev?.otherCorrection,
+        district,
+        roads: roadInputs.filter((r) => r.price > 0),
+        lot,
+      },
+      rosenkaSheet: { url: sheetUrl || undefined, page: pdfData ? pageNo : undefined, points: pairs, frame: frame ?? undefined, notation: evaluation.front.notation },
     });
+    router.push(`/case/assets?asset=${land.id}&applied=1`);
   }
 
   if (!loaded) return <p className="text-stone-500">読み込み中…</p>;
@@ -428,6 +496,10 @@ function MapWorkspace() {
           showOverlay={showOverlay}
           onMapClick={onMapClick}
           onReady={(a) => (api.current = a)}
+          lot={lot ? { corners: lotCorners(lot), roadEdges: edgeOn, labels: ([0, 1, 2, 3] as Edge[]).map((e) => `${edgeDirection(lot, e)}の辺：${edgeOn[e] ? "道路に面している" : "道路に面していない"}（クリックで切り替え）`) } : null}
+          onLotMove={(c) => lot && changeLot({ ...lot, center: c })}
+          onEdgeToggle={(e) => setEdgeOn((o) => o.map((x, i) => (i === e ? !x : x)))}
+          roads={showRoads ? (roads ?? []).map((r) => r.line) : null}
         />
 
         {/* 地図の上：案内・状態 */}
@@ -450,7 +522,10 @@ function MapWorkspace() {
             </div>
             <section>
               <h3 className="mb-1 text-sm font-bold text-stone-700">路線価図1枚分の枠</h3>
-              <p className="mb-2 text-xs text-stone-600">道路が重なるように枠を動かし（✥をドラッグ）、縮尺と向きを合わせます。</p>
+              <p className="mb-2 text-xs text-stone-600">路線価図の道路が、地図の青い点線（国土地理院の道路の中心線）の上にくるように枠を動かし（緑の✥をドラッグ）、縮尺と向きを合わせます。</p>
+              <div className="mb-2">
+                <Check checked={showRoads} onChange={setShowRoads} label="道路の中心線（青い点線）を表示" />
+              </div>
               <div className="space-y-2">
                 <label className="flex items-center gap-2 text-sm text-stone-700">
                   縮尺
@@ -522,16 +597,16 @@ function MapWorkspace() {
           </aside>
         )}
 
-        {/* 右：路線価の確認と入力 */}
-        <aside className={`absolute right-3 top-3 z-[1000] w-[min(22rem,calc(100%-1.5rem))] rounded-xl bg-white/97 shadow-xl ring-1 ring-stone-200 ${panel ? "bottom-3 overflow-y-auto" : ""}`}>
+        {/* 右：土地の形・路線価・評価 */}
+        <aside className={`absolute right-3 top-3 z-[1000] w-[min(24rem,calc(100%-1.5rem))] rounded-xl bg-white/97 shadow-xl ring-1 ring-stone-200 ${panel ? "bottom-3 overflow-y-auto" : ""}`}>
           <button type="button" onClick={() => setPanel((v) => !v)} className="flex w-full items-center justify-between px-4 py-3 text-left font-bold text-stone-800">
-            路線価を入力する
+            土地の形と路線価
             <span className="text-sm font-normal text-stone-500">{panel ? "たたむ ▲" : "ひらく ▼"}</span>
           </button>
           {panel && (
-            <div className="space-y-4 px-4 pb-4">
-              {land && <p className="-mt-2 text-xs text-stone-500">{land.label || "（名称未入力）"}　{land.location}</p>}
-              {sheet ? (
+            <div className="space-y-5 px-4 pb-4">
+              {land && <p className="-mt-2 text-xs text-stone-500">{land.label || "（名称未入力）"}　{land.location}{land.areaSqm > 0 ? `　地積 ${land.areaSqm}㎡` : ""}</p>}
+              {sheet && (
                 <div className="flex flex-wrap items-center gap-3 rounded-lg bg-stone-50 p-2">
                   <Check checked={showOverlay} onChange={setShowOverlay} label="路線価図を重ねる" />
                   <label className="flex flex-1 items-center gap-2 text-sm text-stone-700">
@@ -539,73 +614,123 @@ function MapWorkspace() {
                     <input type="range" min={0.1} max={1} step={0.05} value={opacity} onChange={(e) => setOpacity(Number(e.target.value))} className="flex-1 accent-teal-700" />
                   </label>
                 </div>
-              ) : (
-                <p className="rounded-lg bg-stone-50 p-2 text-sm text-stone-600">
-                  {property ? "路線価図がまだ重なっていません。上のメニューの「位置合わせ」から路線価図を選べます。" : "地図で土地をクリックすると、その場所の路線価図を探して重ねます。"}
-                </p>
               )}
-              <div className="space-y-2">
-                <Button onClick={readWithClaude} disabled={!sheet || !!busy}>
-                  土地の周りの路線価を読み取る
-                </Button>
-                {sheet && (!property || effectivePairs.length < 2) && (
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      setMenu(true);
-                      setMode("sheetProperty");
-                    }}
-                  >
-                    路線価図で土地の位置を指定
-                  </Button>
-                )}
-              </div>
-              {reading && (
-                <div className="space-y-2">
-                  <p className="text-sm font-semibold text-stone-700">読み取り候補（地図の上の路線価図と見比べてください）</p>
-                  <ul className="space-y-1">
-                    {reading.candidates.map((c) => (
-                      <li key={c.notation + c.where}>
-                        <button
-                          type="button"
-                          onClick={() => setNotation(c.notation)}
-                          className={`w-full rounded-lg border px-3 py-2 text-left text-sm hover:border-teal-500 hover:bg-teal-50 ${notation === c.notation ? "border-teal-600 bg-teal-50" : "border-stone-200"}`}
-                        >
-                          <span className="mr-2 font-mono text-base font-bold text-teal-900">{c.notation}</span>
-                          {c.where}（土地と{c.distanceToMarker}）
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                  {reading.districtSymbol && <p className="text-sm text-stone-600">地区区分の記号：{reading.districtSymbol}</p>}
-                  {reading.notes.map((n) => (
-                    <p key={n} className="text-xs text-stone-500">
-                      ※ {n}
+
+              <section className="space-y-2">
+                <h3 className="font-bold text-stone-800">1. 土地の形を合わせる</h3>
+                {!lot ? (
+                  <p className="rounded-lg bg-amber-50 p-2 text-sm text-amber-950">地図で評価する土地をクリックすると、いちばん近い道路に向けて土地の枠を出します。</p>
+                ) : (
+                  <>
+                    <p className="text-sm text-stone-600">この枠で合っていますか？ずれていれば、枠の真ん中の ✥ をドラッグし、間口・奥行・向きを合わせてください。</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Field label="間口（正面の幅）">
+                        <NumInput value={lot.width} onChange={(v) => v > 0 && changeLot({ ...lot, width: v })} unit="m" />
+                      </Field>
+                      <Field label="奥行">
+                        <NumInput value={lot.depth} onChange={(v) => v > 0 && changeLot({ ...lot, depth: v })} unit="m" />
+                      </Field>
+                    </div>
+                    <label className="flex items-center gap-2 text-sm text-stone-700">
+                      向き
+                      <input type="range" min={0} max={359} step={1} value={Math.round(lot.rotation)} onChange={(e) => changeLot({ ...lot, rotation: Number(e.target.value) })} className="flex-1 accent-rose-700" />
+                      <span className="w-14 text-right tabular-nums">{edgeDirection(lot, 0)}</span>
+                    </label>
+                    <p className="text-xs text-stone-500">
+                      枠の広さ {fmt(Math.round(lot.width * lot.depth))}㎡
+                      {land && land.areaSqm > 0 && Math.abs(lot.width * lot.depth - land.areaSqm) / land.areaSqm > 0.1 && `（登録の地積 ${land.areaSqm}㎡ と違います）`}
                     </p>
-                  ))}
-                </div>
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-stone-700">道路に面している辺（地図の辺をクリックしても切り替えられます）</p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        {([0, 1, 2, 3] as Edge[]).map((e) => (
+                          <Check key={e} checked={!!edgeOn[e]} onChange={(v) => setEdgeOn((o) => o.map((x, i) => (i === e ? v : x)))} label={edgeDirection(lot, e)} />
+                        ))}
+                      </div>
+                      {roads && roads.length === 0 && <p className="text-xs text-stone-500">道路の情報を取得できなかったため、面している辺を選んでください。</p>}
+                    </div>
+                  </>
+                )}
+              </section>
+
+              {lot && roadList.length > 0 && (
+                <section className="space-y-2">
+                  <h3 className="font-bold text-stone-800">2. 道路ごとの路線価</h3>
+                  {canRead ? (
+                    <Button onClick={readRoads} disabled={!!busy}>
+                      路線価図から読み取る
+                    </Button>
+                  ) : (
+                    <p className="rounded-lg bg-stone-50 p-2 text-xs text-stone-600">
+                      {sheet ? "路線価図の位置が合っていません。上の「位置合わせ」で道路を重ねてください。" : "路線価図が見つかると、道路ごとの路線価を読み取れます。路線価図を見て入力することもできます。"}
+                    </p>
+                  )}
+                  <ul className="space-y-2">
+                    {roadList.map((e) => {
+                      const p = parseRouteNotation(notes[e] ?? "");
+                      const line = evaluation?.lines.find((l) => l.edge === e);
+                      return (
+                        <li key={e} className="rounded-lg border border-stone-200 p-2">
+                          <div className="flex items-center gap-2">
+                            <span className="w-20 shrink-0 text-sm font-semibold text-stone-700">
+                              {edgeDirection(lot, e)}
+                              {line && <span className="block text-[11px] font-normal text-rose-700">{{ front: "正面", side: "側方", back: "裏面" }[line.role]}</span>}
+                            </span>
+                            <TextInput value={notes[e] ?? ""} onChange={(ev) => setNotes((n) => ({ ...n, [e]: ev.target.value }))} placeholder="例：420D" />
+                            <span className="w-24 shrink-0 text-right text-xs tabular-nums text-stone-600">{p ? `${fmt(p.routePrice)}円/㎡` : "—"}</span>
+                          </div>
+                          {cands[e] && cands[e].length > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {cands[e].map((c) => (
+                                <button
+                                  key={c.notation + c.where}
+                                  type="button"
+                                  title={c.where}
+                                  onClick={() => setNotes((n) => ({ ...n, [e]: c.notation }))}
+                                  className={`rounded-full border px-2 py-0.5 font-mono text-xs ${notes[e] === c.notation ? "border-teal-700 bg-teal-700 text-white" : "border-stone-300 hover:border-teal-500"}`}
+                                >
+                                  {c.notation}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          <p className="mt-1 text-[11px] text-stone-500">この道路から見た奥行 {edgeDepth(lot, e)}m</p>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  <p className="text-xs text-stone-500">読み取りはコンパスくんによる候補です。地図の上の路線価図と見比べてください。数字は千円単位です（420D → 420,000円）。</p>
+                </section>
               )}
-              <Field label="路線価の表記" hint="道路に書かれた表記（例：420D）">
-                <TextInput value={notation} onChange={(e) => setNotation(e.target.value)} placeholder="420D" />
-              </Field>
-              <Field label="1㎡当たりの路線価">
-                <YenInput value={parsed?.routePrice} onChange={(v) => setNotation(v ? String(Math.round(v / 1000)) + (parsed?.letter ?? "") : "")} />
-              </Field>
-              {parsed?.leaseholdRatio !== undefined && (
-                <p className="text-xs text-stone-600">
-                  記号「{parsed.letter}」は借地権割合 {Math.round(parsed.leaseholdRatio * 100)}% を表します。
-                </p>
+
+              {lot && roadList.length > 0 && (
+                <section className="space-y-2">
+                  <h3 className="font-bold text-stone-800">3. 評価額</h3>
+                  <Field label="地区区分" hint="路線価を囲む記号の形で決まります（記号がなければ普通住宅地区）">
+                    <Select value={district} onChange={(v) => setDistrict(v as District)} options={DISTRICTS.map((d) => ({ value: d, label: d }))} />
+                  </Field>
+                  {evaluation ? (
+                    <div className="space-y-1 rounded-lg bg-teal-50 p-3 text-sm text-teal-950">
+                      {evaluation.steps.map((x) => (
+                        <p key={x} className="text-xs">{x}</p>
+                      ))}
+                      <p className="pt-1 text-base font-bold">1㎡あたり {fmt(evaluation.perSqm)}円</p>
+                      {land && land.areaSqm > 0 && <p className="font-semibold">× {land.areaSqm}㎡ ＝ {fmt(Math.floor(evaluation.perSqm * land.areaSqm))}円</p>}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-stone-500">路線価を入れると評価額を計算します。</p>
+                  )}
+                  <Note tone="info">
+                    高めに評価しています（角地の加算率を使い、間口が狭い・形がいびつ・がけ地などの減額はしていません）。下げられるかは税理士に確認できます。
+                    <span className="mt-2 block">
+                      <ConsultLink topic="土地の評価" />
+                    </span>
+                  </Note>
+                  <Button onClick={applyToLand} disabled={!evaluation || !land} className="w-full py-3">
+                    この評価を反映して財産の入力へ戻る
+                  </Button>
+                </section>
               )}
-              <Button onClick={applyToLand} disabled={!parsed || !land}>
-                この路線価を土地に反映
-              </Button>
-              {land?.method.type === "rosenka" && land.method.routePrice > 0 && (
-                <Note tone="ok">
-                  「{land.label}」の路線価は {fmt(land.method.routePrice)}円/㎡ です。奥行価格補正などは
-                  <Link href="/case/assets" className="underline">財産の入力</Link>で確認してください。
-                </Note>
-              )}
-              <p className="text-xs text-stone-500">読み取りはコンパスくんによる候補です。必ず路線価図と見比べてから反映してください。角地・二方路線・不整形地などは補正が必要な場合があります。</p>
             </div>
           )}
         </aside>
@@ -665,4 +790,16 @@ function SheetViewer({
       </div>
     </div>
   );
+}
+
+/** 保存済みの道路から、面している辺の一覧を作る */
+function edgesOf(roads?: RoadInput[]): boolean[] {
+  const on = [false, false, false, false];
+  for (const r of roads ?? []) on[r.edge] = true;
+  return on;
+}
+function notationsOf(roads?: RoadInput[]): Record<number, string> {
+  const n: Record<number, string> = {};
+  for (const r of roads ?? []) n[r.edge] = r.notation ?? (r.price > 0 ? String(Math.round(r.price / 1000)) : "");
+  return n;
 }

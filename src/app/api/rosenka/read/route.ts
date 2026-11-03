@@ -46,7 +46,13 @@ export async function POST(req: Request) {
           role: "user",
           content: [
             { type: "image", source: { type: "base64", media_type: "image/png", data } },
-            { type: "text", text: "赤い印の土地に面している道路の路線価を読み取ってください。" },
+            {
+              type: "text",
+              text:
+                form.get("target") === "road"
+                  ? "赤い印は、土地に面している道路の上の点です。この道路に付いている路線価を、赤い印に近いものから読み取ってください。交差点の近くでは、赤い印の道路と同じ向きの道路に付いた表記を先にしてください。"
+                  : "赤い印の土地に面している道路の路線価を読み取ってください。",
+            },
           ],
         },
       ],

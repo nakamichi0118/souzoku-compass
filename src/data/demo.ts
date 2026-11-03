@@ -70,8 +70,8 @@ export const demoCase: Case = {
       location: "東京都千代田区架空町一丁目2番3",
       areaSqm: 165.5,
       landUse: "宅地",
-      method: { type: "rosenka", routePrice: 420_000, depthCorrection: 1.0 },
-      smallResidential: { applies: true, acquirerId: "hanako" },
+      method: { type: "rosenka", routePrice: 420_000, depthCorrection: 1.0, district: "普通住宅地区", roads: [{ edge: 0, price: 420_000, depth: 13, notation: "420D" }] },
+      smallResidential: { applies: true, acquirerId: "hanako", check: { ownHome: "yes", special: "no" } },
       registry: { assessedValue: 48_650_000, lotNumber: "2番3" },
     },
     {

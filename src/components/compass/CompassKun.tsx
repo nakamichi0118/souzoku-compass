@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 /** 案内役キャラクター「コンパスくん」（中身は Claude） */
 export function CompassKun({ className = "" }: { className?: string }) {
-  return <img src="/brand/compass-kun-main.png" alt="コンパスくん" className={className} width={240} height={273} />;
+  return <img src="/brand/compass-kun-main.png" alt="コンパスくん" className={className} width={220} height={280} />;
 }
 
 export function CompassAvatar({ size = 40 }: { size?: number }) {

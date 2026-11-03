@@ -45,6 +45,17 @@ export function Select({ value, onChange, options }: { value: string; onChange: 
   );
 }
 
+/** 単位つきの入力欄。単位は入力欄の中の右端に置き、数字と重ならないようにする */
+function UnitBox({ unit, children }: { unit?: string; children: React.ReactNode }) {
+  return (
+    <div className="flex w-full items-center rounded-lg border border-stone-300 bg-white focus-within:border-teal-600 focus-within:ring-2 focus-within:ring-teal-600/20">
+      {children}
+      {unit && <span className="shrink-0 whitespace-nowrap pr-3 pl-1 text-sm text-stone-500">{unit}</span>}
+    </div>
+  );
+}
+const boxInputCls = "min-w-0 flex-1 rounded-lg bg-transparent px-3 py-2 text-right text-base tabular-nums text-stone-900 focus:outline-none";
+
 /** 円単位の数値入力（3桁区切り表示） */
 export function YenInput({ value, onChange, unit = "円" }: { value: number | undefined; onChange: (v: number) => void; unit?: string }) {
   const [text, setText] = useState(value != null ? value.toLocaleString("ja-JP") : "");
@@ -52,34 +63,47 @@ export function YenInput({ value, onChange, unit = "円" }: { value: number | un
     setText(value != null ? value.toLocaleString("ja-JP") : "");
   }, [value]);
   return (
-    <div className="relative">
+    <UnitBox unit={unit}>
       <input
         inputMode="numeric"
-        className={`${inputCls} pr-10 text-right tabular-nums`}
+        className={boxInputCls}
         value={text}
+        // 0 のときは、入力を始めると 0 が消えるようにする
+        onFocus={(e) => e.target.select()}
         onChange={(e) => {
           const digits = e.target.value.replace(/[^\d]/g, "");
           setText(digits ? Number(digits).toLocaleString("ja-JP") : "");
           onChange(digits ? Number(digits) : 0);
         }}
       />
-      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-stone-500">{unit}</span>
-    </div>
+    </UnitBox>
   );
 }
 
-export function NumInput({ value, onChange, step = "any", unit }: { value: number | undefined; onChange: (v: number) => void; step?: string; unit?: string }) {
+/** 小数も入る数値入力（地積・奥行など）。先頭の 0 は自動で取る */
+export function NumInput({ value, onChange, unit }: { value: number | undefined; onChange: (v: number) => void; step?: string; unit?: string }) {
+  const show = (v: number | undefined) => (v == null ? "" : String(v));
+  const [text, setText] = useState(show(value));
+  useEffect(() => {
+    setText((t) => (Number(t) === value ? t : show(value)));
+  }, [value]);
   return (
-    <div className="relative">
+    <UnitBox unit={unit}>
       <input
-        type="number"
-        step={step}
-        className={`${inputCls} ${unit ? "pr-10" : ""} text-right tabular-nums`}
-        value={value ?? ""}
-        onChange={(e) => onChange(e.target.value === "" ? 0 : Number(e.target.value))}
+        inputMode="decimal"
+        className={boxInputCls}
+        value={text}
+        onFocus={(e) => e.target.select()}
+        onChange={(e) => {
+          let t = e.target.value.normalize("NFKC").replace(/[^\d.]/g, "");
+          const dot = t.indexOf(".");
+          if (dot >= 0) t = t.slice(0, dot + 1) + t.slice(dot + 1).replace(/\./g, "");
+          t = t.replace(/^0+(?=\d)/, "");
+          setText(t);
+          onChange(t === "" || t === "." ? 0 : Number(t));
+        }}
       />
-      {unit && <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-stone-500">{unit}</span>}
-    </div>
+    </UnitBox>
   );
 }
 

@@ -39,7 +39,8 @@ export interface Interview {
   // 財産（おおよその額・円）
   homeValue: number;
   /** 自宅を配偶者か同居の家族が相続する（小規模宅地等の特例の可能性） */
-  homeToFamily: boolean;
+  /** 自宅を配偶者か同居の家族が受け継ぐか（"unknown"＝まだわからない。特例は見込まない） */
+  homeToFamily: boolean | "unknown";
   otherRealEstate: number;
   deposits: number;
   securities: number;
@@ -128,7 +129,7 @@ export interface Estimate {
 }
 
 /** 自宅の評価額のうち、小規模宅地等の特例で減る額の目安（土地分を自宅の7割と仮定し、その80%） */
-export const reliefOf = (iv: Interview) => (iv.homeToFamily ? Math.floor(iv.homeValue * 0.7 * 0.8) : 0);
+export const reliefOf = (iv: Interview) => (iv.homeToFamily === true ? Math.floor(iv.homeValue * 0.7 * 0.8) : 0);
 
 function totalTaxOn(taxableEstate: number, heirs: HeirResult): number {
   let t = 0;

@@ -244,6 +244,9 @@ export function calculate(c: Case, opts: EngineOptions = {}): TaxResult {
     if (p.nonResident && !p.predeceased) {
       blockers.push(`${p.name}さんは国外に住所があります。非居住者がいる相続は税理士にご相談ください。`);
     }
+    if (p.predeceased && p.deathDate && c.decedent.deathDate && p.deathDate > c.decedent.deathDate) {
+      blockers.push(`${p.name || "相続人"}さんは亡くなった方より後に亡くなっています（数次相続）。自動では計算できないため、税理士にご相談ください。`);
+    }
   }
 
   // 財産の評価と取得者への配分

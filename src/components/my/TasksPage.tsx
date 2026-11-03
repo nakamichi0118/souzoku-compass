@@ -14,7 +14,14 @@ import { OFFICE_LABEL, cityOf } from "@/domain/procedures/offices";
 import type { Category, Task } from "@/domain/procedures/rules";
 import { useOverall } from "@/lib/overall";
 import { taskStatus } from "./Home";
+import type { Asset } from "@/domain/types";
+
+/** 不動産の登記は、亡くなった方の住所ではなく不動産のある場所の法務局が窓口 */
+const realEstateLocation = (assets: Asset[]) =>
+  assets.map((a) => (a.kind === "land" || a.kind === "building" || a.kind === "condo" ? a.location : "")).find((l) => l.trim()) || undefined;
 import { DetailStatus, RowStatus } from "./StatusButtons";
+import { Reader } from "./DocsPage";
+import { X } from "lucide-react";
 
 const CATS: (Category | "すべて")[] = ["すべて", "届出", "葬儀・法要", "調べる・決める", "お金の受け取り", "税金", "名義変更・解約", "不動産"];
 type StatusFilter = "open" | "done" | "all";
@@ -82,9 +89,14 @@ export function TasksPage() {
   useEffect(() => {
     if (bump) listRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   }, [bump]);
+  // 手続きを済ませたら、読み取りできる書類（残高証明書など）のアップロードをその場で案内する
+  const [prompt, setPrompt] = useState<{ taskId: string; docs: string[]; open: boolean } | null>(null);
   const mark = (id: string, v: Parameters<typeof o.setStatus>[1]) => {
     o.setStatus(id, v);
     if (v !== "open") setBump((n) => n + 1);
+    const task = o.tasks.find((x) => x.id === id);
+    const docs = v === "done" && task ? task.docs.filter((d) => DOCS[d]?.readable && !o.done.includes(`doc:${d}`)) : [];
+    setPrompt(docs.length ? { taskId: id, docs, open: false } : null);
   };
   const selId = params.get("id") ?? list.find((t) => !o.closed(t.id))?.id ?? list[0]?.id;
   const t = o.tasks.find((x) => x.id === selId) ?? null;
@@ -231,7 +243,7 @@ export function TasksPage() {
               <h3 className="mb-2 flex items-center gap-1.5 font-bold text-stone-700"><Building2 className="h-4 w-4 text-brand" aria-hidden />提出先・連絡先</h3>
               {t.office ? (
                 <div className="space-y-2">
-                  <OfficeLookup kind={t.office} dept={t.dept} address={o.iv.address} />
+                  <OfficeLookup kind={t.office} dept={t.dept} address={t.office === "legalAffairs" ? (realEstateLocation(o.case.assets) ?? o.iv.address) : o.iv.address} />
                   <p className="text-xs text-stone-500">窓口の決まり：{t.where}</p>
                   {city && (
                     <a
@@ -339,6 +351,7 @@ export function TasksPage() {
           </article>
         )}
       </div>
+      {prompt && <UploadPrompt docs={prompt.docs} open={prompt.open} onOpen={() => setPrompt({ ...prompt, open: true })} onClose={() => setPrompt(null)} onRegistered={(d) => o.setStatus(`doc:${d}`, "done")} />}
     </AppShell>
   );
 }
@@ -366,6 +379,48 @@ function MemoBox({ value, onSave }: { value: string; onSave: (v: string) => void
         className="w-full rounded-lg border border-stone-300 p-2 text-sm focus:border-sky-500 focus:outline-none"
       />
       <p className="h-4 text-xs text-emerald-700">{saved ? "保存しました" : ""}</p>
+    </div>
+  );
+}
+
+/** 手続きを済ませたときに出す案内：届いた書類をその場でアップロードして財産に登録できる */
+function UploadPrompt({ docs, open, onOpen, onClose, onRegistered }: { docs: string[]; open: boolean; onOpen: () => void; onClose: () => void; onRegistered: (doc: string) => void }) {
+  const names = docs.map((d) => DOCS[d].name.replace(/（.*?）/g, ""));
+  return (
+    <div role="status" className="fixed inset-x-3 bottom-3 z-40 mx-auto max-w-xl rounded-2xl border border-teal-200 bg-white p-4 shadow-2xl sm:left-auto sm:right-4 sm:mx-0">
+      <div className="flex items-start gap-3">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/brand/compass-kun-main.png" alt="" className="h-12 w-auto shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="font-bold text-stone-900">お疲れさまでした！</p>
+          <p className="mt-0.5 text-sm text-stone-700">
+            「{names.join("」「")}」が届いたら、アップロードしてください。コンパスくんが金額を読み取って、財産に登録します。
+          </p>
+          {!open && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button type="button" onClick={onOpen} className="rounded-lg bg-teal-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-teal-800">
+                いまアップロードする
+              </button>
+              <button type="button" onClick={onClose} className="rounded-lg border border-stone-300 px-3 py-1.5 text-sm hover:bg-stone-50">
+                届いてから（資料集めでいつでもできます）
+              </button>
+            </div>
+          )}
+        </div>
+        <button type="button" onClick={onClose} aria-label="閉じる" className="shrink-0 text-stone-400 hover:text-stone-700">
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+      {open && (
+        <div className="mt-3 max-h-[60vh] space-y-3 overflow-y-auto">
+          {docs.map((d) => (
+            <div key={d}>
+              <p className="mb-1 text-sm font-semibold text-stone-700">{DOCS[d].name}</p>
+              <Reader docId={d} onRegistered={() => onRegistered(d)} />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

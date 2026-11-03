@@ -27,7 +27,7 @@ const SAMPLE: Record<string, { url: string; name: string }> = {
 const ORDER: DocCategory[] = ["戸籍・住民票", "預貯金", "保険", "不動産", "株式", "年金・税金", "その他"];
 
 /** アップロードした書類をコンパスくんが読み取り、確認してから財産に登録する */
-function Reader({ docId, onRegistered }: { docId: string; onRegistered: () => void }) {
+export function Reader({ docId, onRegistered }: { docId: string; onRegistered: () => void }) {
   const { data: c, update } = useCase();
   const ex = useExtract();
   const [added, setAdded] = useState<number[]>([]);

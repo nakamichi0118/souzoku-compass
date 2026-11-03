@@ -5,9 +5,13 @@ import { ChevronDown, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button, Check, Field, NumInput, Note, Select, TextInput, YenInput, fmt } from "@/components/ui";
 import type { Asset, AssetKind, LandAsset, Person } from "@/domain/types";
-import { DISTRICTS, type District, depthCorrection } from "@/domain/valuation/depth";
+import { DISTRICTS, type District } from "@/domain/valuation/depth";
+import { type Edge, type RoadInput, evaluateRoads } from "@/domain/valuation/roads";
 import { newId, useCase } from "@/lib/store";
 import { usePlan } from "@/lib/planStore";
+import { Choice } from "@/components/plan/inputs";
+import { ConsultLink } from "@/components/compass/ConsultLink";
+import { type Answer, type SmallResidentialCheck, judgeSmallResidential, shouldApply } from "@/domain/valuation/smallResidential";
 import type { Interview } from "@/domain/procedures/interview";
 
 const KINDS: { kind: AssetKind; label: string }[] = [
@@ -98,13 +102,28 @@ function fromHearing(iv: Interview, assets: Asset[]): { label: string; kinds: As
 export function AssetsStep() {
   const { data, update, result } = useCase();
   const { done, iv } = usePlan();
-  const [district, setDistrict] = useState<Record<string, { d: District; depth: number }>>({});
   const [openId, setOpenId] = useState<string | null>(null);
   const [menu, setMenu] = useState(false);
   const [scrollTo, setScrollTo] = useState<string | null>(null);
   const refs = useRef<Record<string, HTMLLIElement | null>>({});
   const living = data.persons.filter((p) => !p.predeceased);
   const noHeirs = living.length === 0;
+
+  // 地図の画面で「反映」して戻ってきたら、その土地を開いて知らせる
+  const [applied, setApplied] = useState<string | null>(null);
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    const id = sp.get("asset");
+    if (!id) return;
+    setOpenId(id);
+    setScrollTo(id);
+    if (sp.get("applied")) {
+      setApplied(id);
+      window.history.replaceState(null, "", window.location.pathname);
+      const t = setTimeout(() => setApplied(null), 6000);
+      return () => clearTimeout(t);
+    }
+  }, []);
 
   useEffect(() => {
     if (!scrollTo) return;
@@ -218,6 +237,7 @@ export function AssetsStep() {
               </button>
               {open && (
                 <div className="space-y-3 border-t border-stone-100 px-4 py-4">
+                  {applied === a.id && <Note tone="ok">地図で入れた土地の形と路線価を反映しました。評価額は {line ? `${fmt(line.valuation.value)}円` : "計算中"} です。</Note>}
                   {missingRecipient && noHeirs && (
                     <Note tone="warn">
                       受取人を選ぶには、先に相続人を登録してください。
@@ -230,7 +250,7 @@ export function AssetsStep() {
                     <Field label="名称">
                       <TextInput value={a.label} onChange={(e) => patch(a.id, { label: e.target.value })} placeholder={PLACEHOLDER[a.kind]} />
                     </Field>
-                    <AssetEditor living={living} asset={a} patch={(p) => patch(a.id, p)} district={district[a.id]} setDistrict={(v) => setDistrict((s) => ({ ...s, [a.id]: v }))} />
+                    <AssetEditor living={living} asset={a} patch={(p) => patch(a.id, p)} />
                   </div>
                   {line && line.valuation.steps.length > 0 && (
                     <details className="text-sm text-stone-600">
@@ -298,14 +318,10 @@ function AssetEditor({
   living,
   asset: a,
   patch,
-  district: dist,
-  setDistrict: setDist,
 }: {
   living: Person[];
   asset: Asset;
   patch: (p: Partial<Asset>) => void;
-  district?: { d: District; depth: number };
-  setDistrict: (v: { d: District; depth: number }) => void;
 }) {
   switch (a.kind) {
     case "deposit":
@@ -425,27 +441,140 @@ function AssetEditor({
         </>
       );
     case "land":
-      return <LandEditor living={living} a={a} patch={patch} dist={dist} setDist={setDist} />;
+      return <LandEditor living={living} a={a} patch={patch} />;
   }
 }
 
+const ANSWERS: { value: Answer; label: string }[] = [
+  { value: "yes", label: "はい" },
+  { value: "no", label: "いいえ" },
+  { value: "unsure", label: "わからない" },
+];
+
 function SmallResidential({ living, a, patch }: { living: Person[]; a: Extract<Asset, { kind: "land" | "condo" }>; patch: (p: Partial<Asset>) => void }) {
   const sr = a.smallResidential ?? { applies: false };
+  const check: SmallResidentialCheck = sr.check ?? {};
+  const acquirer = living.find((p) => p.id === sr.acquirerId);
+  const j = judgeSmallResidential(check, acquirer);
+  const set = (next: { acquirerId?: string; check?: SmallResidentialCheck }) => {
+    const acq = next.acquirerId ?? sr.acquirerId;
+    const c = next.check ?? check;
+    const jj = judgeSmallResidential(c, living.find((p) => p.id === acq));
+    patch({ smallResidential: { ...sr, acquirerId: acq, check: c, applies: shouldApply(jj, c) } });
+  };
+  const ask = (k: keyof SmallResidentialCheck, q: string, hint?: string) => (
+    <div className="space-y-1">
+      <p className="text-sm font-medium text-stone-800">{q}</p>
+      {hint && <p className="text-xs text-stone-500">{hint}</p>}
+      <Choice value={check[k] as Answer | undefined} onChange={(v) => set({ check: { ...check, [k]: v, confirmedByAdvisor: false } })} options={ANSWERS} />
+    </div>
+  );
+  const isSpouse = acquirer?.relation === "spouse";
+  const tone = j.result === "ok" ? "ok" : j.result === "consult" ? "warn" : j.result === "no" ? "info" : null;
   return (
-    <div className="space-y-2 rounded-lg bg-stone-50 p-3 sm:col-span-2">
-      <Check
-        checked={sr.applies}
-        onChange={(v) => patch({ smallResidential: { ...sr, applies: v, acquirerId: sr.acquirerId ?? living[0]?.id } })}
-        label="亡くなった方が住んでいた自宅の敷地で、小規模宅地等の特例（特定居住用宅地等）を使う"
-      />
-      {sr.applies && (
+    <div className="space-y-3 rounded-lg bg-stone-50 p-3 sm:col-span-2">
+      <p className="font-bold text-stone-800">小規模宅地等の特例（自宅の敷地の評価が最大80%下がる）</p>
+      <p className="text-xs text-stone-500">使えるかどうかを順に確認します。条件がはっきりしない場合は特例を使わずに計算し、税理士への相談をご案内します。</p>
+      {ask("ownHome", "亡くなった方が住んでいた自宅の敷地ですか？")}
+      {check.ownHome === "yes" &&
+        ask("special", "老人ホームへの入居、二世帯住宅、建物の一部を貸していた などの事情はありますか？", "亡くなる前に老人ホームへ入っていた場合や、二世帯住宅の場合は、使える範囲の判断が変わります。")}
+      {check.ownHome === "yes" && check.special === "no" && (
+        <Field label="この土地を取得する人" hint="遺産の分け方で決めた人を選んでください。">
+          <Select value={sr.acquirerId ?? ""} onChange={(v) => set({ acquirerId: v })} options={[{ value: "", label: "選んでください" }, ...living.map((p) => ({ value: p.id, label: `${p.name || "（未入力）"}（${p.relationLabel ?? ""}）` }))]} />
+        </Field>
+      )}
+      {check.ownHome === "yes" && check.special === "no" && acquirer && !isSpouse && (
         <>
-          <Field label="特例を受ける取得者" hint="配偶者は無条件で適用できます。同居していた親族などは申告期限まで住み続け・所有し続けることが必要です。">
-            <Select value={sr.acquirerId ?? ""} onChange={(v) => patch({ smallResidential: { ...sr, acquirerId: v } })} options={living.map((p) => ({ value: p.id, label: p.name || "（未入力）" }))} />
-          </Field>
-          <p className="text-xs text-stone-500">330㎡までの部分の評価額が80%減額されます（租税特別措置法69条の4）。</p>
+          {ask("livedTogether", `${acquirer.name || "取得する人"}さんは、亡くなる直前まで亡くなった方と同じ家に住んでいましたか？`, "住民票が同じでも、実際に一緒に暮らしていなければ「いいえ」です。")}
+          {check.livedTogether === "yes" && ask("keep", "申告期限（亡くなった日から10か月）まで、この家に住み続け、土地を持ち続けますか？")}
         </>
       )}
+      {tone && <Note tone={tone}>{j.reason}</Note>}
+      {j.result === "ok" && <p className="text-xs text-stone-600">330㎡までの部分の評価額を80%減らして計算します（租税特別措置法69条の4）。</p>}
+      {j.result === "consult" && (
+        <div className="space-y-2">
+          <p className="text-sm text-stone-700">いまは特例を使わずに（高めに）計算しています。</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <ConsultLink topic="特例" />
+            <Check checked={!!check.confirmedByAdvisor} onChange={(v) => set({ check: { ...check, confirmedByAdvisor: v } })} label="税理士に確認し、特例を使えることが分かった" />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+type RosenkaMethod = Extract<LandAsset["method"], { type: "rosenka" }>;
+const EDGE_LABEL = ["正面側", "右側", "奥側", "左側"];
+
+/** 面している道路ごとの路線価と奥行。2つ以上なら側方・二方路線影響加算（高めに評価） */
+function RoadsEditor({ a, m, patch }: { a: LandAsset; m: RosenkaMethod; patch: (p: Partial<Asset>) => void }) {
+  const district: District = m.district ?? "普通住宅地区";
+  // 以前の入力（道路が1つ・奥行価格補正率を直接入力）は、正面の道路1つとして見せる
+  const roads: RoadInput[] = m.roads?.length ? m.roads : [{ edge: 0, price: m.routePrice, depth: m.lot?.depth ?? 0 }];
+  const save = (next: RoadInput[], d = district) => {
+    const r = evaluateRoads(d, next);
+    patch({ method: { ...m, district: d, roads: next, routePrice: r?.front.price ?? next[0]?.price ?? 0, depthCorrection: r?.front.depthRate ?? m.depthCorrection } });
+  };
+  const setRoad = (i: number, p: Partial<RoadInput>) => save(roads.map((r, j) => (j === i ? { ...r, ...p } : r)));
+  const used = new Set(roads.map((r) => r.edge));
+  const free = ([0, 1, 2, 3] as Edge[]).filter((e) => !used.has(e));
+  const ev = evaluateRoads(district, roads);
+  const role = (e: Edge) => ev?.lines.find((l) => l.edge === e)?.role;
+  return (
+    <div className="space-y-3 sm:col-span-2">
+      <Field label="地区区分" hint="路線価図で路線価を囲む記号の形で決まります（記号がなければ普通住宅地区）">
+        <Select value={district} onChange={(v) => save(roads, v as District)} options={DISTRICTS.map((d) => ({ value: d, label: d }))} />
+      </Field>
+      <div className="space-y-2">
+        <p className="text-sm font-medium text-stone-700">面している道路と路線価</p>
+        {roads.map((r, i) => (
+          <div key={r.edge} className="grid grid-cols-2 items-end gap-2 rounded-lg border border-stone-200 p-2 sm:grid-cols-[8rem_1fr_7rem_auto]">
+            <Field label="道路の位置">
+              <Select
+                value={String(r.edge)}
+                onChange={(v) => setRoad(i, { edge: Number(v) as Edge })}
+                options={[r.edge, ...free].sort().map((e) => ({ value: String(e), label: EDGE_LABEL[e] }))}
+              />
+            </Field>
+            <Field label={`路線価${role(r.edge) ? `（${{ front: "正面", side: "側方", back: "裏面" }[role(r.edge)!]}）` : ""}`}>
+              <YenInput value={r.price} onChange={(v) => setRoad(i, { price: v })} unit="円/㎡" />
+            </Field>
+            <Field label="奥行">
+              <NumInput value={r.depth} onChange={(v) => setRoad(i, { depth: v })} unit="m" />
+            </Field>
+            {roads.length > 1 ? (
+              <Button variant="danger" onClick={() => save(roads.filter((_, j) => j !== i))}>
+                削除
+              </Button>
+            ) : (
+              <span />
+            )}
+          </div>
+        ))}
+        {free.length > 0 && (
+          <Button variant="secondary" onClick={() => save([...roads, { edge: free[0], price: 0, depth: free[0] % 2 === 0 ? roads[0]?.depth ?? 0 : m.lot?.width ?? 0 }])}>
+            ＋ 道路を追加（角地・二方路線など）
+          </Button>
+        )}
+        <p className="text-xs text-stone-500">路線価図の数字は千円単位です（例：「420D」→ 420,000円）。奥行は、その道路から土地の反対側までの距離です。</p>
+      </div>
+      {ev && (
+        <div className="rounded-lg bg-teal-50 p-3 text-sm text-teal-950">
+          <p className="font-semibold">1㎡あたり {fmt(ev.perSqm)}円</p>
+          {ev.lines.length > 1 && <p className="text-xs">正面は、路線価×奥行価格補正率がいちばん高い道路です（財産評価基本通達16）。</p>}
+        </div>
+      )}
+      <Note tone="info">
+        この評価は<strong>高めに</strong>出しています（角地の加算率を使い、間口が狭い・奥行が長い・形がいびつ・がけ地などの減額はしていません）。減額できるかは税理士に確認できます。
+        <span className="mt-2 block">
+          <ConsultLink topic="土地の評価" />
+        </span>
+      </Note>
+      <Field label="税理士に確認した補正率（任意）" hint="不整形地・間口狭小などの補正率を税理士に確認した場合だけ入力。通常は1">
+        <NumInput value={m.otherCorrection ?? 1} onChange={(v) => patch({ method: { ...m, otherCorrection: v } })} />
+      </Field>
+      {a.method.type === "rosenka" && a.method.lot && <p className="text-xs text-stone-500">地図で合わせた枠：間口{a.method.lot.width}m × 奥行{a.method.lot.depth}m</p>}
     </div>
   );
 }
@@ -454,14 +583,10 @@ function LandEditor({
   living,
   a,
   patch,
-  dist,
-  setDist,
 }: {
   living: Person[];
   a: LandAsset;
   patch: (p: Partial<Asset>) => void;
-  dist?: { d: District; depth: number };
-  setDist: (v: { d: District; depth: number }) => void;
 }) {
   const m = a.method;
   return (
@@ -494,44 +619,10 @@ function LandEditor({
       </Field>
       <div className="flex items-end">
         <Link href={`/case/map?asset=${a.id}`} className="rounded-lg border border-teal-700 px-4 py-2 text-sm font-semibold text-teal-800 hover:bg-teal-50">
-          地図で場所を選び、路線価図を確認する
+          地図で土地の形と路線価を入れる
         </Link>
       </div>
-      {m.type === "rosenka" && (
-        <>
-          <Field label="路線価（1㎡あたり）" hint="路線価図の数字は千円単位です（例：「420D」→ 420,000円）">
-            <YenInput value={m.routePrice} onChange={(v) => patch({ method: { ...m, routePrice: v } })} unit="円/㎡" />
-          </Field>
-          <Field label="地区区分と奥行距離" hint="奥行価格補正率を自動で求めます（財産評価基本通達 付表1）">
-            <div className="flex gap-2">
-              <Select
-                value={dist?.d ?? "普通住宅地区"}
-                onChange={(v) => {
-                  const next = { d: v as District, depth: dist?.depth ?? 15 };
-                  setDist(next);
-                  patch({ method: { ...m, depthCorrection: depthCorrection(next.d, next.depth) } });
-                }}
-                options={DISTRICTS.map((d) => ({ value: d, label: d }))}
-              />
-              <NumInput
-                value={dist?.depth}
-                onChange={(v) => {
-                  const next = { d: dist?.d ?? ("普通住宅地区" as District), depth: v };
-                  setDist(next);
-                  if (v > 0) patch({ method: { ...m, depthCorrection: depthCorrection(next.d, v) } });
-                }}
-                unit="m"
-              />
-            </div>
-          </Field>
-          <Field label="奥行価格補正率">
-            <NumInput value={m.depthCorrection} step="0.01" onChange={(v) => patch({ method: { ...m, depthCorrection: v } })} />
-          </Field>
-          <Field label="その他の補正率（任意）" hint="不整形地・間口狭小などの補正率をかける場合に入力。通常は1">
-            <NumInput value={m.otherCorrection ?? 1} step="0.01" onChange={(v) => patch({ method: { ...m, otherCorrection: v } })} />
-          </Field>
-        </>
-      )}
+      {m.type === "rosenka" && <RoadsEditor a={a} m={m} patch={patch} />}
       {m.type === "multiplier" && (
         <>
           <Field label="固定資産税評価額">

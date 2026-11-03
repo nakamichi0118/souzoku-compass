@@ -41,3 +41,11 @@ body {
   cursor: move;
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.4);
 }
+.lot-handle {
+  background: #be123c;
+}
+.lot-handle {
+  width: 20px;
+  height: 20px;
+  font-size: 12px;
+}

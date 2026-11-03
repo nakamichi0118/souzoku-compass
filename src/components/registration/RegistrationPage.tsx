@@ -114,6 +114,20 @@ export function RegistrationPage() {
           </Note>
         )}
 
+        {props.length > 0 && (
+          <Card title="提出先の法務局">
+            <p className="mb-3 text-sm text-stone-600">相続登記は、不動産のある場所を受け持つ法務局に申請します（亡くなった方の住所の法務局とは限りません）。郵送でも申請できます。</p>
+            <div className="space-y-3">
+              {[...new Set(props.map((p) => p.location.trim()).filter(Boolean))].map((loc) => (
+                <div key={loc} className="rounded-lg border border-stone-200 p-3">
+                  <p className="mb-2 text-sm font-medium text-stone-700">{loc}</p>
+                  <OfficeLookup kind="legalAffairs" dept="不動産登記" address={loc} />
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
         <Card title="1. 登記簿の内容を入れる">
           <p className="mb-4 text-sm text-stone-600">登記事項証明書（登記簿謄本）と固定資産評価証明書を見ながら入力します。</p>
           <div className="space-y-6">
@@ -154,9 +168,6 @@ export function RegistrationPage() {
                 </div>
                 {app.exemptLots.length > 0 && <p className="mt-2 text-sm text-emerald-800">評価額100万円以下の土地は登録免許税がかかりません（令和9年3月31日までの申請）：{app.exemptLots.join("、")}</p>}
                 {app.missing.length > 0 && <Note tone="warn">まだ入っていない項目：{app.missing.join("、")}</Note>}
-                <div className="mt-3">
-                  <OfficeLookup kind="legalAffairs" dept="不動産登記" address={app.properties[0].location} />
-                </div>
               </div>
             ))}
           </div>

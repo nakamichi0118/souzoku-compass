@@ -54,3 +54,15 @@ describe("路線価図の図番号さがし", () => {
     expect(m.get("1100")?.pref).toBe("北海道");
   });
 });
+
+import { roadsFromGeoJSON, widthOf } from "../roads";
+describe("国土地理院の道路中心線", () => {
+  it("幅員区分から幅を求め、緯度経度の順に直す", () => {
+    expect(widthOf("5.5m-13m未満")).toBe(9.25);
+    expect(widthOf("3m未満")).toBeCloseTo(2.4);
+    expect(widthOf(undefined)).toBeUndefined();
+    const r = roadsFromGeoJSON({ features: [{ geometry: { type: "LineString", coordinates: [[130.42, 33.59], [130.421, 33.59]] }, properties: { rnkWidth: "3m-5.5m未満" } }] });
+    expect(r[0].line[0]).toEqual([33.59, 130.42]);
+    expect(r[0].width).toBe(4.25);
+  });
+});

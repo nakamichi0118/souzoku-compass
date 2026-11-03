@@ -54,12 +54,13 @@ export function ManYen({ value, onChange }: { value: number; onChange: (v: numbe
   return <YenInput value={Math.round(value / 10_000)} onChange={(v) => onChange(v * 10_000)} unit="万円" />;
 }
 
-export function Q({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+export function Q({ label, hint, children, align }: { label: string; hint?: string; children: React.ReactNode; align?: boolean }) {
+  // align：横に並べたとき、説明の長さが違っても入力欄の高さをそろえる
   return (
-    <div data-q className="scroll-mt-28 space-y-2 border-t border-stone-100 py-4 first:border-t-0 first:pt-0">
+    <div data-q className={`scroll-mt-28 border-t border-stone-100 py-4 first:border-t-0 first:pt-0 ${align ? "flex flex-col gap-2" : "space-y-2"}`}>
       <p className="font-medium text-stone-800">{label}</p>
       {hint && <p className="text-xs leading-relaxed text-stone-500">{hint}</p>}
-      {children}
+      {align ? <div className="mt-auto">{children}</div> : children}
     </div>
   );
 }

@@ -3,6 +3,7 @@
  * 小数は 1/1000 単位の整数で扱い、浮動小数点の誤差を持ち込まない。
  */
 import type { Asset, CondoAsset, LandAsset } from "../types";
+import { evaluateRoads } from "./roads";
 
 export interface Valuation {
   value: number;
@@ -54,6 +55,21 @@ export function condoCorrection(c: Pick<
 
 export function valueLand(a: LandAsset): Valuation {
   const m = a.method;
+  if (m.type === "rosenka" && m.roads?.some((r) => r.price > 0 && r.depth > 0)) {
+    const r = evaluateRoads(m.district ?? "普通住宅地区", m.roads)!;
+    const per = Math.floor((r.perSqm * thou(m.otherCorrection ?? 1)) / 1000);
+    const value = Math.floor(per * a.areaSqm);
+    return {
+      value,
+      unitPrice: per,
+      quantity: `${a.areaSqm}㎡`,
+      steps: [
+        ...r.steps,
+        ...(m.otherCorrection && m.otherCorrection !== 1 ? [`× 補正 ${m.otherCorrection} = ${per.toLocaleString()}円/㎡`] : []),
+        `${per.toLocaleString()}円/㎡ × ${a.areaSqm}㎡ = ${value.toLocaleString()}円`,
+      ],
+    };
+  }
   if (m.type === "rosenka") {
     const per = Math.floor(
       (m.routePrice * thou(m.depthCorrection) * thou(m.otherCorrection ?? 1)) / 1_000_000,

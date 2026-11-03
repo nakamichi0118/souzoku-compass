@@ -91,6 +91,7 @@ export function Home() {
           </Link>
         </section>
       )}
+      {taxNeeded && <Journey o={o} />}
       <div className="grid gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
           <Panel title="このあとの手続き" more={{ href: "/my/tasks", label: "すべてのタスクを見る" }}>
@@ -205,5 +206,43 @@ export function Home() {
         </div>
       </div>
     </AppShell>
+  );
+}
+
+/** 相続税の申告までの全体の流れ。いまどの段階で、どの画面を見ればよいかを示す */
+function Journey({ o }: { o: ReturnType<typeof useOverall> }) {
+  const completed = o.case.progress?.completed ?? [];
+  const docs = o.docs.filter((d) => !d.na);
+  const docsDone = docs.length > 0 && docs.every((d) => d.done);
+  const days = daysBetween(o.iv.deathDate, o.now);
+  const phase = completed.includes("division") ? 3 : completed.includes("assets") ? 2 : docsDone ? 2 : days < 30 ? 0 : 1;
+  const steps = [
+    { title: "手続き", when: "亡くなってすぐ〜3か月", text: "役所・年金・保険などの届出", href: "/my/tasks", go: "やることリスト" },
+    { title: "資料集め", when: "1〜3か月ごろ（1〜2か月かかります）", text: "残高証明書・名寄帳などを取り寄せる", href: "/my/docs", go: "資料集め" },
+    { title: "財産の評価と分け方", when: "資料がそろったら〜8か月", text: "財産を登録して評価し、誰が受け取るか決める", href: "/case/assets", go: "財産と相続税" },
+    { title: "申告と納付", when: "10か月以内", text: "申告書を作って税務署へ出し、納める", href: "/case/tax", go: "相続税の申告" },
+  ];
+  return (
+    <section className="mb-5 rounded-2xl border border-stone-200 bg-white p-4">
+      <p className="mb-3 font-bold text-stone-800">相続税の申告までの流れ</p>
+      <ol className="grid gap-2 sm:grid-cols-4">
+        {steps.map((s, i) => (
+          <li key={s.title}>
+            <Link
+              href={s.href}
+              className={`flex h-full flex-col rounded-xl border p-3 ${i === phase ? "border-brand bg-brand-soft" : i < phase ? "border-emerald-200 bg-emerald-50/40" : "border-stone-200 hover:border-sky-300"}`}
+            >
+              <span className={`text-xs font-bold ${i === phase ? "text-brand" : i < phase ? "text-emerald-700" : "text-stone-500"}`}>
+                {i < phase ? "✓ " : `${i + 1}. `}
+                {i === phase ? "いまここ" : s.when}
+              </span>
+              <span className="mt-1 font-bold text-stone-900">{s.title}</span>
+              <span className="mt-0.5 text-xs text-stone-600">{s.text}</span>
+              <span className="mt-auto pt-2 text-xs font-semibold text-sky-800">{s.go} ›</span>
+            </Link>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }

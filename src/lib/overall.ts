@@ -26,8 +26,12 @@ export interface DocItem {
 /** マイページ全体で使う集計（手続き・書類・相続税申告の進み具合） */
 export function useOverall() {
   const plan = usePlan();
-  const { done } = plan;
   const { data: c0 } = useCase();
+  // 相続税申告の画面で「次へ」で終えたステップは、やることリストの対応する項目も完了にする
+  const done = useMemo(() => {
+    const auto = [...(c0.progress?.completed.includes("assets") ? ["asset-valuation"] : []), ...(c0.progress?.completed.includes("division") ? ["division"] : [])];
+    return auto.length ? [...new Set([...plan.done, ...auto])] : plan.done;
+  }, [plan.done, c0.progress]);
   const iv = useMemo(() => withAssets(plan.iv, c0), [plan.iv, c0]);
   const { data: c, result } = useCase();
   const closed = (id: string) => done.includes(id) || done.includes(naId(id));
@@ -73,7 +77,7 @@ export function useOverall() {
     return m;
   }, [docs]);
 
-  return { ...plan, iv, closed, live, valid, est, precise, verdict, tasks, main, steps, filing, docs, byCategory, doneTasks, doneSteps, doneDocs, total, finished, pct, now, next, urgent, case: c, result };
+  return { ...plan, done, iv, closed, live, valid, est, precise, verdict, tasks, main, steps, filing, docs, byCategory, doneTasks, doneSteps, doneDocs, total, finished, pct, now, next, urgent, case: c, result };
 }
 
 function addDaysISO(d: string, n: number) {

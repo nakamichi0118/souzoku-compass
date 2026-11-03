@@ -3,6 +3,10 @@
  * 金額はすべて円単位の整数、日付は ISO 8601 (YYYY-MM-DD) 文字列。
  */
 
+import type { District } from "./valuation/depth";
+import type { RoadInput } from "./valuation/roads";
+import type { SmallResidentialCheck } from "./valuation/smallResidential";
+
 export type ISODate = string;
 
 /** 被相続人との関係（続柄）。相続順位と2割加算の判定に使う */
@@ -30,6 +34,10 @@ export interface Person {
   zip?: string;
   /** 被相続人より先に死亡（代襲の起点になる） */
   predeceased?: boolean;
+  /** 亡くなった日（先に亡くなった方・あとから亡くなった方の確認用） */
+  deathDate?: ISODate;
+  /** 先に亡くなった子・兄弟姉妹に子どもがいるか（代襲相続人の確認用） */
+  hasChildren?: boolean;
   /** 代襲相続人の場合、被代襲者（先に亡くなった親）の id */
   substituteOf?: string;
   /** 相続放棄 */
@@ -82,7 +90,19 @@ export interface AssetBase {
 }
 
 export type LandMethod =
-  | { type: "rosenka"; routePrice: number; depthCorrection: number; otherCorrection?: number }
+  | {
+      type: "rosenka";
+      /** 正面路線の路線価（道路が1つの場合の入力。roads があればそちらを使う） */
+      routePrice: number;
+      depthCorrection: number;
+      otherCorrection?: number;
+      /** 地区区分（奥行価格補正・加算率に使う） */
+      district?: District;
+      /** 面している道路ごとの路線価と奥行（2つ以上の道路に面する場合の評価に使う） */
+      roads?: RoadInput[];
+      /** 地図で合わせた土地の枠（間口・奥行・向き） */
+      lot?: { center: [number, number]; width: number; depth: number; rotation: number };
+    }
   | { type: "multiplier"; fixedAssetValue: number; multiplier: number }
   | { type: "manual"; value: number };
 
@@ -132,7 +152,7 @@ export interface LandAsset extends AssetBase {
   /** 地図に重ねた路線価図（基準点は画像の幅・高さを1とした座標と緯度経度の組） */
   rosenkaSheet?: RosenkaSheet;
   /** 小規模宅地等の特例（特定居住用宅地等）を適用する */
-  smallResidential?: { applies: boolean; acquirerId?: string };
+  smallResidential?: { applies: boolean; acquirerId?: string; check?: SmallResidentialCheck };
   registry?: RegistryInfo;
 }
 
@@ -156,7 +176,7 @@ export interface CondoAsset extends AssetBase {
   floor: number;
   landShareSqm: number; // 敷地利用権の面積
   exclusiveAreaSqm: number; // 専有部分の床面積
-  smallResidential?: { applies: boolean; acquirerId?: string; landShareSqm?: number };
+  smallResidential?: { applies: boolean; acquirerId?: string; landShareSqm?: number; check?: SmallResidentialCheck };
   registry?: RegistryInfo;
 }
 
