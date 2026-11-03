@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { apportionRatios, calculate, progressiveTax } from "../tax/engine";
+import { SR_MAX_PERMUTE, apportionRatios, calculate, progressiveTax } from "../tax/engine";
 import type { Asset, Case, Person } from "../types";
 import { demoCase } from "@/data/demo";
 
@@ -468,12 +468,23 @@ describe("小規模宅地等の330㎡の割り当て順", () => {
     expect(b.small?.selectedArea).toBe(130);
   });
 
-  it("宅地が6筆以上なら、1㎡あたりの価額が高い順に割り当て、その旨を知らせる", () => {
-    const lots = [lot("A", 60, 3_000_000, "s"), lot("B", 60, 12_000_000, "c1"), lot("C", 60, 9_000_000, "s"), lot("D", 60, 18_000_000, "c1"), lot("E", 60, 15_000_000, "s"), lot("F", 60, 6_000_000, "c1")];
+  it(`宅地が${SR_MAX_PERMUTE + 1}筆以上（すべての順を試すには多すぎる）なら、1㎡あたりの価額が高い順に割り当て、その旨を知らせる`, () => {
+    const lots = [
+      lot("A", 60, 3_000_000, "s"),
+      lot("B", 60, 12_000_000, "c1"),
+      lot("C", 60, 9_000_000, "s"),
+      lot("D", 60, 18_000_000, "c1"),
+      lot("E", 60, 15_000_000, "s"),
+      lot("F", 60, 6_000_000, "c1"),
+      lot("G", 60, 1_200_000, "s"),
+      lot("H", 60, 600_000, "c1"),
+    ];
+    expect(lots.length).toBeGreaterThan(SR_MAX_PERMUTE);
     const r = calculate(mk([spouse, c1], lots, lots.map((l) => all(l.id, [(l as Extract<Asset, { kind: "land" }>).smallResidential!.acquirerId!, 1, 1]))));
-    expect(r.assets.map((l) => l.small?.selectedArea)).toEqual([30, 60, 60, 60, 60, 60]);
+    expect(r.assets.map((l) => l.small?.selectedArea)).toEqual([30, 60, 60, 60, 60, 60, undefined, undefined]);
     const w = r.warnings.find((x) => x.includes("330㎡"))!;
     expect(w).toContain("1㎡あたりの価額が高い土地から順に");
     expect(w).toContain("「A」は残り30㎡分");
+    expect(w).toContain("「G」・「H」には適用していません");
   });
 });

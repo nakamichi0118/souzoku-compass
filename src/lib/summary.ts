@@ -28,7 +28,7 @@ export function summarizeForAssistant(c: Case, r: TaxResult | null): string {
       r.persons.some((p) => p.settlementGifts > 0) && "相続時精算課税の贈与あり",
       r.persons.some((p) => p.transfersIn.length > 0) && "未成年者・障害者控除の一部を扶養義務者から控除",
       r.assets.some((l) => [l.small, ...(l.smallExtra ?? [])].some((d) => d && d.kind !== "residence")) && "小規模宅地等（特定事業用・貸付事業用）あり",
-      r.assets.some((l) => (l.smallExtra?.length ?? 0) > 0) && "1つの土地を2人以上が、それぞれの持分に応じて小規模宅地等の特例に使用",
+      r.assets.some((l) => [l.small, ...(l.smallExtra ?? [])].filter(Boolean).length > 1) && "1つの土地を2人以上が、それぞれの持分に応じて小規模宅地等の特例に使用",
       c.assets.some(
         (a) =>
           (a.kind === "land" || a.kind === "condo") &&

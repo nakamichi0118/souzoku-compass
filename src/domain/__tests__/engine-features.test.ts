@@ -3,7 +3,7 @@
  * 期待値は、テストごとのコメントの手計算（申告書の欄の順）で出したもの。亡くなった日はすべて 2026-03-15。
  */
 import { describe, expect, it } from "vitest";
-import { calculate } from "../tax/engine";
+import { SR_MAX_PERMUTE, calculate } from "../tax/engine";
 import { consultPoints } from "@/lib/consult";
 import type { Asset, Case, Person } from "../types";
 import type { SmallResidentialCheck } from "../valuation/smallResidential";
@@ -538,16 +538,17 @@ describe("小規模宅地等の種類（措置法69条の4）", () => {
     expect(r.warnings.some((w) => w.includes("㎡まで"))).toBe(false);
   });
 
-  it("宅地が6筆以上なら、限度面積1㎡あたりの減額が大きい順に割り当てる（貸付事業用を含むとき）", () => {
-    // 自宅 100㎡ 3,000万：減額 24万/㎡ × 330/200 = 39.6万。アパート 50㎡×5：貸家建付地でも減額は 25万/㎡ × 50% 以下
-    // 自宅に100㎡ → 残りは 139.39㎡ → アパート1・2に50㎡、3に39.39㎡、4・5は0
-    const apts = [1, 2, 3, 4, 5].map((i) => land(`アパート${i}`, 50, 25_000_000, "c1", { use: "rentedHouse", leaseRatio: 0.6 }));
+  it(`宅地が${SR_MAX_PERMUTE + 1}筆以上なら、限度面積1㎡あたりの減額が大きい順に割り当てる（貸付事業用を含むとき）`, () => {
+    // 自宅 100㎡ 3,000万：減額 24万/㎡ × 330/200 = 39.6万。アパート 50㎡×7：貸家建付地でも減額は 25万/㎡ × 50% 以下
+    // 自宅に100㎡ → 残りは 139.39㎡ → アパート1・2に50㎡、3に39.39㎡、4〜7は0
+    const apts = [1, 2, 3, 4, 5, 6, 7].map((i) => land(`アパート${i}`, 50, 25_000_000, "c1", { use: "rentedHouse", leaseRatio: 0.6 }));
     const assets = [...apts, land("自宅", 100, 30_000_000, "c1")];
+    expect(assets.length).toBeGreaterThan(SR_MAX_PERMUTE);
     const r = calculate(mk([c1], assets, assets.map((a) => all(a.id, ["c1", 1, 1]))));
-    expect(r.assets.map((l) => l.small?.selectedArea)).toEqual([50, 50, 39.39, undefined, undefined, 100]);
+    expect(r.assets.map((l) => l.small?.selectedArea)).toEqual([50, 50, 39.39, undefined, undefined, undefined, undefined, 100]);
     const w = r.warnings.find((x) => x.includes("人に貸していた土地も選ぶときは"))!;
     expect(w).toContain("減額できる額が大きい土地から順に");
-    expect(w).toContain("「アパート4」・「アパート5」には適用していません");
+    expect(w).toContain("「アパート4」・「アパート5」・「アパート6」・「アパート7」には適用していません");
   });
 
   it("貸している部屋（マンション）は貸付事業用宅地等", () => {

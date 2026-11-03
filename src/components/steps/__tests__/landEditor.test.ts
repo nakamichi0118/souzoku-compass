@@ -491,15 +491,15 @@ describe("共有で受け継いだ土地・面積の一部だけに特例を使�
     expect(h).toContain(`${areaSummary}（入力あり）`);
     expect(h).toContain("花子さん：特例を使う面積（㎡）");
     expect(h).toContain("一郎さん：特例を使う面積（㎡）");
-    expect(h).toContain("受け継いだ面積は75㎡です");
+    expect(h).toContain("特例の対象になる面積は75㎡です");
     expect(h).toContain('value="60"');
   });
 
-  it("受け継いだ面積は、分け方の割合から 0.01㎡未満を切り捨てて出す", () => {
+  it("特例の対象になる面積は、付表1の③と同じく、分け方の割合から 0.01㎡未満を四捨五入して出す", () => {
     const a = land({ areaSqm: 100 });
     const division = { allocations: [{ assetId: "L1", shares: [{ personId: "w", numerator: 1, denominator: 3 }, { personId: "c", numerator: 2, denominator: 3 }] }] };
     expect(acquiredSqm(a, division, "w")).toBe(33.33);
-    expect(acquiredSqm(a, division, "c")).toBe(66.66);
+    expect(acquiredSqm(a, division, "c")).toBe(66.67);
     expect(acquiredSqm(a, division, "d")).toBeUndefined();
     expect(acquiredSqm(a, undefined, "w")).toBeUndefined();
     expect(acquiredSqm(land({ areaSqm: 0 }), division, "w")).toBeUndefined();
@@ -518,17 +518,52 @@ describe("共有で受け継いだ土地・面積の一部だけに特例を使�
       floor: 0,
       landShareSqm: 40,
       exclusiveAreaSqm: 70,
-      smallResidential: { applies: true, acquirerId: "w", check: home, others: [{ acquirerId: "c" }] },
+      smallResidential: { applies: true, acquirerId: "w", check: home, others: [{ acquirerId: "c", check: { livedTogether: "yes", keep: "yes" } }] },
     };
     const h = renderToStaticMarkup(createElement(AssetEditor, { living: family, asset: condo, patch: noop, division: { allocations: [{ assetId: "C1", shares: [{ personId: "c", numerator: 1, denominator: 4 }] }] } }));
     expect(h).toContain("この部屋を何人かで受け継ぎ、ほかの人も特例を使うとき（1人）");
-    expect(h).toContain("受け継いだ面積は10㎡です");
+    expect(h).toContain("特例の対象になる面積は10㎡です");
+  });
+
+  it("空き部屋のある貸家では、特例の対象になる面積は貸している部分だけ（付表1の③と同じ）", () => {
+    const a = land({ areaSqm: 200, use: "rentedHouse", rentRatio: 0.5 });
+    const division = { allocations: [{ assetId: "L1", shares: [{ personId: "w", numerator: 1, denominator: 2 }, { personId: "c", numerator: 1, denominator: 2 }] }] };
+    expect(acquiredSqm(a, division, "w")).toBe(50);
+    // 全部貸していれば持分どおり
+    expect(acquiredSqm(land({ areaSqm: 200, use: "rentedHouse", rentRatio: 1 }), division, "w")).toBe(100);
+  });
+
+  it("最初の取得者を空にしても、一緒に取得する人が残っていれば、その人の欄を出したままにする（外せるように）", () => {
+    const h = box({ applies: true, acquirerId: "", check: home, others: [{ acquirerId: "c", check: { livedTogether: "yes", keep: "yes" } }] });
+    expect(h).toContain(`${othersSummary}（1人）`);
+    expect(h).toContain('aria-label="この人を外す"');
+    expect(h).toContain(areaSummary);
+    // だれも選んでいなければ出さない
+    expect(box({ applies: false, acquirerId: "", check: home })).not.toContain(othersSummary);
+  });
+
+  it("面積の一部の欄は、特例を使える人の分だけ出す（使えない人しかいなければ出さない）", () => {
+    // 一郎さんは申告期限までに売るので使えない：面積の欄は花子さんの分だけ
+    const h = box({ applies: true, acquirerId: "w", check: home, others: [{ acquirerId: "c", check: { livedTogether: "yes", keep: "no" } }] });
+    expect(h).toContain(areaSummary);
+    expect(h).not.toContain("一郎さん：特例を使う面積（㎡）");
+    expect(h).not.toContain("花子さん：特例を使う面積（㎡）");
+    expect(h).toContain("特例を使う面積（㎡）");
+    // 子が取得して申告期限までに売る：だれも使えないので出さない
+    expect(box({ applies: false, acquirerId: "c", check: { ...home, livedTogether: "yes", keep: "no" } })).not.toContain(areaSummary);
+  });
+
+  it("ほかに受け継ぐ人がいない（相続人が1人）ときは、何人かで受け継ぐときの欄を出さない", () => {
+    const h = box({ applies: true, acquirerId: "w", check: home }, undefined, [spouse]);
+    expect(h).not.toContain(othersSummary);
+    expect(h).toContain(areaSummary);
   });
 
   it("FAQ に共有の土地と面積の一部の説明がある", () => {
     const a = FAQS.assets.find((f) => f.q === "共有の土地や面積の一部に特例を使うには？")!.a;
     expect(a).toContain("受け継いだ人ごとに判断");
     expect(a).toContain("配偶者はそのまま使えます");
+    expect(a).toContain("貸し続け、持ち続ける");
     expect(a).toContain("付表1");
   });
 });

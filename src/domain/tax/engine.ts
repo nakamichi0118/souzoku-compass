@@ -368,8 +368,11 @@ export interface EngineOptions {
   ratioDigits?: number;
 }
 
-/** 小規模宅地等の特例の宅地が何筆までなら、すべての割り当て順を試すか（5筆で120通り） */
-export const SR_MAX_PERMUTE = 5;
+/**
+ * 小規模宅地等の特例の候補（土地と取得する人の組）がいくつまでなら、すべての割り当て順を試すか（7つで5,040通り。
+ * 割り当てる面積が同じになる並べ方は1回だけ計算するので、実際に計算するのはずっと少ない）
+ */
+export const SR_MAX_PERMUTE = 7;
 
 /** 0〜n-1 の並べ方をすべて、辞書順（並べた順がいちばん先）に返す */
 function permutations(n: number): number[][] {
@@ -395,6 +398,8 @@ interface SrSlot {
   area100: number;
   cap100: number;
   value: number;
+  /** 取得する人が配偶者か（配偶者の税額軽減で税額が0円になりやすいので、同じ条件なら後に回す） */
+  spouse?: boolean;
 }
 
 /**
@@ -450,7 +455,9 @@ function srBinds(slots: SrSlot[]): boolean {
 }
 
 /**
- * 既定の割り当て順：限度面積1㎡あたり（貸付事業用に換算）の減額が大きい順、同じなら入力順。
+ * 既定の割り当て順：限度面積1㎡あたり（貸付事業用に換算）の減額が大きい順。同じなら配偶者でない人の分を先に
+ * （1つの土地を一緒に受け継いだ人どうしは必ず同じになる。配偶者の税額軽減で税額が0円の配偶者に先に割り当てると、
+ * 入力した順だけで家族全体の税額が変わってしまうため）、それも同じなら入力順。
  * 特定居住用だけなら「1㎡あたりの価額が高い順」と同じ。比べるのは 価額×減額割合×限度面積÷面積 で、整数のまま掛けて比べる
  */
 function defaultSrOrder(slots: SrSlot[]): number[] {
@@ -465,7 +472,9 @@ function defaultSrOrder(slots: SrSlot[]): number[] {
       const b = eff(slots[j]);
       const l = a.n * b.d;
       const r = b.n * a.d;
-      return l > r ? -1 : l < r ? 1 : i - j;
+      if (l !== r) return l > r ? -1 : 1;
+      if (!!slots[i].spouse !== !!slots[j].spouse) return slots[i].spouse ? 1 : -1;
+      return i - j;
     });
 }
 
@@ -950,7 +959,13 @@ function compute(
   }
 
   // 限度面積（措置法69条の4第2項）を、srOrder の順に、なければ既定の順に割り当てる。土地と取得する人の組ごとに、その人の上限（cap100）まで
-  const srSlots: SrSlot[] = srCandidates.map((x) => ({ kind: x.kind, area100: x.area100, cap100: x.cap100, value: x.landPart }));
+  const srSlots: SrSlot[] = srCandidates.map((x) => ({
+    kind: x.kind,
+    area100: x.area100,
+    cap100: x.cap100,
+    value: x.landPart,
+    spouse: c.persons.find((p) => p.id === x.acquirerId)?.relation === "spouse",
+  }));
   const srOrdered = srOrder ?? defaultSrOrder(srSlots);
   const selected = fillSmallLand(srSlots, srOrdered);
   // 付表1の明細と減額（⑥ ＝ ④ × ⑤ ／ ③）。1人目は line.small、2人目以降は line.smallExtra（others の順）に入れ、

@@ -8,7 +8,7 @@ import { Choice } from "@/components/plan/inputs";
 import { Button, Check, Field, Note, NumInput, OptionalNumInput, Select, TextInput, YenInput, fmt } from "@/components/ui";
 import type { Asset, Case, CondoAsset, LandAsset, LandUse, Person, SmallLandAcquirer, SmallLandKind, SmallLandRelief } from "@/domain/types";
 import { DISTRICTS, type District } from "@/domain/valuation/depth";
-import { LEASE_LETTERS, LEASE_RATIO_BY_LETTER, type LeaseLetter, leaseLetterOf } from "@/domain/valuation/lease";
+import { LEASE_LETTERS, LEASE_RATIO_BY_LETTER, type LeaseLetter, leaseLetterOf, ratio4 } from "@/domain/valuation/lease";
 import { type Edge, type RoadInput, evaluateRoads } from "@/domain/valuation/roads";
 import { type Answer, SMALL_LAND_RULE, type SmallResidentialCheck, judgeSmallResidential, shouldApply, smallLandKind } from "@/domain/valuation/smallResidential";
 
@@ -149,13 +149,19 @@ export function setSelectedSqm(sr: SmallLandRelief, who: number | null, v: numbe
   return { ...sr, others: (sr.others ?? []).map((o, j) => (j === who ? { ...o, selectedSqm: v } : o)) };
 }
 
-/** 分け方で決めた、その人が受け継いだ面積（㎡。0.01㎡未満切捨て）。分け方が入っていなければ undefined */
+/**
+ * 分け方で決めた、その人の分で特例の対象になる面積（㎡。付表1の③と同じ出し方）。分け方が入っていなければ undefined。
+ * 持分に応ずる面積は0.01㎡未満を四捨五入し、空き部屋のある貸家などの貸付事業用は、そのうち貸している部分（0.01㎡未満切捨て）
+ */
 export function acquiredSqm(a: Extract<Asset, { kind: "land" | "condo" }>, division: DivisionInput | undefined, personId: string | undefined): number | undefined {
   if (!division || !personId) return undefined;
   const full = a.kind === "condo" ? (a.smallResidential?.landShareSqm ?? a.landShareSqm) : a.areaSqm;
   const s = division.allocations.find((x) => x.assetId === a.id)?.shares.find((x) => x.personId === personId);
   if (!s || !(full > 0) || !Number.isInteger(s.numerator) || !Number.isInteger(s.denominator) || !(s.numerator > 0) || !(s.denominator > 0)) return undefined;
-  return Math.floor((Math.round(full * 100) * s.numerator) / s.denominator) / 100;
+  const area100 = Math.round(((full * s.numerator) / s.denominator) * 100);
+  const rented = smallLandKind(a) === "rental" && (a.kind === "condo" || a.use === "rentedHouse" || a.use === "rentedLeasehold");
+  const rent4 = rented ? ratio4(a.rentRatio ?? 1) : 10000;
+  return (rent4 > 0 && rent4 < 10000 ? Math.floor((area100 * rent4) / 10000) : area100) / 100;
 }
 
 type Question = { key: keyof SmallResidentialCheck; q: string; hint?: string };
@@ -279,8 +285,9 @@ export function SmallResidential({
   const what = a.kind === "condo" ? "この部屋" : "この土地";
   // 条件は満たしていても、分け方のために特例を使わないときは「使えます」を緑で見せない
   const tone = j.result === "ok" ? (gap ? "info" : "ok") : j.result === "consult" ? "warn" : j.result === "no" ? "info" : null;
-  // 一緒に受け継いだ人・面積の一部の入力は、最初の取得者を選び、土地として特例を使える見込みがあるときだけ出す
-  const more = !!sr.acquirerId && !lotRuledOut(kind, check);
+  // 一緒に受け継いだ人・面積の一部の入力は、取得する人を選び、土地として特例を使える見込みがあるときだけ出す。
+  // 最初の取得者が空になっても一緒に取得する人が残っていれば、その人の分は計算に入るので、見て外せるように出したままにする
+  const more = (!!sr.acquirerId || !!sr.others?.some((o) => o.acquirerId)) && !lotRuledOut(kind, check);
   return (
     <div className="space-y-3 rounded-lg bg-stone-50 p-3 sm:col-span-2">
       <p className="font-bold text-stone-800">小規模宅地等の特例（評価が最大80%下がる）</p>
@@ -387,6 +394,8 @@ function OtherAcquirers({
   const opts = { assetKind: a.kind };
   const taken = new Set([sr.acquirerId, ...others.map((o) => o.acquirerId)]);
   const canAdd = others.every((o) => o.acquirerId) && living.some((p) => !taken.has(p.id));
+  // ほかに受け継ぐ人がいない（相続人が1人など）ときは、開いても何もできないので出さない
+  if (others.length === 0 && !canAdd) return null;
   const recentAt = recentAskedAt(kind, lot, others.map((o) => (living.some((p) => p.id === o.acquirerId) ? o : { acquirerId: "" })));
   return (
     <details className={detailsCls}>
@@ -460,10 +469,16 @@ function PartialArea({
   division?: DivisionInput;
   set: (next: SmallLandRelief) => void;
 }) {
+  const lot = sr.check ?? {};
+  const kind = smallLandKind(a);
+  // 特例を使える人の分だけ出す（使えない人の面積は計算に使わない）
   const rows = [
-    { who: null as number | null, id: sr.acquirerId, value: sr.selectedSqm },
-    ...(sr.others ?? []).map((o, i) => ({ who: i as number | null, id: o.acquirerId, value: o.selectedSqm })),
-  ].filter((r) => living.some((p) => p.id === r.id));
+    { who: null as number | null, id: sr.acquirerId, value: sr.selectedSqm, check: lot },
+    ...(sr.others ?? []).map((o, i) => ({ who: i as number | null, id: o.acquirerId, value: o.selectedSqm, check: otherAcquirerCheck(lot, o.check) })),
+  ].filter((r) => {
+    const person = living.find((p) => p.id === r.id);
+    return !!person && shouldApply(judgeSmallResidential(r.check, person, kind, { assetKind: a.kind }), r.check);
+  });
   if (rows.length === 0) return null;
   const many = rows.length > 1;
   const entered = rows.some((r) => r.value != null);
@@ -476,7 +491,7 @@ function PartialArea({
           const p = living.find((x) => x.id === r.id)!;
           const got = acquiredSqm(a, division, r.id);
           return (
-            <Field key={`${r.who ?? "first"}:${r.id}`} label={many ? `${p.name || "（未入力）"}さん：特例を使う面積（㎡）` : "特例を使う面積（㎡）"} hint={got != null ? `受け継いだ面積は${fmt(got)}㎡です` : undefined}>
+            <Field key={`${r.who ?? "first"}:${r.id}`} label={many ? `${p.name || "（未入力）"}さん：特例を使う面積（㎡）` : "特例を使う面積（㎡）"} hint={got != null ? `特例の対象になる面積は${fmt(got)}㎡です` : undefined}>
               <OptionalNumInput value={r.value} accept={(v) => v > 0} onChange={(v) => set(setSelectedSqm(sr, r.who, v))} />
             </Field>
           );

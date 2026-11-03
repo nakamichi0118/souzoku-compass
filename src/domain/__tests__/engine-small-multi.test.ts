@@ -135,6 +135,8 @@ describe("配偶者と、同居していなかった子が1/2ずつ受け継ぐ"
   it("1人目が使えなくても、2人目（配偶者）の分には使う", () => {
     const lot = home("自宅", 300, 90_000_000, "c1", { ...HOME, ...notLiving }, [{ acquirerId: "s" }]);
     const r = calculate(mk([spouse, c1], [lot], [all("自宅", ["c1", 1, 2], ["s", 1, 2])]));
+    // 特例を使うのは1人だけなので、要約に「2人以上」とは書かない
+    expect(summarizeForAssistant(mk([spouse, c1], [lot], [all("自宅", ["c1", 1, 2], ["s", 1, 2])]), r)).not.toContain("1つの土地を2人以上");
     expect(r.assets[0].small).toBeUndefined();
     expect(r.assets[0].smallExtra).toEqual([expect.objectContaining({ acquirerId: "s", area: 150, selectedArea: 150, selectedValue: 45_000_000 })]);
     expect(r.assets[0].reduction).toBe(36_000_000);
@@ -286,6 +288,41 @@ describe("限度面積を超えるときは、どの人の分に割り当てる�
     );
     expect(spouseFirst.assets[0].small).toMatchObject({ selectedArea: 200 });
     expect(r.totalPayable).toBeLessThan(spouseFirst.totalPayable);
+  });
+
+  // 自宅を妻と長男、アパート2つ（または3つ）を長男と長女で1/2ずつ。候補は6つ（または8つ）
+  const apts = (n: number) =>
+    Array.from({ length: n }, (_, i) =>
+      rental(`アパート${i + 1}`, 200, 100_000_000 + i * 20_000_000, i % 2 ? "c2" : "c1", RENT_ON, [{ acquirerId: i % 2 ? "c1" : "c2", check: RENT_ON }]),
+    );
+  const allocs = (n: number) => [
+    all("自宅", ["s", 1, 2], ["c1", 1, 2]),
+    ...Array.from({ length: n }, (_, i) => all(`アパート${i + 1}`, ["c1", 1, 2], ["c2", 1, 2])),
+    all("預金", ["c2", 1, 1]),
+  ];
+  const twoOrders = (n: number) =>
+    [
+      home("自宅", 400, 200_000_000, "s", HOME, [{ acquirerId: "c1", check: LIVING }]),
+      home("自宅", 400, 200_000_000, "c1", { ...HOME, ...LIVING }, [{ acquirerId: "s" }]),
+    ].map((h) => calculate(mk([spouse, c1, c2], [h, ...apts(n), dep("預金", 100_000_000)], allocs(n))));
+
+  it("候補が6つでも、妻と長男のどちらを先に入れたかで税額が変わらない（すべての割り当て順を試す）", () => {
+    const [a, b] = twoOrders(2);
+    expect(a.blockers).toEqual([]);
+    expect(a.totalPayable).toBe(b.totalPayable);
+    const sel = (r: ReturnType<typeof calculate>, id: string) =>
+      [r.assets[0].small, ...(r.assets[0].smallExtra ?? [])].find((d) => d?.acquirerId === id)?.selectedArea ?? 0;
+    expect(sel(a, "s")).toBe(sel(b, "s"));
+    expect(sel(a, "c1")).toBe(sel(b, "c1"));
+  });
+
+  it("候補が多くて既定の順にするときも、同じ条件なら配偶者の分を後にする（入れた順で税額が変わらない）", () => {
+    const [a, b] = twoOrders(3);
+    expect(a.blockers).toEqual([]);
+    expect(a.totalPayable).toBe(b.totalPayable);
+    const s1 = [a.assets[0].small, ...(a.assets[0].smallExtra ?? [])].find((d) => d?.acquirerId === "c1");
+    const s2 = [a.assets[0].small, ...(a.assets[0].smallExtra ?? [])].find((d) => d?.acquirerId === "s");
+    expect(s1?.selectedArea ?? 0).toBeGreaterThanOrEqual(s2?.selectedArea ?? 0);
   });
 });
 
