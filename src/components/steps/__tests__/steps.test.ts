@@ -395,8 +395,8 @@ describe("書類の作成（forms-8・forms-10）", () => {
     expect(html).toContain("利用規約に同意します");
     expect(html).toContain("相続コンパスは申告書を作るための道具であり、申告内容の確認と最終的な責任は自分にあることを理解しました");
     expect(html.split("相続コンパスは税理士による確認の代わりにはなりません。").length).toBe(2);
-    // 未確認のまま作ると「下書き」と入ることは残す
-    expect(html).toContain("「下書き」と入ります");
+    // 未確認のまま作ると「下書き」と入ることは残す（デモは確認済みなので、確認を消して見る）
+    expect(render(DocumentsStep, { ...clone(), review: undefined })).toContain("「下書き」と入ります");
   });
 
   it("別に用意する表は短い名前で出し、正式名はたたんだ中に1回だけ出す", () => {

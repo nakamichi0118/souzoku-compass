@@ -75,7 +75,9 @@ export function useNotices(o: ReturnType<typeof useOverall>) {
   }, [o.loaded]);
   const personal = useMemo(() => personalNotices(o), [o]);
   const system: Notice[] = useMemo(() => SYSTEM_NOTICES.map((n) => ({ ...n, kind: "system" as const, level: "info" as const })), []);
-  const unread = (n: Notice) => !read.includes(n.id);
+  // 機能のお知らせは、使い始めた日より後に出たものだけを未読にする（初めての人に更新の履歴をまとめて未読で出さない）
+  const since = o.account?.createdAt?.slice(0, 10) ?? "";
+  const unread = (n: Notice) => !read.includes(n.id) && !(n.kind === "system" && since && n.date <= since);
   const markRead = useCallback(
     (ids: string[]) =>
       setRead((cur) => {

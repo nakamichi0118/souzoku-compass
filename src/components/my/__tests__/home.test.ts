@@ -74,10 +74,10 @@ describe("ホームの文字", () => {
     expect(text(render())).toContain("3日超過");
   });
 
-  it("申告の進み具合は吹き出しを出さず、［次へ］のボタンだけ（スマホで吹き出しが1文字ずつ折れない）", () => {
+  it("申告の進み具合は吹き出しを出さず、続きへの小さなリンクだけ（大きいボタンは「続きを進める」の1つ）", () => {
     const html = render();
     expect(text(html)).not.toContain("へ進みましょう");
-    expect(html).toMatch(/href="\/case\/s4"[^>]*>次へ（(<!-- -->)?申告前の確認(<!-- -->)?） ›/);
+    expect(html).toMatch(/href="\/case\/s4"[^>]*>申告の続き（(<!-- -->)?申告前の確認(<!-- -->)?） ›/);
     // 同じ先へ行く右上のリンクは出さない
     expect(text(html)).not.toContain("申告書づくりへ");
   });
@@ -86,7 +86,7 @@ describe("ホームの文字", () => {
     overall.steps = steps.map((s) => ({ ...s, done: true }));
     const html = render();
     expect(html).toMatch(/href="\/case\/documents"[^>]*>申告書づくりへ(<!-- -->)? ›/);
-    expect(text(html)).not.toContain("次へ（");
+    expect(text(html)).not.toContain("申告の続き（");
   });
 
   it("コンパスくんに相談は、答えが出るまで吹き出しを出さず、質問ボタンは3つ", () => {
