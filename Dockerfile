@@ -8,8 +8,8 @@ FROM node:22-slim AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# 郵便番号 → 住所の表（日本郵便の郵便番号データから作る）。取れなくてもビルドは続け、住所は手で入れてもらう
-RUN npx tsx scripts/zip/build.ts || echo "郵便番号データを作れませんでした（住所の自動入力なしで続けます）"
+# 郵便番号 → 住所の表（日本郵便の郵便番号データから作る）。取れないときはビルドを止める（表がないまま出さない）
+RUN npx tsx scripts/zip/build.ts
 RUN npm run build
 
 FROM node:22-slim AS run

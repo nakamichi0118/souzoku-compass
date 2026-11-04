@@ -13,12 +13,11 @@ import { join } from "node:path";
 import { addBusinessZips, buildZipIndex } from "../../src/lib/zip/parse";
 import { decodeCsv, extractFile } from "./unzip";
 
-const SOURCES = [
-  "https://www.post.japanpost.jp/zipcode/dl/utf/zip/utf_ken_all.zip",
-  "https://www.post.japanpost.jp/zipcode/dl/kogaki/zip/ken_all.zip",
-];
+// 2026年5月にダウンロードの場所が /service/search/zipcode/download/ に変わった（古い場所は 404）
+const BASE = "https://www.post.japanpost.jp/service/search/zipcode/download";
+const SOURCES = [`${BASE}/utf/zip/utf_ken_all.zip`, `${BASE}/kogaki/zip/ken_all.zip`];
 /** 会社・役所などの個別の郵便番号（取れなくても続ける） */
-const BUSINESS = ["https://www.post.japanpost.jp/zipcode/dl/jigyosyo/zip/jigyosyo.zip"];
+const BUSINESS = [`${BASE}/office/zip/jigyosyo.zip`];
 
 async function download(sources: string[]): Promise<string> {
   const errors: string[] = [];
