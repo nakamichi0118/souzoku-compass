@@ -9,6 +9,12 @@ export interface SystemNotice {
 // 一覧にはタイトルだけを出し、押すと本文が開く。タイトルは短く「〜しました」「〜できます」でそろえる
 export const SYSTEM_NOTICES: SystemNotice[] = [
   {
+    id: "2026-11-04-zip",
+    date: "2026-11-04",
+    title: "郵便番号から住所を入れられます",
+    body: "住所の欄の横に郵便番号を入れると、町名まで自動で入ります。続けて番地を入れてください。",
+  },
+  {
     id: "2026-11-04-less-text",
     date: "2026-11-04",
     title: "画面の文字を減らし、見やすくしました",

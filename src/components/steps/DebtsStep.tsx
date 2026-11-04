@@ -1,6 +1,7 @@
 "use client";
 
 import { Button, Card, Check, Field, Note, Select, TextInput, YenInput, fmt } from "@/components/ui";
+import { AddressField } from "@/components/ui/AddressField";
 import type { Case, Debt } from "@/domain/types";
 import { newId, useCase } from "@/lib/store";
 import { addedAnchor, useShowAdded } from "./useShowAdded";
@@ -74,9 +75,7 @@ export function DebtsStep() {
                 <Field label="支払先">
                   <TextInput value={d.creditor ?? ""} onChange={(e) => patch(d.id, { creditor: e.target.value })} placeholder={d.kind === "debt" ? "〇〇銀行、〇〇市役所など" : "〇〇斎場など"} />
                 </Field>
-                <Field label="支払先の住所">
-                  <TextInput value={d.creditorAddress ?? ""} onChange={(e) => patch(d.id, { creditorAddress: e.target.value })} />
-                </Field>
+                <AddressField label="支払先の住所" address={d.creditorAddress ?? ""} onAddress={(v) => patch(d.id, { creditorAddress: v })} />
                 <Field label="金額">
                   <YenInput value={d.amount} onChange={(v) => patch(d.id, withDebtAmount(d, v, data.undivided))} />
                 </Field>

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Card, Field, Note, TextInput, YenInput, fmt } from "@/components/ui";
+import { AddressField } from "@/components/ui/AddressField";
 import { isValidDate, monthsDeadline, nextOpenDay } from "@/domain/procedures/dates";
 import type { Decedent } from "@/domain/types";
 import { useCase } from "@/lib/store";
@@ -39,9 +40,9 @@ export function DecedentStep() {
           <Field label="亡くなった日" hint={wareki(d.deathDate)?.text}>
             <TextInput type="date" value={d.deathDate} onChange={(e) => set("deathDate", e.target.value)} />
           </Field>
-          <Field label="最後の住所">
-            <TextInput value={d.address} onChange={(e) => set("address", e.target.value)} />
-          </Field>
+          <div className="sm:col-span-2">
+            <AddressField label="最後の住所" address={d.address} onAddress={(v) => set("address", v)} />
+          </div>
           <Field label="職業">
             <TextInput value={d.occupation ?? ""} onChange={(e) => set("occupation", e.target.value)} placeholder="無職" />
           </Field>

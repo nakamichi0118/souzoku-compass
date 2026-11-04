@@ -56,10 +56,11 @@ describe("あなたへのお知らせの文", () => {
 });
 
 describe("相続コンパスからのお知らせ（SYSTEM_NOTICES）", () => {
-  it("いちばん新しいお知らせは、画面の文字を減らしたこと。本文は1文", () => {
-    const [first] = SYSTEM_NOTICES;
-    expect(first).toMatchObject({ id: "2026-11-04-less-text", date: "2026-11-04", title: "画面の文字を減らし、見やすくしました" });
-    expect(first.body.match(/。/g)).toHaveLength(1);
+  it("新しいお知らせは、郵便番号から住所を入れること・画面の文字を減らしたこと", () => {
+    const [first, second] = SYSTEM_NOTICES;
+    expect(first).toMatchObject({ id: "2026-11-04-zip", date: "2026-11-04", title: "郵便番号から住所を入れられます" });
+    expect(second).toMatchObject({ id: "2026-11-04-less-text", date: "2026-11-04", title: "画面の文字を減らし、見やすくしました" });
+    expect(second.body.match(/。/g)).toHaveLength(1);
   });
   it("id は重ならず、新しい順に並ぶ", () => {
     expect(new Set(SYSTEM_NOTICES.map((n) => n.id)).size).toBe(SYSTEM_NOTICES.length);

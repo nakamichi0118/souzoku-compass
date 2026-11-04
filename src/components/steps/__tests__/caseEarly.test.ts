@@ -106,7 +106,10 @@ describe("相続人", () => {
     const html = render(HeirsStep);
     const hanako = html.slice(html.indexOf("住所・連絡先（書類用）"));
     expect(hanako).toMatch(/^住所・連絡先（書類用）<span [^>]*>〒100-0099 東京都千代田区架空町一丁目2番3号 03-0000-0000<\/span><\/summary>/);
-    for (const label of ["郵便番号", "電話番号", "職業", "住所"]) expect(hanako).toContain(`>${label}</span>`);
+    for (const label of ["電話番号", "職業"]) expect(hanako).toContain(`>${label}</span>`);
+    // 住所は郵便番号つきの欄（郵便番号を入れると住所が入る）
+    expect(hanako).toContain('aria-label="郵便番号"');
+    expect(hanako).toContain(">住所</label>");
     expect(html).not.toMatch(/<details[^>]*open[^>]*><summary[^>]*>住所・連絡先/);
   });
 

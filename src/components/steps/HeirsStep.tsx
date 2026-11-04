@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Button, Card, Check, Field, Note, Select, TextInput, YenInput, fmt } from "@/components/ui";
+import { AddressField } from "@/components/ui/AddressField";
 import { type HeirResult, determineHeirs, isSurchargeTarget } from "@/domain/heirs";
 import { toString as fracText } from "@/domain/fraction";
 import type { Case, Person, PriorCredit, Relation, SmallLandAcquirer } from "@/domain/types";
@@ -276,20 +277,15 @@ function ContactFields({ p, patch }: { p: Person; patch: (id: string, p: Partial
         {filled && <span className="ml-2 font-normal text-stone-600">{filled}</span>}
       </summary>
       <div className="grid gap-4 pt-2 sm:grid-cols-3">
-        <Field label="郵便番号">
-          <TextInput value={p.zip ?? ""} onChange={(e) => patch(p.id, { zip: e.target.value })} placeholder="100-0001" />
-        </Field>
+        <div className="sm:col-span-3">
+          <AddressField label="住所" address={p.address ?? ""} onAddress={(v) => patch(p.id, { address: v })} zip={p.zip ?? ""} onZip={(v) => patch(p.id, { zip: v })} />
+        </div>
         <Field label="電話番号">
           <TextInput value={p.phone ?? ""} onChange={(e) => patch(p.id, { phone: e.target.value })} placeholder="03-0000-0000" />
         </Field>
         <Field label="職業">
           <TextInput value={p.occupation ?? ""} onChange={(e) => patch(p.id, { occupation: e.target.value })} />
         </Field>
-        <div className="sm:col-span-3">
-          <Field label="住所">
-            <TextInput value={p.address ?? ""} onChange={(e) => patch(p.id, { address: e.target.value })} />
-          </Field>
-        </div>
       </div>
     </details>
   );

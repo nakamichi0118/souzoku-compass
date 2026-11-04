@@ -4,6 +4,7 @@ import { kvGet, kvSet } from "@/lib/cloud";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Card, Note, TextInput } from "@/components/ui";
+import { AddressField } from "@/components/ui/AddressField";
 import { scrollBelowHeader, scrollToY } from "@/components/ui/scroll";
 import { Choice, Counter, ManYen, Q, YesNo } from "@/components/plan/inputs";
 import { isValidDate } from "@/domain/procedures/dates";
@@ -184,7 +185,7 @@ export function Hearing() {
             <Choice value={a("myRelation")} onChange={(v) => pick("myRelation", v)} options={["父", "母", "夫", "妻", "祖父", "祖母", "その他"].map((x) => ({ value: x, label: x }))} />
           </Q>
           <Q label="亡くなった方の最後の住所" hint="役所・税務署を探すのに使います。">
-            <TextInput value={iv.address} onChange={(e) => set("address", e.target.value)} placeholder="例：東京都千代田区架空町一丁目2番3号" />
+            <AddressField address={iv.address} onAddress={(v) => set("address", v)} placeholder="例：東京都千代田区架空町一丁目2番3号" ariaLabel="亡くなった方の最後の住所" />
           </Q>
           <Q label="亡くなった日" hint="期限はこの日から数えます。">
             <TextInput type="date" value={iv.deathDate} onChange={(e) => set("deathDate", e.target.value)} className="min-h-[42px] max-w-56 [&::-webkit-date-and-time-value]:text-left" />
