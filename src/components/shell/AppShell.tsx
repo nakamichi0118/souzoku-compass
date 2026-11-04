@@ -1,5 +1,6 @@
 "use client";
 
+import { isStaffEmail } from "@/data/consultFirm";
 import { CalendarDays, Calculator, FileText, House, ListChecks, Menu, Printer, UserRound, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -89,6 +90,14 @@ export function AppHeader() {
                 <Link href="/my/hearing" onClick={close} className="block rounded-lg px-3 py-2 hover:bg-stone-50">
                   聞き取りの答えを直す
                 </Link>
+                <Link href="/my/consult" onClick={close} className="block rounded-lg px-3 py-2 hover:bg-stone-50">
+                  税理士への相談
+                </Link>
+                {isStaffEmail(o.account?.email) && (
+                  <Link href="/firm" onClick={close} className="block rounded-lg px-3 py-2 hover:bg-stone-50">
+                    事務所の画面
+                  </Link>
+                )}
                 <Link href="/" onClick={close} className="block rounded-lg px-3 py-2 hover:bg-stone-50">
                   相続コンパスのトップ
                 </Link>

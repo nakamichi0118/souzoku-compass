@@ -2,7 +2,6 @@
 import { type TaxResult, isValidISODate, mergeAcquirerCheck } from "@/domain/tax/engine";
 import type { Case, Person, SmallLandKind, SmallLandRelief } from "@/domain/types";
 import { reviewConsultLines } from "@/domain/review/topics";
-import { CONSULT_FIRM } from "@/data/consultFirm";
 import { type SmallResidentialCheck, judgeSmallResidential, smallLandKind } from "@/domain/valuation/smallResidential";
 
 const yen = (n: number) => `${n.toLocaleString("ja-JP")}円`;
@@ -80,13 +79,3 @@ export function consultMemo(c: Case, r: TaxResult | null): string {
   return lines.filter((l, i) => l !== "" || i > 0).join("\n");
 }
 
-/** メールの本文に入れる長さの上限（メールソフトによっては長いリンクを開けないため） */
-const MAIL_BODY_MAX = 1500;
-
-/** 相談の概要を入れたメールを開くリンク。送り先が決まっていなければ null */
-export function consultMailto(c: Case, r: TaxResult | null): string | null {
-  if (!CONSULT_FIRM.email) return null;
-  let body = `${CONSULT_FIRM.name} 御中\n\n相続コンパスから相続税の申告について相談します。\n\n${consultMemo(c, r)}\n\n（連絡先：）\n`;
-  if (body.length > MAIL_BODY_MAX) body = `${body.slice(0, MAIL_BODY_MAX)}…\n（続きは相続コンパスの相談メモをご覧ください）`;
-  return `mailto:${CONSULT_FIRM.email}?subject=${encodeURIComponent("【相続コンパス】相続税の申告の相談")}&body=${encodeURIComponent(body)}`;
-}
