@@ -267,6 +267,9 @@ export function topicStatus(t: Topic, s: ReviewState): TopicStatus {
   return { kind: "clear" };
 }
 
+/** 論点の「相談して確かめた」の印を外す（答え直したときは、新しい事実を確かめていないため） */
+export const dropConsulted = (r: ReviewState, id: TopicId): ReviewState => ({ ...r, consulted: (r.consulted ?? []).filter((x) => x !== id) });
+
 export interface ReviewSummary {
   /** すべての論点を確かめ終わった（未確認・相談・追加の残りがない） */
   confirmed: boolean;

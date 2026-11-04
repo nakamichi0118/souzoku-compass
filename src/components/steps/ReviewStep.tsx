@@ -15,6 +15,7 @@ import {
   type TopicId,
   WITHDRAWAL_ADD,
   cashFromWithdrawal,
+  dropConsulted,
   reviewSummary,
   topicStatus,
 } from "@/domain/review/topics";
@@ -98,7 +99,8 @@ function TopicRow({ t, review, set }: { t: Topic; review: ReviewState; set: (fn:
   const { update } = useCase();
   const answer = review.answers?.[t.id];
   const st = topicStatus(t, review);
-  const choose = (v: ReviewAnswer) => set((r) => ({ ...r, answers: { ...r.answers, [t.id]: v } }));
+  // 答えを変えたら、前の答えで「相談して確かめた」にした印は外す（新しい事実は確かめていないため）
+  const choose = (v: ReviewAnswer) => set((r) => ({ ...dropConsulted(r, t.id), answers: { ...r.answers, [t.id]: v } }));
   const markAdded = (key: string) => (r: ReviewState) => ({ ...r, added: [...new Set([...(r.added ?? []), key])] });
   const addAsset = (key: string, a: Asset) => {
     update((c) => withReview({ ...c, assets: [...c.assets, a] }, markAdded(key)));
@@ -151,6 +153,9 @@ function TopicRow({ t, review, set }: { t: Topic; review: ReviewState; set: (fn:
                 <Button variant="secondary" onClick={() => addAsset(it.key, assetFromTemplate(it.template))}>
                   ＋「{it.template.label}」を財産に追加
                 </Button>
+                <button type="button" onClick={() => set(markAdded(it.key))} className="text-xs text-teal-800 underline">
+                  財産の画面で入力済み
+                </button>
                 {it.template.pending.length > 0 && <span className="text-xs text-stone-500">{it.template.pending.join("・")}は財産の画面で入れます</span>}
               </div>
             ))}
@@ -189,7 +194,7 @@ function SubChoices({ t, review, set }: { t: Topic; review: ReviewState; set: (f
     set((r) => {
       const cur = r.sub?.[t.id] ?? [];
       const next = sub.multiple ? (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]) : [id];
-      return { ...r, sub: { ...r.sub, [t.id]: next } };
+      return { ...dropConsulted(r, t.id), sub: { ...r.sub, [t.id]: next } };
     });
   return (
     <div>
@@ -272,7 +277,7 @@ function Talk({ t, review, set }: { t: Topic; review: ReviewState; set: (fn: (r:
       setBusy(false);
     }
   };
-  const reset = () => set((r) => ({ ...r, chat: { ...r.chat, [id]: [] }, talk: { ...r.talk, [id]: undefined }, added: (r.added ?? []).filter((k) => k !== id) }));
+  const reset = () => set((r) => ({ ...dropConsulted(r, id), chat: { ...r.chat, [id]: [] }, talk: { ...r.talk, [id]: undefined }, added: (r.added ?? []).filter((k) => k !== id) }));
   const skip = () => set((r) => ({ ...r, talk: { ...r.talk, [id]: { outcome: "consult", summary: "", at: new Date().toISOString() } } }));
 
   return (

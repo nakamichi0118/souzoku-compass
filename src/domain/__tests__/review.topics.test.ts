@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TOPICS, cashFromWithdrawal, consultPrompt, draftReason, reviewConsultLines, reviewSummary, topicById, topicStatus, type ReviewState } from "../review/topics";
+import { TOPICS, cashFromWithdrawal, dropConsulted, consultPrompt, draftReason, reviewConsultLines, reviewSummary, topicById, topicStatus, type ReviewState } from "../review/topics";
 
 const allNo = (): ReviewState => ({ answers: Object.fromEntries(TOPICS.map((t) => [t.id, "no"])) });
 
@@ -85,5 +85,15 @@ describe("申告前の確認", () => {
   it("話す論点の結論は、決まったものだけ", () => {
     expect(topicById("nominee").talk!.outcomes).not.toContain("add");
     for (const t of TOPICS) if (t.talk) expect(t.talk.outcomes).toContain("consult");
+  });
+});
+
+describe("申告前の確認：答え直したとき", () => {
+  it("相談して確かめた印を外すと、新しい事実は相談に戻る", () => {
+    const s: ReviewState = { ...allNo(), consulted: ["nominee"] };
+    s.answers!.nominee = "yes";
+    s.talk = { nominee: { outcome: "consult", summary: "", at: "" } };
+    expect(topicStatus(topicById("nominee"), s).kind).toBe("clear");
+    expect(topicStatus(topicById("nominee"), dropConsulted(s, "nominee")).kind).toBe("consult");
   });
 });
