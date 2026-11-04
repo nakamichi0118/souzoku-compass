@@ -61,7 +61,8 @@ export function StepShell({ step }: { step: string }) {
             )}
           </div>
         </main>
-        <aside className="lg:sticky lg:top-20 lg:self-start">
+        {/* パソコンでは横に貼りつけ、画面の高さに収める（低い画面でも「コンパスくんに聞く」まで見えるように。収まらない分は中で動かす） */}
+        <aside className="lg:sticky lg:top-24 lg:flex lg:max-h-[calc(100dvh-7rem)] lg:flex-col lg:self-start">
           <GuidePanel step={step} />
         </aside>
       </div>

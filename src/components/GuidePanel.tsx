@@ -76,16 +76,16 @@ export function GuidePanel({ step }: { step: string }) {
   const context = useCallback(() => summarizeForAssistant(data, result), [data, result]);
   const state = useAsk(step, context);
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
       {g && (
-        <details className="group rounded-2xl border border-sky-200 bg-white">
+        <details className="group rounded-2xl border border-sky-200 bg-white lg:shrink-0">
           <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold text-sky-950 [&::-webkit-details-marker]:hidden">
             <Lightbulb className="h-4 w-4 text-brand" aria-hidden />
             このステップのTips
             <span className="text-xs font-normal text-stone-500">（{g.points.length + 1}件）</span>
             <ChevronDown className="ml-auto h-4 w-4 text-stone-400 transition group-open:rotate-180" aria-hidden />
           </summary>
-          <div className="flex items-start gap-3 border-t border-sky-100 px-4 py-3">
+          <div className="flex items-start gap-3 border-t border-sky-100 px-4 py-3 lg:max-h-[35vh] lg:overflow-y-auto">
             <CompassAvatar size={36} />
             <ul className="min-w-0 list-disc space-y-1.5 pl-4 text-sm leading-relaxed text-stone-700">
               {[g.lead, ...g.points].map((p) => (
@@ -95,7 +95,7 @@ export function GuidePanel({ step }: { step: string }) {
           </div>
         </details>
       )}
-      <AskCompass state={state} placeholder="例：定期預金の利息はどう調べればいい？" />
+      <AskCompass state={state} placeholder="例：定期預金の利息はどう調べればいい？" fill />
     </div>
   );
 }

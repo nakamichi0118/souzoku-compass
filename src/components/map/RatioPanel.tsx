@@ -4,7 +4,7 @@
  * 倍率地域の宅地の評価：国税庁の評価倍率表から、土地の町（丁目）・大字の行をコンパスくんが探し、
  * 表のページと一緒に見せて本人に確かめてもらう。評価額 ＝ 固定資産税評価額 × 倍率（決まった計算）。
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ConsultLink } from "@/components/compass/ConsultLink";
 import { type Progress, ProgressBar } from "@/components/compass/ProgressBar";
 import { Button, Field, Note, NumInput, YenInput, fmt } from "@/components/ui";
@@ -12,7 +12,8 @@ import type { LandAsset } from "@/domain/types";
 import { type Valuation, valueLand } from "@/domain/valuation";
 import type { Sheet } from "./MapView";
 import { fetchSheetPdf } from "./locate";
-import { renderPdfPage } from "./sheet";
+import type { RowBox } from "./ratioRow";
+import { findRatioRow, renderPdfPage } from "./sheet";
 
 export interface RatioRow {
   page: number;
@@ -185,6 +186,37 @@ export function RatioPanel({
     };
   }, [res?.pdfUrl, row?.page, cache]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 選んだ行が、ページのどこに書かれているか（ページの文字から探す。見つからなければ枠は出さない）
+  const [box, setBox] = useState<{ key: string; box: RowBox | null } | null>(null);
+  const boxKey = row ? `${res?.pdfUrl}|${row.page}|${row.town}|${row.area}|${row.residential}` : "";
+  useEffect(() => {
+    if (!res?.pdfUrl || !row) return;
+    let off = false;
+    (async () => {
+      try {
+        const buf = await fetchSheetPdf(res.pdfUrl!, cache);
+        const b = await findRatioRow(buf, row.page || 1, row);
+        if (!off) setBox({ key: boxKey, box: b });
+      } catch {
+        if (!off) setBox({ key: boxKey, box: null });
+      }
+    })();
+    return () => {
+      off = true;
+    };
+  }, [boxKey, cache]); // eslint-disable-line react-hooks/exhaustive-deps
+  const shownBox = box?.key === boxKey ? box.box : null;
+  // 枠が見えるよう、プレビューの中を枠の位置まで送る（倍率を変えたときも）
+  const previewRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = previewRef.current;
+    if (!el || !page || !shownBox) return;
+    const h = page.height * zoom;
+    const w = page.width * zoom;
+    el.scrollTop = Math.max(0, ((shownBox.top + shownBox.bottom) / 2) * h - el.clientHeight / 2);
+    el.scrollLeft = Math.max(0, shownBox.left * w - 12);
+  }, [shownBox, page, zoom]);
+
   const rowRate = ratioNumber(row?.residential);
   const isRoute = !!row && /路線/.test(row.residential);
   const where = `${res?.city ?? ""}${row?.town ?? res?.town ?? ""}${row?.area ? `（${row.area}）` : ""}`;
@@ -299,13 +331,24 @@ export function RatioPanel({
         )}
         {page && (
           <div className="space-y-1">
-            <label className="flex items-center gap-2 text-sm text-stone-700">
+            <label className="flex flex-wrap items-center gap-2 text-sm text-stone-700">
               評価倍率表 {row?.page ? `（${row.page}ページ）` : ""} 拡大
               <input type="range" min={0.15} max={1} step={0.05} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} className="accent-teal-700" />
+              {shownBox && <span className="text-xs text-orange-800">オレンジの枠：選んだ行</span>}
             </label>
-            <div className="h-[340px] overflow-auto rounded-lg border border-stone-300 bg-stone-100">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={page.src} alt="評価倍率表" width={page.width * zoom} height={page.height * zoom} className="max-w-none" />
+            <div ref={previewRef} className="h-[340px] overflow-auto rounded-lg border border-stone-300 bg-stone-100">
+              <div className="relative" style={{ width: page.width * zoom, height: page.height * zoom }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={page.src} alt="評価倍率表" width={page.width * zoom} height={page.height * zoom} className="max-w-none" />
+                {shownBox && (
+                  <span
+                    aria-hidden
+                    data-ratio-row
+                    className="pointer-events-none absolute rounded-sm bg-amber-300/30 ring-2 ring-orange-500"
+                    style={{ left: `${shownBox.left * 100}%`, top: `${shownBox.top * 100}%`, width: `${(shownBox.right - shownBox.left) * 100}%`, height: `${(shownBox.bottom - shownBox.top) * 100}%` }}
+                  />
+                )}
+              </div>
             </div>
           </div>
         )}

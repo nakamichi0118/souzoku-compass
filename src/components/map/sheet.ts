@@ -1,5 +1,6 @@
 /** 路線価図（PDF・画像）をブラウザで画像にする */
 import type { Sheet } from "./MapView";
+import { findRowBox, fromPdfText, type RowBox } from "./ratioRow";
 
 const TARGET_WIDTH = 3000;
 
@@ -26,6 +27,19 @@ export async function renderPdfPage(data: ArrayBuffer, pageNo = 1, width = TARGE
   // PDF の 1pt = 1/72 インチ から用紙の大きさ（mm）を求める
   const paper = { widthMm: (base.width * 25.4) / 72, heightMm: (base.height * 25.4) / 72 };
   return { src: URL.createObjectURL(blob), width: canvas.width, height: canvas.height, paper, pages: pdf.numPages };
+}
+
+/**
+ * 評価倍率表のページで、選んだ行（町名・適用地域）が書かれている帯。ページの文字から探し、見つからなければ null
+ * （文字の入っていない PDF でも、プレビューはそのまま出せる）
+ */
+export async function findRatioRow(data: ArrayBuffer, pageNo: number, row: Parameters<typeof findRowBox>[1]): Promise<RowBox | null> {
+  const pdf = await loadPdf(data);
+  const page = await pdf.getPage(Math.min(Math.max(1, pageNo), pdf.numPages));
+  const viewport = page.getViewport({ scale: 1 });
+  const content = await page.getTextContent();
+  const items = content.items.filter((x): x is Extract<typeof x, { str: string }> => "str" in x);
+  return findRowBox(fromPdfText(items, (x, y) => viewport.convertToViewportPoint(x, y), viewport.width, viewport.height), row);
 }
 
 export async function loadImage(file: Blob): Promise<Sheet> {
