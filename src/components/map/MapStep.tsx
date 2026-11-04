@@ -263,7 +263,15 @@ function LandWizard() {
       const hit = json.results?.[0];
       if (hit && g === gen.current) {
         api.current?.flyTo([hit.lat, hit.lng], 18);
-        setNotice(`「${q}」の周辺を表示しています。評価する土地をクリックしてください。`);
+        // 住所検索は、見つからない部分を落として近い地名を返すことがある。そのときは見つかった地名を示し、場所の確認を促す
+        const title = String(hit.title ?? "");
+        const norm = (x: string) => x.normalize("NFKC").replace(/\s/g, "").replace(/[0-9０-９\-－ー丁目番地号の]+$/, "");
+        const exact = !!title && norm(q).startsWith(norm(title)) && norm(title).length >= norm(q).length - 1;
+        setNotice(
+          exact
+            ? `「${title}」の周辺を表示しています。評価する土地をクリックしてください。`
+            : `「${q}」は地図で見つからなかったため、いちばん近い「${title || "地名"}」を表示しています。土地の場所を確かめてからクリックしてください。`,
+        );
       }
     } catch {
       /* 見つからなければ地図を動かして選ぶ */
@@ -866,7 +874,9 @@ function LandWizard() {
                         コンパスくんが図番号 <span className="font-mono font-bold">{located.no}</span> を選びました
                         {located.confidence === "low" ? "（自信は低めです）" : ""}。{located.reason}
                       </p>
-                      {!located.frame && <p className="text-xs">重ねる位置は「手で合わせる」で合わせてください。</p>}
+                      <p className="text-xs">
+                        {located.frame ? "重ねる位置は自動で合わせた目安です。道路がずれていたら「手で合わせる」で直してください。" : "重ねる位置は「手で合わせる」で合わせてください。"}
+                      </p>
                     </div>
                   ) : located && !located.no ? (
                     <Note tone="warn">コンパスくんにもどの図か分かりませんでした。{located.reason} 下の図番号から選んでください。</Note>

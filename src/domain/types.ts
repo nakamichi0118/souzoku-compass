@@ -411,7 +411,8 @@ export interface Case {
   /** 申告書の提出先税務署・提出日 */
   filing?: { taxOffice: string; submitDate?: ISODate };
   /** 相続税申告のステップのうち「次へ」で完了にしたもの（進捗表示用。計算には使わない） */
-  progress?: { completed: string[] };
+  /** completed：「次へ」で完了にしたステップ。formsKey：申告書PDFを作ったときの入力の目印（src/lib/progress.ts formsKey） */
+  progress?: { completed: string[]; formsKey?: string };
   /** 申告前の確認（財産の入れ漏れ・お金の動き・特殊事情。計算には使わない） */
   review?: ReviewState;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Asset, Case } from "@/domain/types";
-import { divisionReady, filingSteps, markCompleted, unallocatedAssets } from "../progress";
+import { divisionReady, filingSteps, formsUpToDate, markCompleted, markFormsCreated, unallocatedAssets, unsettledAssets } from "../progress";
 
 const dep = (id: string): Asset => ({ id, kind: "deposit", label: id, amount: 1_000_000 });
 const ins: Asset = { id: "ins", kind: "insurance", label: "保険", amount: 5_000_000, recipientId: "s" };
@@ -51,5 +51,44 @@ describe("遺産の分け方のステップの完了", () => {
     expect(divisionDone(mk({ assets: [], undivided: true }))).toBe(false);
     expect(divisionDone(mk({ undivided: true, progress: undefined }))).toBe(false);
     expect(divisionDone(markCompleted(mk({ undivided: true, progress: undefined }), "division"))).toBe(true);
+  });
+});
+
+describe("取得する人が決まっていない財産・税額と書類のステップ", () => {
+  const half = (assetId: string, personId: string) => ({ assetId, shares: [{ personId, numerator: 1, denominator: 2 }] });
+
+  it("取得者なし・割合が100%未満の財産は、未分割にしていなければ計算に入らない財産", () => {
+    const c = mk({ allocations: [one("a1", "s"), half("a2", "c1")] });
+    expect(unsettledAssets(c).map((a) => a.id)).toEqual(["a2"]);
+    expect(unsettledAssets(mk({ undivided: true, allocations: [half("a2", "c1")] }))).toEqual([]);
+    // 100%を超える割合は、未分割にしていても計算できない
+    const over = { assetId: "a1", shares: [{ personId: "s", numerator: 1, denominator: 1 }, { personId: "c1", numerator: 1, denominator: 2 }] };
+    expect(unsettledAssets(mk({ undivided: true, allocations: [over] })).map((a) => a.id)).toEqual(["a1"]);
+  });
+
+  it("計算を止める事項があるうちは税額のステップを完了にしない", async () => {
+    const { calculate } = await import("@/domain/tax/engine");
+    const c = mk({ allocations: [one("a1", "s")], progress: { completed: ["tax"] } });
+    const r = calculate(c);
+    expect(r.blockers.length).toBeGreaterThan(0);
+    expect(filingSteps(c, r).find((s) => s.slug === "tax")!.done).toBe(false);
+    const ok = mk({ allocations: [one("a1", "s"), one("a2", "c1")], progress: { completed: ["tax"] } });
+    expect(filingSteps(ok, calculate(ok)).find((s) => s.slug === "tax")!.done).toBe(true);
+  });
+
+  it("書類のステップは申告書PDFを作ったときだけ完了し、そのあと入力を変えると未完了に戻る", async () => {
+    const { calculate } = await import("@/domain/tax/engine");
+    const base = mk({ allocations: [one("a1", "s"), one("a2", "c1")] });
+    const docsDone = (c: Case) => filingSteps(c, calculate(c)).find((s) => s.slug === "documents")!.done;
+    // 協議書だけ作った（「書類」を完了にしただけ）
+    expect(docsDone(markCompleted(base, "documents"))).toBe(false);
+    const made = markFormsCreated(base);
+    expect(formsUpToDate(made)).toBe(true);
+    expect(docsDone(made)).toBe(true);
+    const changed = { ...made, assets: [dep("a1"), { ...dep("a2"), amount: 2_000_000 }, ins] };
+    expect(formsUpToDate(changed)).toBe(false);
+    expect(docsDone(changed)).toBe(false);
+    // 同意のチェックや進み具合を変えただけなら作り直し不要
+    expect(formsUpToDate(markCompleted({ ...made, review: { consent: { terms: true, responsibility: true, at: "x" } } } as Case, "tax"))).toBe(true);
   });
 });

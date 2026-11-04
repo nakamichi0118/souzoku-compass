@@ -11,6 +11,7 @@ import { isValidDate } from "@/domain/procedures/dates";
 import { estimate, familyFromInterview, type Interview } from "@/domain/procedures/interview";
 import { AppShell, PageHead } from "@/components/shell/AppShell";
 import { useCase } from "@/lib/store";
+import Link from "next/link";
 import type { Person } from "@/domain/types";
 import { usePlan } from "@/lib/planStore";
 
@@ -223,7 +224,17 @@ export function Hearing() {
           {iv.heirAbroad && <Note tone="info">海外の相続人は、印鑑証明書の代わりに大使館でサイン証明・在留証明を取ります。相続税は税理士に相談してください。</Note>}
           <p className="mt-2 rounded-lg bg-teal-50 px-4 py-3 text-sm text-teal-900">
             基礎控除 <strong>{(est.basicDeduction / 10_000).toLocaleString()}万円</strong>（相続人 <strong>{est.heirCount}人</strong>）
+            {c.persons.length > 0 && <span className="ml-1 text-xs">※ここでの答えからの概算です</span>}
           </p>
+          {/* 相続人の画面で家族を入れたあとは、そちらが計算に使われる（ここを直しても相続人の画面は書き換えない） */}
+          {c.persons.length > 0 && (
+            <Note tone="info">
+              相続税の計算には「相続人」の画面で入れた家族（{c.persons.filter((p) => !p.predeceased).length}人）を使います。
+              <Link href="/case/heirs" className="ml-1 font-semibold underline">
+                相続人を見る ›
+              </Link>
+            </Note>
+          )}
           {noHeirs && <Note tone="warn">相続人がいないときは家庭裁判所の手続きになります。専門家に相談してください。</Note>}
         </Card>
 

@@ -10,7 +10,7 @@ import { smallLines } from "@/forms/attachments";
 import { formsNotGenerated } from "@/forms/filing";
 import { divisionStatus, siteRightRatio } from "@/forms/schedule11";
 import { useCase } from "@/lib/store";
-import { markCompleted } from "@/lib/progress";
+import { formsUpToDate, markFormsCreated } from "@/lib/progress";
 import { usePlan } from "@/lib/planStore";
 import { FilingGuide, shortFormName } from "./FilingGuide";
 import { saveBlob } from "@/lib/download";
@@ -89,8 +89,11 @@ export function DocumentsStep() {
     setErr(null);
     try {
       await download(url, data, name);
-      update((c) => markCompleted(c, "documents"));
-      if (key === "tax") plan.setStatus("filing:prepared", "done");
+      // 書類のステップが完了になるのは申告書PDFを作ったときだけ（遺産分割協議書だけでは完了にしない）
+      if (key === "tax") {
+        update(markFormsCreated);
+        plan.setStatus("filing:prepared", "done");
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -156,6 +159,11 @@ export function DocumentsStep() {
         <Button onClick={() => run("tax", "/api/forms", "相続税申告書_令和8年分.pdf")} disabled={busy !== null || !agreed}>
           {busy === "tax" ? "作成中…" : "申告書PDFをダウンロード"}
         </Button>
+        {data.progress?.formsKey && !formsUpToDate(data) && (
+          <div className="mt-3">
+            <Note tone="warn">申告書PDFを作ったあとに入力が変わりました。もう一度ダウンロードしてください。</Note>
+          </div>
+        )}
         {/* 手書きする欄と添付書類は、下の「申告が終わるまで」の手順2・3に出す（その案内が出ないときだけここに出す） */}
         {!guide && <p className="mt-3 text-sm text-stone-600">手書きする欄：{blanks.join("、")}</p>}
         <p className="mt-3 text-sm text-stone-600">相続コンパスは税理士による確認の代わりにはなりません。</p>

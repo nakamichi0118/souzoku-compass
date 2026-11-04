@@ -543,6 +543,16 @@ export function valueAsset(a: Asset): Valuation {
             (missing.includes("所在階") ? "地下にある部屋は、相続コンパスでは計算できないため税理士にご相談ください。" : ""),
         };
       }
+      // ありえない組み合わせのまま計算すると、もっともらしい評価額が出てしまうため止める
+      const { years: by, months: bm } = a.builtYearsMonths ?? { years: 0, months: 0 };
+      const impossible = [
+        a.totalFloors > 0 && a.floor > a.totalFloors && `所在階（${a.floor}階）が建物の総階数（${a.totalFloors}階）より上になっています`,
+        (!Number.isInteger(by) || by < 0) && "築年数の年が0以上の整数になっていません",
+        (!Number.isInteger(bm) || bm < 0 || bm > 11) && "築年数の月が0〜11になっていません",
+      ].filter((x): x is string => !!x);
+      if (impossible.length) {
+        return { value: 0, steps: [], needsConsultation: `${impossible.join("。")}。登記事項証明書を見て入れ直してください。` };
+      }
       let correction = 10000; // 区分所有補正率 ×1/10000
       let first: string;
       if (excluded) {
