@@ -3,17 +3,18 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { blankInterview, demoInterview } from "@/domain/procedures/interview";
 import { buildTasks, type Task } from "@/domain/procedures/rules";
-import { MilestoneView } from "../MilestoneView";
+import { MilestoneFlow, MilestoneView } from "../MilestoneView";
 
 const { ViewSwitch } = await import("../CalendarPage");
 
 const live = buildTasks(demoInterview()).tasks.filter((t) => !t.optional);
-const render = (p: { tasks?: Task[]; done?: string[]; today?: string } = {}) =>
-  renderToStaticMarkup(createElement(MilestoneView, { tasks: p.tasks ?? live, done: p.done ?? ["death-report", "funeral"], today: p.today ?? "2026-11-03", death: "2026-03-15" }));
-/** スマホでも出す縦の並び（パソコンだけの横の並びのあと） */
-const vertical = (html: string) => html.slice(html.indexOf('<div class="relative">'));
-/** パソコンだけの横の並び */
-const strip = (html: string) => html.slice(0, html.indexOf('<div class="relative">'));
+type P = { tasks?: Task[]; done?: string[]; today?: string; locked?: (id: string) => string | undefined };
+const props = (p: P) => ({ tasks: p.tasks ?? live, done: p.done ?? ["death-report", "funeral"], today: p.today ?? "2026-11-03", death: "2026-03-15" });
+const render = (p: P = {}) => renderToStaticMarkup(createElement(MilestoneView, { ...props(p), onMark: () => {}, locked: p.locked }));
+/** スマホでもパソコンでも出す縦の並び */
+const vertical = (html: string) => html;
+/** パソコンだけ、上に出す期限の流れ */
+const flow = (p: P = {}) => renderToStaticMarkup(createElement(MilestoneFlow, props(p)));
 const order = (html: string, words: string[]) => words.map((w) => html.indexOf(w));
 
 describe("カレンダーの「手続きごと」", () => {
@@ -47,7 +48,7 @@ describe("カレンダーの「手続きごと」", () => {
     expect(v).toContain(">あと12日<"); // 遺産分割協議（11月15日）
     expect(v.match(/いちばん近い期限/g)).toHaveLength(1);
     // いちばん近い期限（相続税）の行を目立たせる
-    expect(v).toMatch(/<a class="[^"]*bg-orange-50 ring-1 ring-orange-300" href="\/my\/tasks\?id=inheritance-tax"/);
+    expect(v).toMatch(/<div class="[^"]*bg-orange-50 ring-1 ring-orange-300"><span class="pt-1">(?:(?!<\/li>)[\s\S])*href="\/my\/tasks\?id=inheritance-tax"/);
     expect(v).toMatch(/いちばん近い期限<\/span>/);
   });
 
@@ -80,22 +81,6 @@ describe("カレンダーの「手続きごと」", () => {
     expect(rest).toBeLessThan(item);
     // 「そのあと」には「までにすること」の見出しをつけない
     expect(v.slice(rest)).not.toContain("までにすること");
-  });
-
-  it("パソコンだけ、上に期限の箱を横に並べる（入りきらなければ折り返す）。今日の位置に印をつける", () => {
-    const s = strip(html);
-    expect(s).toMatch(/^<div><ol class="mb-5 hidden flex-wrap gap-2 lg:flex">/);
-    expect(s.match(/<li class="w-\[9.5rem\]">/g)).toHaveLength(8);
-    expect(s).not.toMatch(/overflow-x|whitespace-nowrap/);
-    const [renounce, mark, division] = order(s, ["相続放棄・限定承認", ">今日<", "遺産分割協議"]);
-    expect(renounce).toBeLessThan(mark);
-    expect(mark).toBeLessThan(division);
-    // 箱には名前・期間・日付
-    expect(s).toMatch(/相続税の申告・納付<\/span><span class="text-xs text-stone-500">10か月<\/span><span [^>]*>2027年<\/span><span [^>]*>1月15日（金）<\/span>/);
-    expect(s).toMatch(/<span class="mr-1 font-semibold text-sky-800">目安<\/span>8か月/);
-    // いちばん近い期限の箱を目立たせる
-    expect(s).toMatch(/<a class="[^"]*bg-orange-50 ring-2 ring-orange-400" href="\/my\/tasks\?id=inheritance-tax"/);
-    expect(s.match(/ring-orange-400/g)).toHaveLength(1);
   });
 
   it("今日がすべての期限よりあとなら、今日の印はいちばん下", () => {
@@ -151,7 +136,95 @@ describe("カレンダーの「手続きごと」", () => {
     expect(v).toMatch(/sm:min-w-\[8.5em\] text-stone-500">2027年3月15日<\/span>/);
     // 名前の欄に、決まった最小幅の日付の欄を横に並べない
     expect(v).not.toContain("min-w-[4.5em]");
-    expect(v.match(/<a class="-mx-1.5 flex items-start gap-2 rounded-lg px-1.5 py-1.5 text-sm/g)!.length).toBeGreaterThan(10);
+    expect(v.match(/<a class="-mr-1.5 flex min-w-0 flex-1 items-start rounded-lg py-2 /g)!.length).toBeGreaterThan(10);
+  });
+});
+
+describe("カレンダーから「完了」「不要」を付ける", () => {
+  const html = render();
+
+  it("区切りの手続きにも、その下の手続きにも、やることリストと同じチェックと「不要」を付ける（亡くなった日には付けない）", () => {
+    const boxes = html.match(/<input type="checkbox"[^>]*>/g)!;
+    expect(boxes).toHaveLength(live.length);
+    expect(html.match(/>不要<\/span><\/button>/g)).toHaveLength(live.length);
+    expect(html).toContain('aria-label="相続税の申告と納付を完了にする"');
+    expect(html).toContain('aria-label="通夜・葬儀・火葬を完了にする"');
+    expect(html).not.toContain("亡くなった日を完了にする");
+    // 済んだ手続きはチェック済み
+    expect(html).toMatch(/<input type="checkbox"[^>]*aria-label="死亡届の提出と火葬許可の申請を完了にする" checked=""/);
+  });
+
+  it("済んだ・不要にしたものは緑ではなくグレー（チェックもグレー）", () => {
+    expect(html).not.toMatch(/emerald/);
+    expect(flow()).not.toMatch(/emerald/);
+    expect(html).toMatch(/accent-stone-500/);
+    expect(html).toMatch(/bg-stone-100 px-2 text-xs font-semibold leading-5 text-stone-500"><svg[^>]*>[\s\S]*?<\/svg>完了<\/span>/);
+  });
+
+  it("「不要」にした手続きも消さずにグレーで残し、「不要」を押した状態にする。いちばん近い期限にはしない", () => {
+    const v = render({ done: ["death-report", "funeral", "na:inheritance-tax", "na:bank-transfer"] });
+    expect(v).toContain("相続税の申告・納付");
+    expect(v).toMatch(/text-stone-500"><svg[^>]*>[\s\S]*?<\/svg>不要<\/span>/);
+    expect(v).toMatch(/aria-pressed="true"[^>]*><span [^>]*>不要<\/span><\/button><\/span><a [^>]*href="\/my\/tasks\?id=bank-transfer"/);
+    expect(v).toMatch(/line-through">預貯金の解約・名義変更<span class="sr-only">（不要）<\/span>/);
+    // 次の期限は相続登記
+    expect(v).toMatch(/<div class="[^"]*ring-orange-300"><span class="pt-1">(?:(?!<\/li>)[\s\S])*href="\/my\/tasks\?id=registration"/);
+  });
+
+  it("相続税申告の画面で自動で完了にした手続きは、押せないチェックにする", () => {
+    const v = render({ done: ["death-report", "asset-valuation"], locked: (id) => (id === "asset-valuation" ? "自動で完了" : undefined) });
+    expect(v).toMatch(/<span class="-ml-2 flex shrink-0 items-center" title="自動で完了"><label [^>]*><input type="checkbox" disabled=""[^>]*aria-label="財産の評価額を確定する（相続税の申告の準備）を完了にする" checked=""/);
+    expect(v.match(/disabled=""/g)).toHaveLength(2); // チェックと「不要」
+  });
+
+  it("今日より前の区切りで済んだ・不要にした手続きをたたむ。不要が入るときは見出しにも出す", () => {
+    const past = live.filter((t) => t.date < "2026-11-03" && t.id !== "shonanoka" && t.id !== "funeral").map((t) => t.id);
+    const v = render({ done: [...past, "na:funeral"] });
+    expect(v).toContain("済んだ・不要にした手続き（1件）");
+    expect(v).toContain("済んだ手続き（13件）");
+  });
+});
+
+describe("パソコンの上に出す、期限の流れ", () => {
+  const html = flow();
+  const cols = html.match(/<li class="row-span-5 grid grid-rows-subgrid[^"]*">/g)!;
+
+  it("亡くなった日から期限を1本の線でつないで1行に並べ、今日の列を入れる（横に動かさない）", () => {
+    // 亡くなった日・死亡届・年金・健康保険・相続放棄・今日・遺産分割協議・相続税・相続登記
+    expect(cols).toHaveLength(9);
+    expect(html).toMatch(/^<ol class="grid grid-rows-\[auto_auto_auto_auto_auto\]" style="grid-template-columns:(minmax\(0,1fr\) ){5}minmax\(3.25rem,0.5fr\)( minmax\(0,1fr\)){3}">/);
+    expect(html).not.toMatch(/overflow-x|whitespace-nowrap|flex-wrap/);
+    const pos = order(html, ["亡くなった日", "死亡届", "年金の停止", "健康保険の手続き", "相続放棄・限定承認", ">今日<", "遺産分割協議", "相続税の申告・納付", "相続登記"]);
+    expect([...pos].sort((a, b) => a - b)).toEqual(pos);
+  });
+
+  it("今日までの線を濃い色、そのあとを薄い色にする。端の列は外側に線を出さない", () => {
+    const segs = html.match(/<span aria-hidden="true" class="absolute left-[^"]*h-1 -translate-y-1\/2 (bg-sky-600|bg-stone-200)"><\/span>/g)!;
+    // 9列で、左右の半分の線が 8 本ずつ
+    expect(segs).toHaveLength(16);
+    expect(segs.filter((x) => x.includes("bg-sky-600"))).toHaveLength(10); // 亡くなった日〜今日の列の左半分まで
+    expect(segs.filter((x) => x.includes("bg-stone-200"))).toHaveLength(6);
+  });
+
+  it("名前・期間・日付・残りの日数。年は変わったところだけ。いちばん近い期限を目立たせる", () => {
+    expect(html).toMatch(/相続税の申告・納付<\/span><span [^>]*>10か月<\/span><span [^>]*><span [^>]*>2027年<\/span><span [^>]*>1月15日<\/span><span [^>]*>（金）<\/span><\/span><span [^>]*><span class="font-bold text-orange-800">あと73日<\/span>/);
+    expect(html.match(/>2026年</g)).toHaveLength(1);
+    expect(html.match(/>2027年</g)).toHaveLength(1);
+    expect(html).toContain(">2029年<");
+    expect(html).toMatch(/<span class="mr-1 font-semibold text-sky-800">目安<\/span>8か月/);
+    expect(html).toMatch(/<a class="[^"]*bg-orange-50 ring-1 ring-orange-300" href="\/my\/tasks\?id=inheritance-tax"/);
+    expect(html.match(/ring-orange-300/g)).toHaveLength(1);
+    // 済んだ区切りは「完了」をグレーで
+    expect(html).toMatch(/text-stone-400">死亡届<\/span>/);
+    expect(html).toContain('<span class="font-semibold text-stone-500">完了</span>');
+    // 亡くなった日はどこにもつながない
+    expect(html).not.toContain('id=death"');
+  });
+
+  it("今日がすべての期限よりあとなら、今日の列はいちばん右", () => {
+    const late = flow({ today: "2029-04-01" });
+    expect(late.lastIndexOf(">今日<")).toBeGreaterThan(late.indexOf("相続登記"));
+    expect(late).not.toContain("bg-stone-200");
   });
 });
 

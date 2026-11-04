@@ -1,88 +1,98 @@
-import { Check } from "lucide-react";
+"use client";
+
+import { Check, Minus } from "lucide-react";
 import Link from "next/link";
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import { jpDate, yearOf } from "@/domain/procedures/dates";
-import { buildTimeline, type Entry, type Milestone, type Stop } from "@/domain/procedures/milestones";
+import { buildTimeline, type Entry, type EntryState, type Milestone, type Stop } from "@/domain/procedures/milestones";
 import type { Task } from "@/domain/procedures/rules";
+import { naId, type ItemStatus } from "@/lib/planStore";
 import { daysLeftLabel } from "@/lib/taskStatus";
+import { RowStatus } from "./StatusButtons";
 
-/** 「11月15日（日）」（年は別に出す） */
-const monthDay = (d: string) => jpDate(d).replace(/^\d+年/, "");
+/** 「11月15日」と曜日（年は別に出す） */
+const monthDay = (d: string) => `${Number(d.slice(5, 7))}月${Number(d.slice(8))}日`;
+const weekday = (d: string) => jpDate(d).match(/（.）$/)?.[0] ?? "";
 /** まとまりの区切りと同じ年なら「3月18日」、違う年なら「2027年3月15日」 */
-const shortDate = (d: string, year: number) => `${yearOf(d) === year ? "" : `${yearOf(d)}年`}${Number(d.slice(5, 7))}月${Number(d.slice(8))}日`;
+const shortDate = (d: string, year: number) => `${yearOf(d) === year ? "" : `${yearOf(d)}年`}${monthDay(d)}`;
 const href = (id: string) => `/my/tasks?id=${id}`;
+const isClosed = (s: EntryState | "start") => s === "done" || s === "na";
 
-/** 期限（マイルストーン）ごとに、その日と、それまでにする手続きを並べる */
-export function MilestoneView({ tasks, done, today, death }: { tasks: Task[]; done: string[]; today: string; death: string }) {
-  const tl = buildTimeline(tasks, { death, today, done });
-  const flat = tl.stops.flatMap((s) => s.milestones);
-  const todayIndex = tl.todayAt < tl.stops.length ? flat.indexOf(tl.stops[tl.todayAt].milestones[0]) : flat.length;
+/** やることリストと同じ記録（完了は手続きの id、不要は na: をつけた id）から、手続きを区切りごとに分ける */
+function timeline(tasks: Task[], done: string[], today: string, death: string) {
+  const na = tasks.filter((t) => done.includes(naId(t.id))).map((t) => t.id);
+  return buildTimeline(tasks, { death, today, done, na });
+}
+const statusOf = (s: EntryState): ItemStatus => (s === "done" ? "done" : s === "na" ? "na" : "open");
+
+type Mark = (id: string, v: ItemStatus) => void;
+type Locked = (id: string) => string | undefined;
+
+/**
+ * 期限（マイルストーン）ごとに、その日と、それまでにする手続きを縦に並べる。
+ * 手続きごとに、やることリストと同じ「完了」のチェックと「不要」を付けられる
+ */
+export function MilestoneView({ tasks, done, today, death, onMark, locked }: { tasks: Task[]; done: string[]; today: string; death: string; onMark: Mark; locked?: Locked }) {
+  const tl = timeline(tasks, done, today, death);
   const lastYear = yearOf(tl.stops[tl.stops.length - 1].date);
+  // 開いたときに済んでいた（不要にした）手続きだけをたたむ。この画面で済ませた手続きは、その場にグレーで残す
+  const [foldable] = useState(() => new Set(tasks.filter((t) => done.includes(t.id) || done.includes(naId(t.id))).map((t) => t.id)));
+  const row = { onMark, locked, foldable };
 
   return (
-    <div>
-      {/* パソコンでは、上に期限を横に並べる（入りきらなければ折り返す） */}
-      <ol className="mb-5 hidden flex-wrap gap-2 lg:flex">
-        {flat.map((m, i) => (
-          <Fragment key={m.id}>
-            {i === todayIndex && <TodayMark today={today} />}
-            <li className="w-[9.5rem]">
-              <Box m={m} today={today} />
-            </li>
+    <div className="relative">
+      <span aria-hidden className="absolute bottom-4 left-[7px] top-4 w-0.5 rounded bg-stone-200" />
+      <ol className="relative space-y-1">
+        {tl.stops.map((s, i) => (
+          <Fragment key={s.date}>
+            {i === tl.todayAt && <TodayRow today={today} />}
+            {s.milestones.map((m) => (
+              <MilestoneRow key={m.id} m={m} today={today} {...row} />
+            ))}
+            {s.tasks.length > 0 && <Entries items={s.tasks} caption={i === 0 ? undefined : caption(s)} year={yearOf(s.date)} past={i < tl.todayAt} {...row} />}
           </Fragment>
         ))}
-        {todayIndex === flat.length && <TodayMark today={today} />}
+        {tl.todayAt === tl.stops.length && <TodayRow today={today} />}
+        {tl.after.length > 0 && (
+          <>
+            <li className="relative pl-8">
+              <span aria-hidden className="absolute left-[3px] top-3 h-2.5 w-2.5 rounded-full border-2 border-stone-400 bg-white" />
+              <p className="py-1.5 font-bold text-stone-700">そのあと</p>
+            </li>
+            <Entries items={tl.after} year={lastYear} past={tl.todayAt > tl.stops.length} {...row} />
+          </>
+        )}
+        {tl.todayAt > tl.stops.length && <TodayRow today={today} />}
       </ol>
-
-      <div className="relative">
-        <span aria-hidden className="absolute bottom-4 left-[7px] top-4 w-0.5 rounded bg-stone-200" />
-        <ol className="relative space-y-1">
-          {tl.stops.map((s, i) => (
-            <Fragment key={s.date}>
-              {i === tl.todayAt && <TodayRow today={today} />}
-              {s.milestones.map((m) => (
-                <MilestoneRow key={m.id} m={m} today={today} />
-              ))}
-              {s.tasks.length > 0 && <Entries items={s.tasks} caption={i === 0 ? undefined : caption(s)} year={yearOf(s.date)} past={i < tl.todayAt} />}
-            </Fragment>
-          ))}
-          {tl.todayAt === tl.stops.length && <TodayRow today={today} />}
-          {tl.after.length > 0 && (
-            <>
-              <li className="relative pl-8">
-                <span aria-hidden className="absolute left-[3px] top-3 h-2.5 w-2.5 rounded-full border-2 border-stone-400 bg-white" />
-                <p className="py-1.5 font-bold text-stone-700">そのあと</p>
-              </li>
-              <Entries items={tl.after} year={lastYear} past={tl.todayAt > tl.stops.length} />
-            </>
-          )}
-          {tl.todayAt > tl.stops.length && <TodayRow today={today} />}
-        </ol>
-      </div>
     </div>
   );
 }
 
 const caption = (s: Stop) => (s.milestones.every((m) => m.kind === "aim") ? "この日までにすること" : "この期限までにすること");
 
+/** 縦の線の上の点。済んだ・不要にした区切りはグレー */
 function Dot({ m }: { m: Milestone }) {
-  const color = m.state === "done" ? "bg-emerald-500" : m.kind === "start" ? "bg-stone-400" : m.kind === "aim" ? "bg-sky-500" : "bg-orange-500";
+  const color = isClosed(m.state) ? "bg-stone-300" : m.kind === "start" ? "bg-stone-400" : m.kind === "aim" ? "bg-sky-500" : "bg-orange-500";
   return (
-    <span aria-hidden className={`absolute left-0 top-2.5 grid h-4 w-4 place-items-center rounded-full ring-4 ${m.next ? "ring-orange-200" : "ring-white"} ${color}`}>
+    <span aria-hidden className={`absolute left-0 top-3.5 grid h-4 w-4 place-items-center rounded-full ring-4 ${m.next ? "ring-orange-200" : "ring-white"} ${color}`}>
       {m.state === "done" && <Check className="h-3 w-3 text-white" strokeWidth={3} />}
+    </span>
+  );
+}
+
+/** 済んだ・不要にしたことを示す、グレーの小さな印 */
+function ClosedChip({ state }: { state: "done" | "na" }) {
+  return (
+    <span className="inline-flex items-center gap-0.5 rounded-full bg-stone-100 px-2 text-xs font-semibold leading-5 text-stone-500">
+      {state === "done" ? <Check className="h-3 w-3" aria-hidden strokeWidth={3} /> : <Minus className="h-3 w-3" aria-hidden strokeWidth={3} />}
+      {state === "done" ? "完了" : "不要"}
     </span>
   );
 }
 
 function State({ m, today }: { m: Milestone; today: string }) {
   if (m.state === "start") return null;
-  if (m.state === "done")
-    return (
-      <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-100 px-2 text-xs font-semibold leading-5 text-emerald-800">
-        <Check className="h-3 w-3" aria-hidden strokeWidth={3} />
-        完了
-      </span>
-    );
+  if (m.state === "done" || m.state === "na") return <ClosedChip state={m.state} />;
   if (m.state === "late") return <span className="rounded-full bg-rose-100 px-2 text-xs font-semibold leading-5 text-rose-800">{m.kind === "aim" ? "目安の日を過ぎています" : "期限を過ぎています"}</span>;
   return (
     <>
@@ -92,52 +102,66 @@ function State({ m, today }: { m: Milestone; today: string }) {
   );
 }
 
-function MilestoneRow({ m, today }: { m: Milestone; today: string }) {
+function MilestoneRow({ m, today, onMark, locked }: { m: Milestone; today: string; onMark: Mark; locked?: Locked }) {
+  const closed = isClosed(m.state);
   const body = (
     <>
       <span className="flex flex-wrap items-baseline gap-x-2">
-        <span className="font-bold text-stone-900">{m.name}</span>
-        {m.kind === "aim" && <span className="rounded-full bg-sky-100 px-2 text-xs font-semibold text-sky-800">目安</span>}
+        <span className={`font-bold ${closed ? "text-stone-400" : "text-stone-900"}`}>{m.name}</span>
+        {m.kind === "aim" && <span className={`rounded-full px-2 text-xs font-semibold ${closed ? "bg-stone-100 text-stone-500" : "bg-sky-100 text-sky-800"}`}>目安</span>}
         {m.period && <span className="text-xs text-stone-500">{m.period}</span>}
       </span>
       <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-        <span className="tabular-nums text-stone-700">{jpDate(m.date)}</span>
+        <span className={`tabular-nums ${closed ? "text-stone-400" : "text-stone-700"}`}>{jpDate(m.date)}</span>
         <State m={m} today={today} />
       </span>
     </>
   );
+  if (!m.task)
+    return (
+      <li className="relative pl-8">
+        <Dot m={m} />
+        <div className="py-1.5">{body}</div>
+      </li>
+    );
   return (
     <li className="relative pl-8">
       <Dot m={m} />
-      {m.task ? (
-        <Link href={href(m.id)} className={`-mx-2 block rounded-xl px-2 py-1.5 ${m.next ? "bg-orange-50 ring-1 ring-orange-300" : "hover:bg-stone-50"}`}>
+      <div className={`-mx-2 flex items-start rounded-xl px-2${m.next ? " bg-orange-50 ring-1 ring-orange-300" : ""}`}>
+        <span className="pt-1">
+          <RowStatus status={statusOf(m.state as EntryState)} onChange={(v) => onMark(m.id, v)} label={m.task.title} locked={locked?.(m.id)} muted />
+        </span>
+        <Link href={href(m.id)} className={`-mr-2 block min-w-0 flex-1 rounded-xl py-1.5 pl-1 pr-2 ${m.next ? "" : "hover:bg-stone-50"}`}>
           {body}
         </Link>
-      ) : (
-        <div className="py-1.5">{body}</div>
-      )}
+      </div>
     </li>
   );
 }
 
 /**
  * 区切りの下に出す、それまでにする手続き。
- * 今日より前の区切りでは、済んだ手続きを「済んだ手続き（○件）」にたたむ（今日といちばん近い期限が、スマホでも早く見えるように）
+ * 今日より前の区切りでは、開いたときに済んでいた（不要にした）手続きを「済んだ手続き（○件）」にたたむ
+ * （今日といちばん近い期限が、スマホでも早く見えるように）
  */
-function Entries({ items, caption, year, past }: { items: Entry[]; caption?: string; year: number; past: boolean }) {
-  const folded = past ? items.filter((e) => e.state === "done") : [];
-  const shown = past ? items.filter((e) => e.state !== "done") : items;
+function Entries({ items, caption, year, past, onMark, locked, foldable }: { items: Entry[]; caption?: string; year: number; past: boolean; onMark: Mark; locked?: Locked; foldable: Set<string> }) {
+  const fold = (e: Entry) => past && isClosed(e.state) && foldable.has(e.task.id);
+  const folded = items.filter(fold);
+  const shown = items.filter((e) => !fold(e));
   // 年のつく日付があるまとまりだけ、日付の欄を広くする（パソコン・タブレットで、手続きの名前の頭をそろえる）
   const wide = items.some((e) => yearOf(e.task.date) !== year);
+  const rows = { year, wide, onMark, locked };
   return (
     <li className="pb-2 pl-8">
       <div className="rounded-xl bg-stone-50 px-3 py-2">
         {caption && shown.length > 0 && <p className="text-xs text-stone-500">{caption}</p>}
-        {shown.length > 0 && <Rows items={shown} year={year} wide={wide} />}
+        {shown.length > 0 && <Rows items={shown} {...rows} />}
         {folded.length > 0 && (
           <details>
-            <summary className="-mx-1.5 cursor-pointer rounded-lg px-1.5 py-2.5 text-sm text-stone-600 hover:bg-white">済んだ手続き（{folded.length}件）</summary>
-            <Rows items={folded} year={year} wide={wide} />
+            <summary className="-mx-1.5 cursor-pointer rounded-lg px-1.5 py-2.5 text-sm text-stone-600 hover:bg-white">
+              {folded.some((e) => e.state === "na") ? "済んだ・不要にした手続き" : "済んだ手続き"}（{folded.length}件）
+            </summary>
+            <Rows items={folded} {...rows} />
           </details>
         )}
       </div>
@@ -145,29 +169,31 @@ function Entries({ items, caption, year, past }: { items: Entry[]; caption?: str
   );
 }
 
-function Rows({ items, year, wide }: { items: Entry[]; year: number; wide: boolean }) {
+function Rows({ items, year, wide, onMark, locked }: { items: Entry[]; year: number; wide: boolean; onMark: Mark; locked?: Locked }) {
   return (
-    <ul className="mt-0.5 space-y-1">
-      {items.map(({ task: t, state }) => (
-        <li key={t.id}>
-          <Link href={href(t.id)} className="-mx-1.5 flex items-start gap-2 rounded-lg px-1.5 py-1.5 text-sm hover:bg-white">
-            {state === "done" ? (
-              <Check className="h-4 w-4 shrink-0 text-emerald-600 sm:mt-0.5" aria-hidden strokeWidth={3} />
-            ) : (
-              <span aria-hidden className={`mx-1 mt-1 h-2 w-2 shrink-0 rounded-full sm:mt-1.5 ${t.hard ? "bg-orange-500" : "bg-sky-500"}`} />
-            )}
-            {/* スマホでは日付を名前の上に小さく出して、名前に幅をとる。広い画面では日付を決まった幅の欄にする */}
-            <span className="flex min-w-0 flex-1 flex-col sm:flex-row sm:gap-2">
-              <span className={`shrink-0 whitespace-nowrap text-xs tabular-nums sm:text-sm ${wide ? "sm:min-w-[8.5em]" : "sm:min-w-[5em]"} ${state === "late" ? "font-semibold text-rose-700" : "text-stone-500"}`}>{shortDate(t.date, year)}</span>
-              <span className={`min-w-0 ${state === "done" ? "text-stone-400 line-through" : "text-stone-800"}`}>
-                {t.title}
-                {state === "done" && <span className="sr-only">（完了）</span>}
-                {state === "late" && <span className="ml-1.5 whitespace-nowrap rounded-full bg-rose-100 px-1.5 text-[11px] font-semibold text-rose-800">過ぎています</span>}
+    <ul className="mt-0.5 space-y-0.5">
+      {items.map(({ task: t, state }) => {
+        const closed = isClosed(state);
+        return (
+          <li key={t.id} className="flex items-start">
+            <RowStatus status={statusOf(state)} onChange={(v) => onMark(t.id, v)} label={t.title} locked={locked?.(t.id)} muted />
+            <Link href={href(t.id)} className="-mr-1.5 flex min-w-0 flex-1 items-start rounded-lg py-2 pl-1 pr-1.5 text-sm hover:bg-white">
+              {/* スマホでは日付を名前の上に小さく出して、名前に幅をとる。広い画面では日付を決まった幅の欄にする */}
+              <span className="flex min-w-0 flex-1 flex-col sm:flex-row sm:gap-2">
+                <span className={`shrink-0 whitespace-nowrap text-xs tabular-nums sm:text-sm ${wide ? "sm:min-w-[8.5em]" : "sm:min-w-[5em]"} ${state === "late" ? "font-semibold text-rose-700" : closed ? "text-stone-400" : "text-stone-500"}`}>
+                  {shortDate(t.date, year)}
+                </span>
+                <span className={`min-w-0 ${closed ? "text-stone-400 line-through" : "text-stone-800"}`}>
+                  {t.title}
+                  {state === "done" && <span className="sr-only">（完了）</span>}
+                  {state === "na" && <span className="sr-only">（不要）</span>}
+                  {state === "late" && <span className="ml-1.5 whitespace-nowrap rounded-full bg-rose-100 px-1.5 text-[11px] font-semibold text-rose-800">過ぎています</span>}
+                </span>
               </span>
-            </span>
-          </Link>
-        </li>
-      ))}
+            </Link>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -182,15 +208,83 @@ function TodayRow({ today }: { today: string }) {
   );
 }
 
-/** パソコンの横の並びの、期限の箱 */
-function Box({ m, today }: { m: Milestone; today: string }) {
-  const top = m.state === "done" ? "border-t-emerald-500" : m.kind === "start" ? "border-t-stone-400" : m.kind === "aim" ? "border-t-sky-500" : "border-t-orange-500";
+type Col = { m: Milestone } | { today: string };
+
+/**
+ * パソコンで上に出す、期限の流れ。亡くなった日から順に1本の線でつなぎ、今日までの線を濃くする。
+ * どれだけ区切りがあっても1行に収める（名前は折り返す）。済んだ・不要にした区切りはグレー
+ */
+export function MilestoneFlow({ tasks, done, today, death }: { tasks: Task[]; done: string[]; today: string; death: string }) {
+  const tl = timeline(tasks, done, today, death);
+  const flat = tl.stops.flatMap((s) => s.milestones);
+  const at = tl.todayAt < tl.stops.length ? flat.indexOf(tl.stops[tl.todayAt].milestones[0]) : flat.length;
+  const cols: Col[] = [...flat.slice(0, at).map((m) => ({ m })), { today }, ...flat.slice(at).map((m) => ({ m }))];
+  const dateOf = (c: Col) => ("m" in c ? c.m.date : c.today);
+  return (
+    <ol className="grid grid-rows-[auto_auto_auto_auto_auto]" style={{ gridTemplateColumns: cols.map((c) => ("m" in c ? "minmax(0,1fr)" : "minmax(3.25rem,0.5fr)")).join(" ") }}>
+      {cols.map((c, i) => {
+        // 線は、列のまん中から左右へ半分ずつ引く。今日の列より左は、もう過ぎた道のり
+        const line = (
+          <>
+            {i > 0 && <span aria-hidden className={`absolute left-0 right-1/2 top-1/2 h-1 -translate-y-1/2 ${i <= at ? "bg-sky-600" : "bg-stone-200"}`} />}
+            {i < cols.length - 1 && <span aria-hidden className={`absolute left-1/2 right-0 top-1/2 h-1 -translate-y-1/2 ${i < at ? "bg-sky-600" : "bg-stone-200"}`} />}
+          </>
+        );
+        const year = i === 0 || yearOf(dateOf(cols[i - 1])) !== yearOf(dateOf(c)) ? `${yearOf(dateOf(c))}年` : null;
+        if (!("m" in c))
+          return (
+            <li key="today" className="row-span-5 grid grid-rows-subgrid text-center">
+              <span className="relative grid h-10 place-items-center">
+                {line}
+                <span className="relative rounded-full bg-sky-700 px-2 text-xs font-bold leading-5 text-white">今日</span>
+              </span>
+              <span />
+              <span />
+              <span className="px-0.5 pt-1 text-sky-800">
+                {year && <span className="block text-[11px] leading-4">{year}</span>}
+                <span className="text-xs font-semibold tabular-nums">{monthDay(c.today)}</span>
+              </span>
+              <span />
+            </li>
+          );
+        return (
+          <li key={c.m.id} className="row-span-5 grid grid-rows-subgrid">
+            <FlowStep m={c.m} today={today} year={year} line={line} />
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function Node({ m }: { m: Milestone }) {
+  const base = "relative grid place-items-center rounded-full";
+  if (m.state === "start") return <span className={`${base} h-3.5 w-3.5 bg-stone-400`} />;
+  if (m.state === "done")
+    return (
+      <span className={`${base} h-6 w-6 bg-stone-300 text-white`}>
+        <Check className="h-3.5 w-3.5" strokeWidth={3} />
+      </span>
+    );
+  if (m.state === "na")
+    return (
+      <span className={`${base} h-6 w-6 bg-stone-200 text-stone-500`}>
+        <Minus className="h-3.5 w-3.5" strokeWidth={3} />
+      </span>
+    );
+  if (m.state === "late") return <span className={`${base} h-6 w-6 bg-rose-500 text-xs font-bold text-white`}>!</span>;
+  if (m.next) return <span className={`${base} h-7 w-7 bg-orange-500 ring-4 ring-orange-200`} />;
+  return <span className={`${base} h-5 w-5 border-[3px] bg-white ${m.kind === "aim" ? "border-sky-500" : "border-orange-500"}`} />;
+}
+
+/** 流れの中の1つの区切り：線の上の印、名前、期間、日付、残りの日数 */
+function FlowStep({ m, today, year, line }: { m: Milestone; today: string; year: string | null; line: React.ReactNode }) {
+  const closed = isClosed(m.state);
   const state =
     m.state === "start" ? null : m.state === "done" ? (
-      <span className="inline-flex items-center gap-0.5 font-semibold text-emerald-700">
-        <Check className="h-3 w-3" aria-hidden strokeWidth={3} />
-        完了
-      </span>
+      <span className="font-semibold text-stone-500">完了</span>
+    ) : m.state === "na" ? (
+      <span className="font-semibold text-stone-500">不要</span>
     ) : m.state === "late" ? (
       <span className="font-semibold text-rose-700">過ぎています</span>
     ) : (
@@ -198,35 +292,29 @@ function Box({ m, today }: { m: Milestone; today: string }) {
     );
   const body = (
     <>
-      <span className="text-sm font-bold leading-snug text-stone-900">{m.name}</span>
-      {(m.period || m.kind === "aim") && (
-        <span className="text-xs text-stone-500">
-          {m.kind === "aim" && <span className="mr-1 font-semibold text-sky-800">目安</span>}
-          {m.period}
-        </span>
-      )}
-      <span className="mt-auto pt-1 text-[11px] leading-4 text-stone-500">{yearOf(m.date)}年</span>
-      <span className="text-sm font-bold tabular-nums text-stone-800">{monthDay(m.date)}</span>
-      {state && <span className="text-[11px] leading-4">{state}</span>}
+      <span className="relative grid h-10 place-items-center">
+        {line}
+        <Node m={m} />
+      </span>
+      <span className={`px-1 pt-1 text-[13px] font-bold leading-snug text-balance [word-break:auto-phrase] ${closed ? "text-stone-400" : "text-stone-900"}`}>{m.name}</span>
+      <span className="px-1 text-[11px] leading-4 text-stone-500">
+        {m.kind === "aim" && <span className={`mr-1 font-semibold ${closed ? "" : "text-sky-800"}`}>目安</span>}
+        {m.period}
+      </span>
+      <span className={`px-1 pt-1 ${closed ? "text-stone-400" : "text-stone-800"}`}>
+        {year && <span className="block text-[11px] leading-4 text-stone-500">{year}</span>}
+        <span className="text-sm font-bold tabular-nums">{monthDay(m.date)}</span>
+        <span className="text-[11px]">{weekday(m.date)}</span>
+      </span>
+      <span className="px-1 pb-1 text-[11px] leading-4">{state}</span>
     </>
   );
-  const cls = `flex h-full flex-col rounded-xl border border-t-4 border-stone-200 px-2.5 py-2 ${top} ${m.next ? "bg-orange-50 ring-2 ring-orange-400" : m.state === "done" ? "bg-emerald-50/60" : "bg-white"}`;
+  const cls = `row-span-5 grid grid-rows-subgrid rounded-xl text-center${m.next ? " bg-orange-50 ring-1 ring-orange-300" : ""}`;
   return m.task ? (
     <Link href={href(m.id)} className={m.next ? cls : `${cls} hover:bg-stone-50`}>
       {body}
     </Link>
   ) : (
     <div className={cls}>{body}</div>
-  );
-}
-
-function TodayMark({ today }: { today: string }) {
-  return (
-    <li className="flex w-8 flex-col items-center gap-1">
-      <span className="rounded bg-sky-700 px-1 text-[11px] font-bold leading-4 text-white">
-        今日<span className="sr-only"> {jpDate(today)}</span>
-      </span>
-      <span aria-hidden className="w-0.5 flex-1 rounded bg-sky-700" />
-    </li>
   );
 }

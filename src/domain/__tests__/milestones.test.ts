@@ -71,6 +71,19 @@ describe("手続きごとの区切り（デモの家族：2026年3月15日に亡
     for (const id of ["houtei-joho", "vacant-home", "sale-cost"]) expect(groupOf(na, id) ?? ids(na).find((x) => x === id)).toBeUndefined();
   });
 
+  it("「不要」にした手続きは、その場にグレーで残す（区切りもそのまま）。いちばん近い期限にはしない", () => {
+    const tl = buildTimeline(liveOf(demo()), { death: "2026-03-15", today: "2026-11-03", done: ["koseki"], na: ["inheritance-tax", "renounce", "koseki", "bank-transfer"] });
+    const m = (id: string) => marks(tl).find((x) => x.id === id)!;
+    expect(m("renounce").state).toBe("na");
+    expect(m("inheritance-tax")).toMatchObject({ state: "na", next: false });
+    // 相続税を不要にしたら、次の期限は相続登記
+    expect(m("registration").next).toBe(true);
+    const entry = (id: string) => [...tl.stops.flatMap((s) => s.tasks), ...tl.after].find((e) => e.task.id === id)!;
+    expect(entry("bank-transfer").state).toBe("na");
+    // 完了と不要の両方の記録があれば、完了
+    expect(entry("koseki").state).toBe("done");
+  });
+
   it("済んだ・期限を過ぎた・これからの状態と、いちばん近い期限", () => {
     const m = (id: string, t: Timeline) => marks(t).find((x) => x.id === id)!;
     expect(m("death", tl).state).toBe("start");

@@ -5,7 +5,7 @@ import type { Task } from "@/domain/procedures/rules";
 import { showBelowHeader, topBelowHeader } from "../scroll";
 import { RowStatus } from "../StatusButtons";
 
-const { keepShown, MemoBox, TaskRow, UploadPrompt } = await import("../TasksPage");
+const { keepShown, listScrollFor, MemoBox, TaskRow, UploadPrompt } = await import("../TasksPage");
 
 describe("選んだ項目を見出しのすぐ下に出す（スマホ）", () => {
   it("要素の上の端を、固定した見出しの下から 8px あけたところに出す", () => {
@@ -121,6 +121,23 @@ describe("やることリストの行（TaskRow）", () => {
     );
     expect(html).toMatch(/<p class="line-clamp-2 font-semibold[^"]*">遺産分割協議と協議書の作成<\/p>/);
     expect(html).not.toMatch(/class="truncate font-semibold/);
+    // カレンダーなどから開いたときに、一覧をこの行まで送るための目印
+    expect(html).toMatch(/^<li data-task="division" /);
+  });
+});
+
+describe("ほかの画面から手続きを開いたときの、一覧の送り先（listScrollFor）", () => {
+  it("行の上の端が、一覧の上の端から8pxあいたところに来る", () => {
+    // 一覧の上の端が画面の300px、行が画面の1500px（一覧の中は送っていない）
+    expect(listScrollFor(0, 1500, 300)).toBe(1192);
+    // すでに送ってあれば、そのぶんも足す
+    expect(listScrollFor(400, 1100, 300)).toBe(1192);
+  });
+  it("窓口ごとの表示では、上に貼りついた窓口の見出しの高さもあける", () => {
+    expect(listScrollFor(0, 1500, 300, 36)).toBe(1156);
+  });
+  it("一覧のいちばん上の行なら送らない（マイナスにしない）", () => {
+    expect(listScrollFor(0, 302, 300)).toBe(0);
   });
 });
 

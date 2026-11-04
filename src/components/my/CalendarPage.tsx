@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { MilestoneView } from "@/components/my/MilestoneView";
+import { MilestoneFlow, MilestoneView } from "@/components/my/MilestoneView";
+import { AUTO_DONE_NOTE } from "@/components/my/StatusButtons";
+import { docsToUpload, UploadPrompt } from "@/components/my/UploadPrompt";
 import { MonthCalendar } from "@/components/plan/MonthCalendar";
 import { AppShell, PageHead } from "@/components/shell/AppShell";
 import { Panel } from "@/components/ui/Panel";
@@ -10,7 +12,7 @@ import { icsStamp, toICS } from "@/domain/procedures/calendar";
 import { jpDate } from "@/domain/procedures/dates";
 import { encodeInterview } from "@/domain/procedures/share";
 import { saveBlob } from "@/lib/download";
-import { naId } from "@/lib/planStore";
+import { naId, type ItemStatus } from "@/lib/planStore";
 import { useOverall } from "@/lib/overall";
 import { daysLeftLabel } from "@/lib/taskStatus";
 
@@ -68,6 +70,8 @@ export function ViewSwitch({ view, onChange }: { view: View; onChange: (v: View)
 export function CalendarPage() {
   const o = useOverall();
   const [view, setView] = useCalendarView();
+  // 手続きを済ませたときに出す、届いた書類のアップロードの案内（やることリストと同じ）
+  const [prompt, setPrompt] = useState<{ docs: string[]; open: boolean } | null>(null);
   if (!o.loaded) return <AppShell>{null}</AppShell>;
   if (!o.heard || !o.valid)
     return (
@@ -89,16 +93,28 @@ export function CalendarPage() {
     const ics = toICS(o.live, { name: "相続の手続き（相続コンパス）", stamp: icsStamp(), appUrl: `${window.location.origin}/my` });
     saveBlob(new Blob([ics], { type: "text/calendar" }), "souzoku-tetsuzuki.ics");
   }
+  const mark = (id: string, v: ItemStatus) => {
+    o.setStatus(id, v);
+    const task = o.main.find((t) => t.id === id);
+    const docs = v === "done" && task ? docsToUpload(task, o.done) : [];
+    setPrompt(docs.length ? { docs, open: false } : null);
+  };
+  const locked = (id: string) => (o.autoDone.includes(id) ? AUTO_DONE_NOTE : undefined);
   const upcoming = o.main.filter((t) => !o.closed(t.id) && t.date >= o.now).slice(0, 6);
   const overdue = o.main.filter((t) => !o.closed(t.id) && t.date < o.now);
 
   return (
     <AppShell wide>
       <PageHead title="カレンダー" say="手続きの期限と目安の日を、手続きごと・月ごとに並べました。オレンジは法律上の期限がある日です。" />
+      {/* パソコンでは、亡くなった日からの期限の流れを上に出す（どちらの表示でも同じ） */}
+      <section aria-label="手続きの流れ" className="mb-5 hidden rounded-2xl border border-sky-100 bg-white px-3 pb-2 pt-3 shadow-sm lg:block">
+        <h2 className="mb-1 px-1 text-sm font-bold text-stone-700">手続きの流れ</h2>
+        <MilestoneFlow tasks={o.main} done={o.done} today={o.now} death={o.iv.deathDate} />
+      </section>
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <section className="rounded-2xl border border-sky-100 bg-white p-4 shadow-sm sm:p-5">
           <ViewSwitch view={view} onChange={setView} />
-          {view === "month" ? <MonthCalendar tasks={o.live} done={o.done} today={o.now} /> : <MilestoneView tasks={o.live} done={o.done} today={o.now} death={o.iv.deathDate} />}
+          {view === "month" ? <MonthCalendar tasks={o.live} done={o.done} today={o.now} /> : <MilestoneView tasks={o.main} done={o.done} today={o.now} death={o.iv.deathDate} onMark={mark} locked={locked} />}
           <p className="mt-3 flex flex-wrap gap-4 text-xs text-stone-500">
             <span>
               <span className="mr-1 inline-block h-2 w-2 rounded-full bg-orange-500" />
@@ -109,8 +125,8 @@ export function CalendarPage() {
               目安
             </span>
             <span>
-              <span className="mr-1 inline-block h-2 w-2 rounded-full bg-emerald-500" />
-              完了
+              <span className="mr-1 inline-block h-2 w-2 rounded-full bg-stone-300" />
+              完了・不要
             </span>
           </p>
         </section>
@@ -149,6 +165,7 @@ export function CalendarPage() {
         </div>
       </div>
       <p className="mt-4 text-xs text-stone-500">期限は亡くなった日を起算日として計算しています。法律上の期限が土日祝日・年末年始にあたる場合は、次の平日にしています。</p>
+      {prompt && <UploadPrompt docs={prompt.docs} open={prompt.open} onOpen={() => setPrompt({ ...prompt, open: true })} onClose={() => setPrompt(null)} onRegistered={(d) => o.setStatus(`doc:${d}`, "done")} />}
     </AppShell>
   );
 }

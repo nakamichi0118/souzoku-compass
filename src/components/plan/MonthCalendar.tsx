@@ -88,7 +88,7 @@ export function MonthCalendar({ tasks, done, today, compact }: { tasks: Task[]; 
         {list.slice(0, compact ? 4 : 50).map((t) => (
           <li key={t.id}>
             <Link href={`/my/tasks?id=${t.id}`} className="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-stone-50">
-              <span className={`h-2 w-2 shrink-0 rounded-full ${done.includes(t.id) ? "bg-emerald-500" : t.hard ? "bg-orange-500" : "bg-sky-500"}`} />
+              <span className={`h-2 w-2 shrink-0 rounded-full ${done.includes(t.id) ? "bg-stone-300" : t.hard ? "bg-orange-500" : "bg-sky-500"}`} />
               <span className="shrink-0 tabular-nums text-stone-500">
                 {Number(t.date.slice(5, 7))}月{Number(t.date.slice(8))}日
               </span>

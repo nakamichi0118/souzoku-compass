@@ -1,11 +1,10 @@
 "use client";
 
-import { Building2, FileText, MapPin, NotebookPen, Phone, X } from "lucide-react";
+import { Building2, FileText, MapPin, NotebookPen, Phone } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AskCompass, useAsk } from "@/components/compass/AskCompass";
-import { Reader } from "@/components/extract/Reader";
 import { OfficeLookup } from "@/components/plan/OfficeLookup";
 import { AppShell, PageHead } from "@/components/shell/AppShell";
 import { googleEventUrl, icsStamp, toICS } from "@/domain/procedures/calendar";
@@ -20,7 +19,10 @@ import { useOverall, useRequireHearing } from "@/lib/overall";
 import type { ItemStatus } from "@/lib/planStore";
 import { daysLeftLabel, taskStatus } from "@/lib/taskStatus";
 import { showBelowHeader } from "./scroll";
-import { DetailStatus, RowStatus } from "./StatusButtons";
+import { AUTO_DONE_NOTE, DetailStatus, RowStatus } from "./StatusButtons";
+import { docsToUpload, UploadPrompt } from "./UploadPrompt";
+
+export { UploadPrompt };
 
 /** 不動産の登記は、亡くなった方の住所ではなく不動産のある場所の法務局が窓口 */
 const realEstateLocation = (assets: Asset[]) =>
@@ -29,8 +31,6 @@ const realEstateLocation = (assets: Asset[]) =>
     .map((a) => a.location)
     .find((l) => l.trim()) || undefined;
 
-/** 相続税申告の画面の進み具合で自動的に完了になった項目に出す説明 */
-const AUTO_DONE_NOTE = "相続税申告の画面でこの段階を終えたので、自動で完了にしています。";
 
 const CATS: (Category | "すべて")[] = ["すべて", "届出", "葬儀・法要", "調べる・決める", "お金の受け取り", "税金", "名義変更・解約", "不動産"];
 type StatusFilter = "open" | "done" | "all";
@@ -64,6 +64,24 @@ function downloadOne(t: Task) {
  */
 export const keepShown = (urlId: string | null, shownId: string | undefined, markedId: string) => !urlId && shownId === markedId;
 
+/**
+ * 一覧（中だけ上下に動く欄）を、その手続きの行が上の端のすこし下に来るまで送る。
+ * 窓口ごとの表示では、上に貼りついた窓口の見出しに隠れないよう、その高さもあける。描画が終わってから測る
+ */
+export function showInList(list: HTMLElement | null, id: string, tries = 3) {
+  if (!list || typeof window === "undefined") return;
+  requestAnimationFrame(() => {
+    const row = list.querySelector<HTMLElement>(`[data-task="${CSS.escape(id)}"]`);
+    // 一覧に出したばかり（必要に応じてやる手続きを表示にした直後など）で、まだ描かれていなければ次の描画で探す
+    if (!row) return void (tries > 1 && showInList(list, id, tries - 1));
+    const head = row.parentElement?.closest("li")?.querySelector<HTMLElement>(":scope > p");
+    list.scrollTop = listScrollFor(list.scrollTop, row.getBoundingClientRect().top, list.getBoundingClientRect().top, head?.offsetHeight ?? 0);
+  });
+}
+
+/** 行の上の端を、一覧の上の端（と貼りついた見出し）から gap だけあけたところに出すときの、一覧の送り先 */
+export const listScrollFor = (scrollTop: number, rowTop: number, listTop: number, stickyHead = 0, gap = 8) => Math.max(0, Math.round(scrollTop + rowTop - listTop - stickyHead - gap));
+
 /** やることリストの1行 */
 export function TaskRow({
   task,
@@ -89,7 +107,7 @@ export function TaskRow({
   const closed = status !== "open";
   const badge = taskStatus(task, status, now);
   return (
-    <li className={`flex items-center gap-3 rounded-xl border bg-white p-3 ${selected ? "border-sky-500 ring-2 ring-sky-100" : "border-stone-200"}`}>
+    <li data-task={task.id} className={`flex items-center gap-3 rounded-xl border bg-white p-3 ${selected ? "border-sky-500 ring-2 ring-sky-100" : "border-stone-200"}`}>
       <RowStatus status={status} onChange={(v) => onMark(task.id, v)} label={task.title} locked={locked} />
       <button type="button" onClick={() => onSelect(task.id)} className="min-w-0 flex-1 text-left">
         <p className={`line-clamp-2 font-semibold ${closed ? "text-stone-400 line-through" : "text-stone-900"}`}>{task.title}</p>
@@ -152,10 +170,15 @@ export function TasksPage() {
   }, []);
   // 聞き取りが済んでいなければトップへ戻す（移動は描画のあとに行う）
   const ready = useRequireHearing(o);
-  // ホーム・カレンダー・お知らせから手続きを選んで開いたときも、詳細の先頭を出す
+  // ホーム・カレンダー・お知らせから手続きを選んで開いたときも、詳細の先頭を出し、一覧もその手続きの行まで送る
+  // （「必要に応じてやる手続き」を開いたときは、一覧にも出す）
+  const urlOptional = !!o.tasks.find((x) => x.id === urlId)?.optional;
   useEffect(() => {
-    if (ready && urlId && shownFor.current !== urlId) showDetail(urlId, false);
-  }, [ready, urlId, showDetail]);
+    if (!ready || !urlId || shownFor.current === urlId) return;
+    if (urlOptional) setOptional(true);
+    showDetail(urlId, false);
+    showInList(listRef.current, urlId);
+  }, [ready, urlId, urlOptional, showDetail]);
   // パソコンでは詳細だけが動くので、別の手続きに替わったら詳細を先頭から見せる
   useEffect(() => {
     if (articleRef.current) articleRef.current.scrollTop = 0;
@@ -171,7 +194,7 @@ export function TasksPage() {
     o.setStatus(id, v);
     if (v !== "open") setBump((n) => n + 1);
     const task = o.tasks.find((x) => x.id === id);
-    const docs = v === "done" && task ? task.docs.filter((d) => DOCS[d]?.readable && !o.done.includes(`doc:${d}`)) : [];
+    const docs = v === "done" && task ? docsToUpload(task, o.done) : [];
     setPrompt(docs.length ? { taskId: id, docs, open: false } : null);
   };
 
@@ -470,68 +493,5 @@ export function MemoBox({ value, onSave }: { value: string; onSave: (v: string) 
       />
       <p className="h-4 text-xs text-emerald-700">{saved ? "保存しました" : ""}</p>
     </div>
-  );
-}
-
-/**
- * 手続きを済ませたときに出す案内：届いた書類をその場でアップロードして財産に登録できる。
- * 画面の下に固定するので、案内と同じ高さの余白をページの下に足して、後ろに隠れたボタンも上へ送れば押せるようにする。
- * 開いて長くなっても上の見出しには重ならず、案内の中で上下に動かせる
- */
-export function UploadPrompt({ docs, open, onOpen, onClose, onRegistered }: { docs: string[]; open: boolean; onOpen: () => void; onClose: () => void; onRegistered: (doc: string) => void }) {
-  const names = docs.map((d) => DOCS[d].name.replace(/（.*?）/g, ""));
-  const [h, setH] = useState(0);
-  const card = useCallback((el: HTMLDivElement | null) => {
-    if (!el) return;
-    const update = () => setH(el.offsetHeight);
-    update();
-    if (typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  return (
-    <>
-      <div aria-hidden style={{ height: h }} />
-      <div
-        ref={card}
-        role="status"
-        className="fixed inset-x-3 bottom-3 z-40 mx-auto max-h-[calc(100dvh-10rem)] max-w-xl overflow-y-auto overscroll-contain rounded-2xl border border-teal-200 bg-white p-4 shadow-2xl sm:left-auto sm:right-4 sm:mx-0"
-      >
-        <div className="flex items-start gap-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/compass-kun-main.png" alt="" className="h-12 w-auto shrink-0" />
-          <div className="min-w-0 flex-1">
-            <p className="font-bold text-stone-900">お疲れさまでした！</p>
-            <p className="mt-0.5 text-sm text-stone-700">
-              「{names.join("」「")}」が届いたら、アップロードしてください。コンパスくんが金額を読み取って、財産に登録します。
-            </p>
-            {!open && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                <button type="button" onClick={onOpen} className="rounded-lg bg-teal-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-teal-800">
-                  いまアップロードする
-                </button>
-                <button type="button" onClick={onClose} className="rounded-lg border border-stone-300 px-3 py-1.5 text-sm hover:bg-stone-50">
-                  届いてから（資料集めでいつでもできます）
-                </button>
-              </div>
-            )}
-          </div>
-          <button type="button" onClick={onClose} aria-label="閉じる" className="-m-2 shrink-0 p-2 text-stone-400 hover:text-stone-700">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        {open && (
-          <div className="mt-3 space-y-3 sm:max-h-[60vh] sm:overflow-y-auto">
-            {docs.map((d) => (
-              <div key={d}>
-                <p className="mb-1 text-sm font-semibold text-stone-700">{DOCS[d].name}</p>
-                <Reader docId={d} onRegistered={() => onRegistered(d)} />
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </>
   );
 }

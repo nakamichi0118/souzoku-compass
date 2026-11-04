@@ -2,12 +2,16 @@
 
 import type { ItemStatus } from "@/lib/planStore";
 
+/** 相続税申告の画面の進み具合で自動的に完了になった項目に出す説明（押せなくした「完了」に添える） */
+export const AUTO_DONE_NOTE = "相続税申告の画面でこの段階を終えたので、自動で完了にしています。";
+
 /**
  * 一覧の行につける「完了」チェックと「不要」ボタン。
  * locked に理由を渡すと、ほかの画面の進み具合で自動的に決まる項目として、押せなくする（理由は押そうとしたときに表示）
- * スマホの指でも押し分けられるよう、見た目はそのままで、どちらもまわりの余白（高さ36px）まで押せる。押せる範囲は重ならない
+ * スマホの指でも押し分けられるよう、見た目はそのままで、どちらもまわりの余白（高さ36px）まで押せる。押せる範囲は重ならない。
+ * muted のときは、チェックを緑ではなくグレーにする（カレンダーでは済んだ手続きをグレーで見せる）
  */
-export function RowStatus({ status, onChange, label, locked }: { status: ItemStatus; onChange: (s: ItemStatus) => void; label: string; locked?: string }) {
+export function RowStatus({ status, onChange, label, locked, muted }: { status: ItemStatus; onChange: (s: ItemStatus) => void; label: string; locked?: string; muted?: boolean }) {
   return (
     <span className="-ml-2 flex shrink-0 items-center" title={locked}>
       <label className={`grid h-9 w-9 place-items-center ${locked ? "" : "cursor-pointer"}`}>
@@ -16,7 +20,7 @@ export function RowStatus({ status, onChange, label, locked }: { status: ItemSta
           checked={status === "done"}
           disabled={!!locked}
           onChange={() => onChange(status === "done" ? "open" : "done")}
-          className="h-5 w-5 accent-emerald-600 disabled:opacity-60"
+          className={`h-5 w-5 disabled:opacity-60 ${muted ? "accent-stone-500" : "accent-emerald-600"}`}
           aria-label={`${label}を完了にする`}
         />
       </label>

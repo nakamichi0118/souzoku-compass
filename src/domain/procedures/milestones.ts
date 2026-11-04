@@ -5,14 +5,15 @@
  * - それぞれの区切りの下に、前の区切りの翌日からその区切りの日までが日付の、ほかの手続きをまとめる。
  *   最後の区切りよりあとの手続きは「そのあと」にまとめる
  * - 同じ日の区切りは1つのまとまり（Stop）にし、その下の手続きは一度だけ出す
- * - 渡す手続きは、カレンダーに載せるもの（該当する場合だけの手続きと「不要」にしたものを除いたもの）
+ * - 渡す手続きは、カレンダーに載せるもの（該当する場合だけの手続きを除いたもの）。
+ *   「不要」にした手続きも渡し、グレーで残す（カレンダーから「不要」を戻せるように）
  */
 import type { Task } from "./rules";
 import { monthsDeadline, nextOpenDay, withinDays, yearsDeadline, type ISODate } from "./dates";
 
 export type MilestoneKind = "start" | "deadline" | "aim";
-/** 済んだ・日付を過ぎた（済んでいない）・これから */
-export type EntryState = "done" | "late" | "open";
+/** 済んだ・不要にした・日付を過ぎた（済んでいない）・これから */
+export type EntryState = "done" | "na" | "late" | "open";
 
 export interface Milestone {
   /** 手続きの id（亡くなった日は "death"） */
@@ -101,9 +102,9 @@ export function periodLabel(death: ISODate, date: ISODate, shifted: boolean, tas
 const byDate = <T extends { date: ISODate }>(xs: T[]) => xs.map((x, i) => [x, i] as const).sort(([a, i], [b, j]) => (a.date < b.date ? -1 : a.date > b.date ? 1 : i - j)).map(([x]) => x);
 
 /** 手続きを、区切りごとのまとまりに分ける */
-export function buildTimeline(tasks: Task[], opts: { death: ISODate; today: ISODate; done: string[] }): Timeline {
-  const { death, today, done } = opts;
-  const stateOf = (t: Task): EntryState => (done.includes(t.id) ? "done" : t.date < today ? "late" : "open");
+export function buildTimeline(tasks: Task[], opts: { death: ISODate; today: ISODate; done: string[]; na?: string[] }): Timeline {
+  const { death, today, done, na = [] } = opts;
+  const stateOf = (t: Task): EntryState => (done.includes(t.id) ? "done" : na.includes(t.id) ? "na" : t.date < today ? "late" : "open");
   const isMilestone = (t: Task) => t.hard || AIM_IDS.includes(t.id);
   const marks = byDate(tasks.filter(isMilestone));
   const nextDate = marks.find((t) => t.hard && stateOf(t) === "open")?.date;
