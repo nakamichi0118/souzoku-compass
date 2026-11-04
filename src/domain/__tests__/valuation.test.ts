@@ -35,8 +35,13 @@ describe("区分所有補正率（国税庁タックスアンサーNo.4667の計
     expect(c.ratio).toBeLessThanOrEqual(1666);
     expect(c.correction).toBe(10000);
   });
+  it("所在階が総階数より上・築年数の月が12以上のときは評価しない", () => {
+    expect(valueAsset({ ...base, totalFloors: 11, floor: 12 }).needsConsultation).toContain("所在階（12階）が建物の総階数（11階）より上");
+    expect(valueAsset({ ...base, builtYearsMonths: { years: 26, months: 12 } }).needsConsultation).toContain("築年数の月");
+  });
+
   it("地階を除く階数が2以下の建物は区分所有補正をしない", () => {
-    const v = valueAsset({ ...base, totalFloors: 2 });
+    const v = valueAsset({ ...base, totalFloors: 2, floor: 2 });
     expect(v.needsConsultation).toBeUndefined();
     expect(v.value).toBe(10_500_000 + 4_000_000);
     expect(v.steps[0]).toContain("地階を除く階数が2以下");

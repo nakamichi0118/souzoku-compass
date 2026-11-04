@@ -8,7 +8,7 @@ import { type PersonTax, RATE_TABLE, type TaxResult, rateFor } from "@/domain/ta
 import { Markdown } from "@/components/compass/Markdown";
 import { jpDate, monthsDeadline, nextOpenDay } from "@/domain/procedures/dates";
 import { relationLabel } from "@/forms/filing";
-import { unallocatedAssets } from "@/lib/progress";
+import { unsettledAssets } from "@/lib/progress";
 import { useCase } from "@/lib/store";
 import { summarizeForAssistant } from "@/lib/summary";
 
@@ -80,8 +80,31 @@ export function TaxStep() {
   // 確認待ちの財産や、取得する人が決まっていない財産があるうちは、税額は暫定
   const pendingAssets = data.assets.filter((a) => a.pending?.length || r.assets.find((l) => l.asset.id === a.id)?.valuation.needsConsultation);
   // 「分け方がまだ決まっていない」を選んだときは、決まっていない財産を法定相続分で計算した税額になる（暫定ではない）
-  const undivided = data.undivided ? [] : unallocatedAssets(data);
-  const provisional = pendingAssets.length > 0 || undivided.length > 0 || r.blockers.length > 0;
+  // 取得する人が決まっていない財産（割合の合計が100%でないものも）は計算に入らないため、税額そのものを出さない
+  const undivided = unsettledAssets(data);
+  const provisional = pendingAssets.length > 0 || r.blockers.length > 0;
+
+  if (undivided.length > 0) {
+    return (
+      <div className="space-y-5">
+        <Note tone="stop">
+          <p className="font-semibold">取得する人が決まっていない財産があるため、まだ税額を出せません。</p>
+          <p className="mt-1">
+            {undivided.map((a) => a.label || "（名称未入力）").join("、")}
+            <Link href="/case/division" className="ml-2 font-semibold underline">
+              分け方を決める ›
+            </Link>
+          </p>
+          <p className="mt-1 text-xs">申告期限までに決まらないときは、分け方の画面で「分け方がまだ決まっていない」を選ぶと、法定相続分で計算します。</p>
+        </Note>
+        {r.blockers.map((b, i) => (
+          <Note key={`${i}:${b}`} tone="warn">
+            {b}
+          </Note>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -94,14 +117,6 @@ export function TaxStep() {
                 確認待ちの財産：{pendingAssets.map((a) => a.label || "（名称未入力）").join("、")}
                 <Link href={`/case/assets?asset=${pendingAssets[0].id}`} className="ml-2 font-semibold underline">
                   財産を確かめる ›
-                </Link>
-              </li>
-            )}
-            {undivided.length > 0 && (
-              <li>
-                取得する人が決まっていない財産：{undivided.map((a) => a.label || "（名称未入力）").join("、")}
-                <Link href="/case/division" className="ml-2 font-semibold underline">
-                  分け方を決める ›
                 </Link>
               </li>
             )}

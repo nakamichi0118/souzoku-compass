@@ -8,6 +8,7 @@ import { AppShell, PageHead } from "@/components/shell/AppShell";
 import { Panel } from "@/components/ui/Panel";
 import { jpDate } from "@/domain/procedures/dates";
 import { useOverall } from "@/lib/overall";
+import { summarizeForAssistant } from "@/lib/summary";
 import { daysLeftLabel, lateBadge } from "@/lib/taskStatus";
 import { CatIcon } from "./icons";
 import { MilestoneFlow } from "./MilestoneView";
@@ -18,8 +19,14 @@ export function Home() {
   const o = useOverall();
   const context = useCallback(
     () =>
-      [`亡くなった日：${o.iv.deathDate}`, `全体の進捗：${o.pct}%`, ...o.main.map((t) => `- ${t.date} ${t.hard ? "期限" : "目安"} ${t.title}${o.done.includes(t.id) ? "（済）" : ""}`)].join("\n"),
-    [o.iv.deathDate, o.pct, o.main, o.done],
+      [
+        `亡くなった日：${o.iv.deathDate}`,
+        `全体の進捗：${o.pct}%`,
+        ...o.main.map((t) => `- ${t.date} ${t.hard ? "期限" : "目安"} ${t.title}${o.done.includes(t.id) ? "（済）" : ""}`),
+        // 相続税申告の画面で入れた家族・財産の要約（氏名・住所は送らない）。同じ相続の案件のときだけ
+        ...(o.case.persons.length > 0 && o.case.decedent.deathDate === o.iv.deathDate ? ["", "相続税申告の画面で入れた内容：", summarizeForAssistant(o.case, o.result)] : []),
+      ].join("\n"),
+    [o.iv.deathDate, o.pct, o.main, o.done, o.case, o.result],
   );
   const ask = useAsk("home", context);
   if (!o.loaded) return <AppShell>{null}</AppShell>;

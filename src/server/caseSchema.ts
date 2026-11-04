@@ -89,7 +89,7 @@ export const caseSchema = z
     allocations: many(allocation, CASE_LIMITS.allocations, "遺産分割の割合"),
     priorGifts: many(z.looseObject({}), CASE_LIMITS.priorGifts, "生前の贈与"),
     compensation: many(z.looseObject({}), CASE_LIMITS.compensation, "代償金").optional(),
-    progress: z.looseObject({ completed: many(z.string().max(100), CASE_LIMITS.progress, "進み具合の記録").optional() }).optional(),
+    progress: z.looseObject({ completed: many(z.string().max(100), CASE_LIMITS.progress, "進み具合の記録").optional(), formsKey: z.string().max(100).optional() }).optional(),
   })
   .superRefine((c, ctx) => {
     const ids = new Set<string>();
