@@ -1,5 +1,7 @@
 "use client";
 
+import { useCase } from "@/lib/store";
+import { DOC_OF, assetHasDoc } from "@/components/steps/AssetsStep";
 import { AskCompass, useAsk } from "@/components/compass/AskCompass";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -26,6 +28,27 @@ const shortDate = (d: string, today: string) => (yearOf(d) === yearOf(today) ? j
 
 /** 書類のカードの id（「今集めるべき書類」から、同じ書類をもう一度押したときに探す） */
 export const docAnchor = (id: string) => `doc-${id}`;
+
+/** この書類を使う財産ごとの「書類あり／まだ」（口座・土地が2件以上あるとき。どの口座の書類がまだかを分かるように） */
+function AssetDocList({ docId, done }: { docId: string; done: boolean }) {
+  const { data } = useCase();
+  const list = data.assets.filter((a) => DOC_OF[a.kind] === docId);
+  if (list.length < 2) return null;
+  const doneIds = done ? [`doc:${docId}`] : [];
+  return (
+    <div>
+      <p className="font-semibold text-stone-500">財産ごと</p>
+      <ul className="mt-1 space-y-0.5">
+        {list.map((a) => (
+          <li key={a.id} className="flex justify-between gap-3">
+            <span className="min-w-0 truncate">{a.label || "（名称未入力）"}</span>
+            <span className={`shrink-0 text-xs font-bold ${assetHasDoc(a, data.assets, doneIds) ? "text-stone-500" : "text-orange-700"}`}>{assetHasDoc(a, data.assets, doneIds) ? "書類あり" : "まだ"}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 function DocCard({ item, address, open, onOpen, focus }: { item: DocItem; address: string; open: boolean; onOpen: (v: boolean) => void; focus: boolean }) {
   const { setStatus } = usePlan();
@@ -67,6 +90,7 @@ function DocCard({ item, address, open, onOpen, focus }: { item: DocItem; addres
             </div>
           )}
           {doc.readable && <Reader docId={item.id} onRegistered={() => setStatus(key, "done")} />}
+          <AssetDocList docId={item.id} done={item.done} />
           <p>{doc.purpose}</p>
           <dl className="grid gap-x-4 gap-y-1 sm:grid-cols-[7rem_1fr]">
             {item.used.length > 0 && (

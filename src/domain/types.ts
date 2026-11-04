@@ -128,6 +128,8 @@ export interface AssetBase {
   foreign?: boolean;
   /** 書類から読み取って登録したが、まだ確かめていない・入っていない項目（確認待ち） */
   pending?: string[];
+  /** この財産の書類（残高証明書など）：読み取った書類のファイル名か「手元にあり」。資料集めの印は書類の種類ごとなので、口座・土地ごとにはこちらで見る */
+  docFrom?: string;
 }
 
 export type LandMethod =

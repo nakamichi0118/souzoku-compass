@@ -15,7 +15,8 @@ export const shortFormName = (form: string) => form.replace(/（[^（）]*）$/,
 export function FilingGuide({ missing, blanks }: { missing: { form: string; reason: string }[]; blanks: string[] }) {
   const { data, result } = useCase();
   const plan = usePlan();
-  if (!result || !result.needsFiling) return null;
+  // 取得する人が決まっていない財産があるなど、計算を止める事項があるうちは納税額の案内を出さない（抜けた財産のない額に見えてしまう）
+  if (!result || !result.needsFiling || result.blockers.length > 0) return null;
   const deadline = data.decedent.deathDate ? nextOpenDay(monthsDeadline(data.decedent.deathDate, 10)) : null;
   const t = data.filing?.taxOffice?.trim();
   const office = t ? (t.endsWith("税務署") ? t : `${t}税務署`) : "亡くなった方の住所地の税務署";

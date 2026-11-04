@@ -42,7 +42,7 @@ function fields(x: ExtractedAsset): [string, string][] {
 /** アップロードした書類をコンパスくんが読み取り、確認してから財産・債務・贈与に登録する */
 export function Reader({ docId, onRegistered }: { docId?: string; onRegistered?: () => void }) {
   const { data: c, update } = useCase();
-  const ex = useExtract();
+  const ex = useExtract(() => ({ decedentName: c.decedent.name, deathDate: c.decedent.deathDate }));
   // 書類ごとに、登録した項目を候補の番号で覚える（別の書類を読んだら消える）
   const [done, setDone] = useState<Record<number, Ref>>({});
   const [readId, setReadId] = useState(0);
@@ -50,7 +50,13 @@ export function Reader({ docId, onRegistered }: { docId?: string; onRegistered?:
   const sample = docId ? SAMPLE[docId] : undefined;
   const register = (x: ExtractedAsset, i: number, replace?: Ref) => {
     const r = applyExtracted(c, x, replace);
-    update(() => r.next);
+    // どの財産の書類を読んだかを財産ごとに残す（同じ種類の書類でも、口座・土地ごとに「書類あり」を分ける）
+    const ref = r.ref;
+    const next =
+      ref.type === "asset" && ex.file
+        ? { ...r.next, assets: r.next.assets.map((a) => (a.id === ref.id ? { ...a, docFrom: ex.file!.slice(0, 200) } : a)) }
+        : r.next;
+    update(() => next);
     setDone((d) => ({ ...d, [i]: r.ref }));
     onRegistered?.();
   };
