@@ -84,7 +84,7 @@ describe("土地の使い方（家賃・地代をもらっているか）ui-1 / 
     for (const asset of [building, condo] as Asset[]) {
       const h = renderToStaticMarkup(createElement(AssetEditor, { living, asset, patch: noop }));
       expect(h).toContain("家賃をもらって人に貸している");
-      expect(h).toContain("家族に無料で貸しているだけなら、チェックしません。");
+      expect(h).toContain("家族に無料（固定資産税くらいを受け取るだけも同じ）で貸しているなら、チェックしません。");
       expect(h).not.toContain(">人に貸している<");
     }
   });

@@ -33,6 +33,13 @@ describe("相続登記の画面", () => {
     expect(html).not.toContain("登記原因証明情報");
   });
 
+  it("期限は、やることリスト・カレンダーと同じ（2024年3月以前に亡くなった方は2027年3月31日）", () => {
+    const old = structuredClone(demoCase);
+    old.decedent.deathDate = "2023-06-01";
+    expect(render(old)).toContain("期限は<strong>2027年3月31日（水）</strong>");
+    expect(render(structuredClone(demoCase))).toContain("期限は<strong>2029年3月15日（木）</strong>");
+  });
+
   it("不動産がないときは、1行とボタンだけ出す", () => {
     const c = structuredClone(demoCase);
     c.assets = c.assets.filter((a) => a.kind !== "land" && a.kind !== "building" && a.kind !== "condo");

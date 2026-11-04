@@ -355,7 +355,7 @@ export function AssetsStep() {
 }
 
 /** 家賃をもらわずに貸しているもの（使用貸借）は「貸している」にあたらないことの短い案内（くわしくは土地の Tips） */
-const FREE_LENDING_HINT = "家族に無料で貸しているだけなら、チェックしません。";
+const FREE_LENDING_HINT = "家族に無料（固定資産税くらいを受け取るだけも同じ）で貸しているなら、チェックしません。";
 
 export function AssetEditor({
   living,

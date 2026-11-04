@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { decodeCsv, extractFile } from "../../../../scripts/zip/unzip";
-import { buildZipIndex, cleanTown, parseCsvLine } from "../parse";
+import { addBusinessZips, buildZipIndex, cleanTown, parseCsvLine } from "../parse";
 import { clearZipCache, lookupZip, nextAddress, normalizeZip } from "../lookup";
 import { AddressField } from "@/components/ui/AddressField";
 
@@ -36,7 +36,7 @@ describe("cleanTown", () => {
 
 describe("buildZipIndex", () => {
   const csv = [
-    "﻿" + row("13101", "1000001", "東京都", "千代田区", "千代田"),
+    "\uFEFF" + row("13101", "1000001", "東京都", "千代田区", "千代田"),
     row("13101", "1000005", "東京都", "千代田区", "丸の内（次のビルを除く）"),
     row("01101", "0600000", "北海道", "札幌市中央区", "以下に掲載がない場合"),
     row("01101", "0600042", "北海道", "札幌市中央区", "大通西（１～１９丁目）"),
@@ -68,6 +68,20 @@ describe("buildZipIndex", () => {
   });
   it("知らない都道府県名は止める（データの形が変わったとき）", () => {
     expect(() => buildZipIndex(row("99999", "1234567", "架空県", "架空市", "架空町"))).toThrow(/都道府県/);
+  });
+});
+
+describe("addBusinessZips", () => {
+  /** 事業所の個別郵便番号の CSV と同じ並びの1行（名前・住所は架空） */
+  const biz = (zip: string, name: string, pref: string, city: string, town: string, banchi: string, kind = "0") =>
+    `13101,"ｶｸｳ","${name}","${pref}","${city}","${town}","${banchi}","${zip}","100  ","銀座",${kind},0,0`;
+  it("番地まで入れ、名前も持つ。私書箱は入れない", () => {
+    const chunks = buildZipIndex(row("13101", "1000001", "東京都", "千代田区", "千代田"));
+    const n = addBusinessZips([biz("1008388", "架空銀行", "東京都", "千代田区", "丸の内", "一丁目1番1号"), biz("1008799", "私書箱", "東京都", "千代田区", "大手町", "二丁目3番1号", "1")].join("\r\n"), chunks);
+    expect(n).toBe(1);
+    expect(chunks.get("100")?.["8388"]).toEqual([[12, "千代田区", "丸の内一丁目1番1号", "架空銀行"]]);
+    expect(chunks.get("100")?.["8799"]).toBeUndefined();
+    expect(chunks.get("100")?.["0001"]).toEqual([[12, "千代田区", "千代田"]]);
   });
 });
 
@@ -136,13 +150,17 @@ describe("lookupZip", () => {
     expect(f).toHaveBeenCalledTimes(1);
     expect(f).toHaveBeenCalledWith("/zip/100.json");
   });
-  it("表がない上3桁は「見つからない」、取れなかったときは null で、次にもう一度試す", async () => {
+  it("表がない（ビルドで作れなかった）・取れなかったときは null で、次にもう一度試す", async () => {
     const missing = vi.fn(async () => ({ ok: false, status: 404 }) as Response);
-    expect(await lookupZip("9990000", missing as unknown as typeof fetch)).toEqual([]);
+    expect(await lookupZip("9990000", missing as unknown as typeof fetch)).toBeNull();
     const down = vi.fn(async () => ({ ok: false, status: 503 }) as Response);
     expect(await lookupZip("1110000", down as unknown as typeof fetch)).toBeNull();
     expect(await lookupZip("1110000", down as unknown as typeof fetch)).toBeNull();
     expect(down).toHaveBeenCalledTimes(2);
+  });
+  it("会社・役所の個別の郵便番号は、名前と番地までの住所を返す", async () => {
+    const f = vi.fn(async () => ok({ "8388": [[12, "千代田区", "丸の内一丁目1番1号", "架空銀行"]] }));
+    expect(await lookupZip("100-8388", f as unknown as typeof fetch)).toEqual([{ pref: "東京都", city: "千代田区", town: "丸の内一丁目1番1号", address: "東京都千代田区丸の内一丁目1番1号", name: "架空銀行" }]);
   });
   it("7桁でなければ調べない", async () => {
     const f = vi.fn();

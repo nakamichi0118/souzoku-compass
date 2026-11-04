@@ -7,7 +7,8 @@ import { Bubble, CompassAvatar } from "@/components/compass/CompassKun";
 import { OfficeLookup } from "@/components/plan/OfficeLookup";
 import { AppHeader } from "@/components/shell/AppShell";
 import { Card, Field, Note, TextInput, YenInput } from "@/components/ui";
-import { jpDate, nextOpenDay, yearsDeadline } from "@/domain/procedures/dates";
+import { jpDate, nextOpenDay } from "@/domain/procedures/dates";
+import { registrationDue } from "@/domain/procedures/rules";
 import { areaOf } from "@/domain/procedures/offices";
 import { buildRegistrations } from "@/domain/registration";
 import type { Asset, RegistryInfo } from "@/domain/types";
@@ -65,7 +66,8 @@ export function RegistrationPage() {
   if (!loaded) return null;
   const props = data.assets.filter((a): a is RegAsset => a.kind === "land" || a.kind === "building" || a.kind === "condo");
   const apps = buildRegistrations(data);
-  const deadline = data.decedent.deathDate ? jpDate(nextOpenDay(yearsDeadline(data.decedent.deathDate, 3))) : "";
+  // やることリスト・カレンダーと同じ期限（2024年3月以前に亡くなった方は2027年3月31日まで）
+  const deadline = data.decedent.deathDate ? jpDate(nextOpenDay(registrationDue(data.decedent.deathDate))) : "";
   const unallocated = props.filter((p) => !data.allocations.some((a) => a.assetId === p.id && a.shares.length));
   // 提出先の法務局：同じ地域（番地より前が同じ）の不動産は、窓口も同じなので1つの枠にまとめる
   const byArea = new Map<string, RegAsset[]>();

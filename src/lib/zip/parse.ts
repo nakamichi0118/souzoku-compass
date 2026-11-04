@@ -8,8 +8,8 @@
  */
 import { PREFECTURES } from "@/data/consultFirm";
 
-/** [都道府県の番号（PREFECTURES の位置）, 市区町村, 町域] */
-export type ZipRow = [number, string, string];
+/** [都道府県の番号（PREFECTURES の位置）, 市区町村, 町域（会社・役所の個別番号では番地まで）, 会社・役所の名前] */
+export type ZipRow = [number, string, string] | [number, string, string, string];
 /** 郵便番号の下4桁 → 候補 */
 export type ZipChunk = Record<string, ZipRow[]>;
 
@@ -52,18 +52,10 @@ export function cleanTown(town: string): string {
 
 const PREF_INDEX = new Map<string, number>(PREFECTURES.map((p, i) => [p, i]));
 
-/** CSV 全体から、郵便番号の上3桁ごとの表を作る */
-export function buildZipIndex(csv: string): Map<string, ZipChunk> {
-  const chunks = new Map<string, ZipChunk>();
+/** 郵便番号の表に1行ずつ足す（同じ行は1つにする） */
+function adder(chunks: Map<string, ZipChunk>) {
   const seen = new Set<string>();
-  const lines = csv.replace(/^﻿/, "").split(/\r?\n/);
-  let pending: string[] | null = null;
-  const add = (cols: string[]) => {
-    const zip = cols[2].trim();
-    if (!/^\d{7}$/.test(zip)) return;
-    const pref = PREF_INDEX.get(cols[6].trim());
-    if (pref == null) throw new Error(`知らない都道府県名：${cols[6]}`);
-    const row: ZipRow = [pref, cols[7].trim(), cleanTown(cols[8])];
+  return (zip: string, row: ZipRow) => {
     const key = `${zip}|${row.join("|")}`;
     if (seen.has(key)) return;
     seen.add(key);
@@ -71,6 +63,25 @@ export function buildZipIndex(csv: string): Map<string, ZipChunk> {
     const chunk = chunks.get(head) ?? {};
     (chunk[zip.slice(3)] ??= []).push(row);
     chunks.set(head, chunk);
+  };
+}
+
+const prefIndex = (name: string) => {
+  const pref = PREF_INDEX.get(name.trim());
+  if (pref == null) throw new Error(`知らない都道府県名：${name}`);
+  return pref;
+};
+
+/** CSV 全体から、郵便番号の上3桁ごとの表を作る */
+export function buildZipIndex(csv: string): Map<string, ZipChunk> {
+  const chunks = new Map<string, ZipChunk>();
+  const put = adder(chunks);
+  const lines = csv.replace(/^\uFEFF/, "").split(/\r?\n/);
+  let pending: string[] | null = null;
+  const add = (cols: string[]) => {
+    const zip = cols[2].trim();
+    if (!/^\d{7}$/.test(zip)) return;
+    put(zip, [prefIndex(cols[6]), cols[7].trim(), cleanTown(cols[8])]);
   };
   for (const line of lines) {
     if (!line.trim()) continue;
@@ -97,3 +108,24 @@ export function buildZipIndex(csv: string): Map<string, ZipChunk> {
 }
 
 const hasOpenParen = (s: string) => (s.match(/[（(]/g)?.length ?? 0) > (s.match(/[）)]/g)?.length ?? 0);
+
+/**
+ * 会社・役所などの個別の郵便番号（日本郵便「事業所の個別郵便番号」）を表に足す。
+ * 列：0 所在地のコード / 1 名前（カナ） / 2 名前 / 3 都道府県 / 4 市区町村 / 5 町域 / 6 番地など /
+ *     7 個別番号（7桁） / 8 旧郵便番号 / 9 取扱局 / 10 種別（0 事業所・1 私書箱） / 11 複数番号 / 12 修正コード
+ * 私書箱は郵便局の住所になるので入れない。
+ */
+export function addBusinessZips(csv: string, chunks: Map<string, ZipChunk>): number {
+  const put = adder(chunks);
+  let n = 0;
+  for (const line of csv.replace(/^\uFEFF/, "").split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const cols = parseCsvLine(line);
+    if (cols.length < 11 || cols[10].trim() === "1") continue;
+    const zip = cols[7].trim();
+    if (!/^\d{7}$/.test(zip)) continue;
+    put(zip, [prefIndex(cols[3]), cols[4].trim(), `${cols[5].trim()}${cols[6].trim()}`, cols[2].trim()]);
+    n++;
+  }
+  return n;
+}

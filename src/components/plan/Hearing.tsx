@@ -196,7 +196,7 @@ export function Hearing() {
           <Q label="配偶者（夫・妻）はご存命ですか？">
             <YesNo value={a("spouse")} onChange={(v) => pick("spouse", v)} />
           </Q>
-          <Q label="お子さんは何人いますか？" hint="養子も含め、ご存命の方だけ数えます。">
+          <Q label="お子さんは何人いますか？" hint="養子も含めます。亡くなった方より後に亡くなったお子さんも数えます。">
             <Counter value={iv.children} onChange={(v) => set("children", v)} />
           </Q>
           <Q label="先に亡くなったお子さんの子（孫）の人数" hint="いなければ0人のまま。">

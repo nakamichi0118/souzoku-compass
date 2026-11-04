@@ -5,7 +5,7 @@ import type { Task } from "@/domain/procedures/rules";
 import { showBelowHeader, topBelowHeader } from "../scroll";
 import { RowStatus } from "../StatusButtons";
 
-const { keepShown, listScrollFor, MemoBox, rowDate, splitLead, TaskRow, tip, UploadPrompt } = await import("../TasksPage");
+const { detailText, keepShown, listScrollFor, MemoBox, rowDate, splitLead, TaskRow, tip, UploadPrompt } = await import("../TasksPage");
 
 describe("選んだ項目を見出しのすぐ下に出す（スマホ）", () => {
   it("要素の上の端を、固定した見出しの下から 8px あけたところに出す", () => {
@@ -187,6 +187,17 @@ describe("詳細の説明文（splitLead）", () => {
     expect(splitLead("口座が止まります（引き落としも止まります。）。残高証明書をもらいます。")).toEqual(["口座が止まります（引き落としも止まります。）。", "残高証明書をもらいます。"]);
     expect(splitLead("亡くなってから満2年の命日に行う法要です。")).toEqual(["亡くなってから満2年の命日に行う法要です。", ""]);
     expect(splitLead("句点なし")).toEqual(["句点なし", ""]);
+  });
+});
+
+describe("詳細に見せる説明（detailText）", () => {
+  const what = "借金が少なければ通常は不要です。家庭裁判所に申し立てる期限は3か月以内です。財産を使ったり処分したりすると放棄できなくなるので注意してください。";
+  it("法律で期限が決まった手続きは畳まずに全部見せる", () => {
+    expect(detailText({ what, hard: true })).toEqual([what, ""]);
+  });
+  it("続きに期限や「できなくなる」ことが書いてあれば畳まない", () => {
+    expect(detailText({ what, hard: false })).toEqual([what, ""]);
+    expect(detailText({ what: "遺言書を探します。法務局の保管制度も確認します。" })).toEqual(["遺言書を探します。", "法務局の保管制度も確認します。"]);
   });
 });
 

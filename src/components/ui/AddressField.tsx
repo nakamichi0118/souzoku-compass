@@ -39,9 +39,12 @@ export function AddressField({
   const addressRef = useRef<HTMLInputElement>(null);
   // 待っている間に住所が変わっても、最新の住所に入れる
   const latest = useRef(address);
+  const onAddressRef = useRef(onAddress);
   useEffect(() => {
     latest.current = address;
-  }, [address]);
+    // 待っている間に親が描き直しても、最新の描画の onAddress で入れる（古い入力の内容で上書きしない）
+    onAddressRef.current = onAddress;
+  }, [address, onAddress]);
   const lastFilled = useRef<string | null>(null);
   const asked = useRef("");
 
@@ -53,7 +56,7 @@ export function AddressField({
       return;
     }
     lastFilled.current = hit.address;
-    if (next !== latest.current) onAddress(next);
+    if (next !== latest.current) onAddressRef.current(next);
     setStatus({ kind: "none" });
     // 郵便番号を打っていたなら、続けて番地を打てるように住所の欄の最後へ
     const typing = document.activeElement === zipRef.current;
@@ -130,7 +133,7 @@ export function AddressField({
                 onClick={() => apply(h, false, true)}
                 className="rounded-full border border-stone-300 bg-white px-3 py-1 text-stone-800 hover:border-teal-600 hover:text-teal-800"
               >
-                {h.town || h.city}
+                {h.name || h.town || h.city}
               </button>
             ))}
           </div>
@@ -140,7 +143,7 @@ export function AddressField({
             住所を「{status.hit.address}」にする
           </button>
         )}
-        {status.kind === "missing" && <p className="mt-1 text-xs text-stone-500">この郵便番号は見つかりませんでした。</p>}
+        {status.kind === "missing" && <p className="mt-1 text-xs text-stone-500">この郵便番号からは住所を出せませんでした。住所を入れてください。</p>}
         {status.kind === "error" && <p className="mt-1 text-xs text-stone-500">住所を調べられませんでした。そのまま入れてください。</p>}
       </div>
       {hint && <p className="mt-1 text-xs text-stone-500">{hint}</p>}

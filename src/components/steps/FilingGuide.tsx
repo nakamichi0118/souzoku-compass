@@ -44,7 +44,7 @@ export function FilingGuide({ missing, blanks }: { missing: { form: string; reas
       title: "添付書類をそろえる",
       body: (
         <ul className="list-disc space-y-1 pl-5">
-          <li>相続人全員の戸籍謄本（亡くなった日から10日を過ぎて作ったもの）か、法定相続情報一覧図の写し</li>
+          <li>相続人全員が分かる戸籍謄本（亡くなった日から10日を過ぎて作ったもの）か、法定相続情報一覧図の写し</li>
           <li>遺産分割協議書の写しと、全員の印鑑証明書（遺言書があればその写し）</li>
           <li>各人のマイナンバーカードの写し（なければ通知カード＋運転免許証などの写し）</li>
           {small && <li>小規模宅地等の特例：住民票の写しなど、特例ごとに必要な書類</li>}

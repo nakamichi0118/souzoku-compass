@@ -123,7 +123,7 @@ export const TOPICS: Topic[] = [
   {
     id: "realEstateDeal",
     group: "assets",
-    question: "不動産の売買契約をして、まだ引渡し前だった",
+    question: "亡くなる前に不動産の売買契約をして、まだ引渡し前だった",
     sub: {
       question: "売る契約ですか、買う契約ですか",
       choices: [

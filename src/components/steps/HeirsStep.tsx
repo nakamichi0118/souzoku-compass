@@ -398,7 +398,9 @@ function Deceased({
               ? "先に亡くなった配偶者は相続人にならず、代わりに相続する人もいません。"
               : canSubstitute
                 ? `${p.name || "この方"}さんの分は、子ども（${who}）が代わりに相続します。`
-                : "先に亡くなった父母・祖父母は相続人にならず、代わりに相続する人もいません。"}
+                : p.relation === "parent" || p.relation === "grandparent"
+                  ? "先に亡くなった父母・祖父母は相続人になりません。"
+                  : "亡くなった方より先に亡くなった人は、相続人になりません。"}
           </p>
           {canSubstitute && (
             <div className="space-y-2">

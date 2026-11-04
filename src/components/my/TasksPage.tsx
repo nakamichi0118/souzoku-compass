@@ -57,6 +57,19 @@ export function splitLead(s: string): [string, string] {
   return [s, ""];
 }
 
+/** 期限・できなくなること・過料など、知らないと困る内容。これを含む説明は畳まない */
+const MUST_SEE = /期限|以内|できなくなる|過料|までに|日まで|延長/;
+
+/**
+ * 詳細に見せる説明。最初の1文だけを見せ、残りを「詳しく」に畳む。
+ * ただし、法律で期限が決まった手続きと、続きに期限や「できなくなる」ことが書いてある手続きは全部見せる
+ */
+export function detailText(t: { what: string; hard?: boolean }): [string, string] {
+  const [lead, more] = splitLead(t.what);
+  if (!more || t.hard || MUST_SEE.test(more)) return [t.what, ""];
+  return [lead, more];
+}
+
 /** 一覧の行の日付。今年の日付は年を省く（「11月15日（日）」）。来年以降は年もつける */
 export const rowDate = (date: string, now: string) => (yearOf(date) === yearOf(now) ? jpDate(date).replace(/^\d+年/, "") : jpDate(date));
 
@@ -258,7 +271,7 @@ export function TasksPage() {
   const { pref, city } = cityOf(o.iv.address);
   // 「完了」だけを選んだときはたたまずに並べる。それ以外は、済んだ・不要にした手続きを1行にたたむ
   const foldDone = status !== "done";
-  const [lead, more] = t ? splitLead(t.what) : ["", ""];
+  const [lead, more] = t ? detailText(t) : ["", ""];
   const extraBring = t ? t.bring.filter((b) => !t.docs.some((id) => DOCS[id]?.name === b)) : [];
   const oneTip = t ? tip(t) : null;
 
@@ -382,13 +395,12 @@ export function TasksPage() {
 
             <div>
               <p className="leading-relaxed text-stone-800">{lead}</p>
-              {/* 説明の続き・窓口の決まり・法律の根拠は「詳しく」に畳む（開けばいままでと同じ内容が読める） */}
-              {(more || (t.office && t.where) || t.law) && (
+              {/* 説明の続きと法律の根拠は「詳しく」に畳む（開けばいままでと同じ内容が読める） */}
+              {(more || t.law) && (
                 <details key={t.id} className="mt-1 text-sm text-stone-600">
                   <summary className="cursor-pointer py-2 font-medium text-teal-800">詳しく</summary>
                   <div className="space-y-1.5 leading-relaxed">
                     {more && <p>{more}</p>}
-                    {t.office && t.where && <p>窓口の決まり：{t.where}</p>}
                     {t.law && <p className="text-xs text-stone-500">根拠：{t.law}</p>}
                   </div>
                 </details>
@@ -415,6 +427,8 @@ export function TasksPage() {
               {t.office ? (
                 <div className="space-y-2">
                   <OfficeLookup key={`${t.id}|${t.office}`} kind={t.office} dept={t.dept} address={t.office === "legalAffairs" ? (realEstateLocation(o.case.assets) ?? o.iv.address) : o.iv.address} />
+                  {/* 窓口が亡くなった方の住所で決まらない手続き（子の住所地の家庭裁判所など）もあるので、決まりは畳まずに見せる */}
+                  {t.where && <p className="text-xs text-stone-500">窓口の決まり：{t.where}</p>}
                   {city && (
                     <a
                       href={`https://www.google.com/maps/search/${encodeURIComponent(`${pref}${city} ${OFFICE_LABEL[t.office]}`)}`}

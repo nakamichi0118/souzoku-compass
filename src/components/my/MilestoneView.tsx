@@ -52,10 +52,21 @@ export function MilestoneView({ tasks, done, today, death, onMark, locked }: { t
   // 続いた区切りごと1つの「済んだ手続き（○件）」にたたむ（スマホでも、今日の線が最初の画面に入るように）。亡くなった日はたたまない
   const shut = (id: string, s: EntryState | "start") => isClosed(s) && foldable.has(id);
   const closedStop = (s: Stop, i: number) => i > 0 && i < tl.todayAt && s.milestones.every((m) => shut(m.id, m.state)) && s.tasks.every((e) => shut(e.task.id, e.state));
+  // 開いている「済んだ手続き」のまとまりは、中で付け外ししても形を変えない（閉じたり、行が外へ動いたりしないように）
+  const [held, setHeld] = useState<Set<string>>(() => new Set());
+  const hold = (dates: string[], open: boolean) =>
+    setHeld((h) => {
+      const n = new Set(h);
+      for (const d of dates) {
+        if (open) n.add(d);
+        else n.delete(d);
+      }
+      return n.size === h.size && dates.every((d) => h.has(d) === open) ? h : n;
+    });
   const parts: ({ fold: Stop[] } | { stop: Stop; i: number })[] = [];
   tl.stops.forEach((s, i) => {
     const last = parts.at(-1);
-    if (!closedStop(s, i)) parts.push({ stop: s, i });
+    if (!held.has(s.date) && !closedStop(s, i)) parts.push({ stop: s, i });
     else if (last && "fold" in last) last.fold.push(s);
     else parts.push({ fold: [s] });
   });
@@ -64,9 +75,9 @@ export function MilestoneView({ tasks, done, today, death, onMark, locked }: { t
     <div className="relative">
       <span aria-hidden className="absolute bottom-4 left-[7px] top-4 w-0.5 rounded bg-stone-200" />
       <ol className="relative space-y-1">
-        {parts.map((p) =>
+        {parts.map((p, n) =>
           "fold" in p ? (
-            <FoldedStops key={`fold-${p.fold[0].date}`} stops={p.fold} today={today} {...row} />
+            <FoldedStops key={`fold-${n}`} stops={p.fold} today={today} open={p.fold.some((s) => held.has(s.date))} onOpen={(o) => hold(p.fold.map((s) => s.date), o)} {...row} />
           ) : (
             <Fragment key={p.stop.date}>
               {p.i === tl.todayAt && <TodayRow today={today} />}
@@ -165,7 +176,7 @@ function MilestoneRow({ m, today, onMark, locked }: { m: Milestone; today: strin
 }
 
 /** 今日より前の、すべて済んだ（不要にした）区切りをまとめた1行。開くと、区切りとその下の手続きをいつもどおりに出す */
-function FoldedStops({ stops, today, onMark, locked, foldable }: { stops: Stop[]; today: string; onMark: Mark; locked?: Locked; foldable: Set<string> }) {
+function FoldedStops({ stops, today, open, onOpen, onMark, locked, foldable }: { stops: Stop[]; today: string; open: boolean; onOpen: (open: boolean) => void; onMark: Mark; locked?: Locked; foldable: Set<string> }) {
   const count = stops.reduce((n, s) => n + s.milestones.filter((m) => m.task).length + s.tasks.length, 0);
   const na = stops.some((s) => s.milestones.some((m) => m.state === "na") || s.tasks.some((e) => e.state === "na"));
   return (
@@ -173,7 +184,7 @@ function FoldedStops({ stops, today, onMark, locked, foldable }: { stops: Stop[]
       <span aria-hidden className="absolute left-0 top-3 grid h-4 w-4 place-items-center rounded-full bg-stone-300 ring-4 ring-white">
         <Check className="h-3 w-3 text-white" strokeWidth={3} />
       </span>
-      <details>
+      <details open={open} onToggle={(e) => onOpen(e.currentTarget.open)}>
         <summary className="cursor-pointer rounded-xl bg-stone-50 px-3 py-2.5 text-sm text-stone-600 hover:bg-stone-100">
           {na ? "済んだ・不要にした手続き" : "済んだ手続き"}（{count}件）
         </summary>
