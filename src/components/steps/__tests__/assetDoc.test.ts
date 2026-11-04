@@ -17,3 +17,13 @@ describe("財産ごとの「書類あり」", () => {
     expect(assetHasDoc(all[0], all, [])).toBe(false);
   });
 });
+
+describe("資料集めの「そろった」（口座ごと）", () => {
+  it("2行のうち1行だけ読み取ったときは、残高証明書に済が付いていても、もう1行がまだ", async () => {
+    const { assetsMissingDoc } = await import("@/lib/assetDocs");
+    const all = [dep("みほん銀行", "zandaka.pdf"), dep("別の銀行 定期")];
+    expect(assetsMissingDoc("balanceCert", all, ["doc:balanceCert"]).map((a) => a.id)).toEqual(["別の銀行 定期"]);
+    expect(assetsMissingDoc("balanceCert", [all[0], dep("別の銀行 定期", "手元にあり")], ["doc:balanceCert"])).toEqual([]);
+    expect(assetsMissingDoc("balanceCert", [dep("1口座")], ["doc:balanceCert"])).toEqual([]);
+  });
+});
