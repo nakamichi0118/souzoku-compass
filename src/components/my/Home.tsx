@@ -37,6 +37,7 @@ export function Home() {
   // ホームには、まだ済んでいない手続きを期限の近い順に3件だけ（全体はやることリストで）
   const upcoming = o.main.filter((t) => !o.closed(t.id) && t.id !== o.next?.id).slice(0, 3);
   const nextStep = o.steps.find((s) => !s.done);
+  const nextIsFiling = o.next?.id === "inheritance-tax" && !!nextStep;
   const verdict = o.verdict ?? o.est.verdict;
   const taxNeeded = verdict === "likely" || verdict === "relief";
   const cats = [...o.byCategory.entries()].filter(([k]) => k !== "その他" && k !== "年金・税金");
@@ -52,13 +53,16 @@ export function Home() {
         <section className="mb-5 flex flex-wrap items-center gap-4 rounded-2xl border-2 border-brand/40 bg-brand-soft p-5">
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-brand">次にすること</p>
-            <p className="mt-1 text-xl font-bold text-stone-900">{o.next.title}</p>
+            <p className="mt-1 text-xl font-bold text-stone-900">
+              {o.next.title}
+              {nextIsFiling && nextStep && <span className="ml-2 text-base font-semibold text-sky-800">（{nextStep.title}）</span>}
+            </p>
             <p className="mt-1 text-sm text-stone-600">
               {o.next.hard ? "期限" : "目安"} {jpDate(o.next.date)}（{daysLeftLabel(o.now, o.next.date)}）
               {o.next.office && o.next.dept ? `・${o.next.dept}` : ""}
             </p>
           </div>
-          <Link href={o.next.id === "inheritance-tax" && nextStep ? `/case/${nextStep.slug}` : `/my/tasks?id=${o.next.id}`} className="rounded-full bg-brand px-7 py-3 font-bold text-white shadow hover:brightness-95">
+          <Link href={nextIsFiling && nextStep ? `/case/${nextStep.slug}` : `/my/tasks?id=${o.next.id}`} className="rounded-full bg-brand px-7 py-3 font-bold text-white shadow hover:brightness-95">
             続きを進める ›
           </Link>
         </section>
@@ -138,10 +142,11 @@ export function Home() {
                 ))}
               </ol>
               {/* 吹き出しは出さず、ボタンだけ（スマホで吹き出しが押しつぶされて1文字ずつ折れないように） */}
-              {nextStep && (
+              {/* 大きいボタンは上の「続きを進める」だけにする。ここは申告の続きへの小さなリンク（上と同じ行き先なら出さない） */}
+              {nextStep && !nextIsFiling && (
                 <div className="mt-4 flex justify-end">
-                  <Link href={`/case/${nextStep.slug}`} className="rounded-full bg-sky-700 px-5 py-2 text-sm font-bold text-white hover:bg-sky-800">
-                    次へ（{nextStep.title}） ›
+                  <Link href={`/case/${nextStep.slug}`} className="text-sm font-semibold text-sky-700 hover:underline">
+                    申告の続き（{nextStep.title}） ›
                   </Link>
                 </div>
               )}

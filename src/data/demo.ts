@@ -6,7 +6,7 @@ import type { Case } from "@/domain/types";
 export const demoCase: Case = {
   id: "demo-1",
   title: "相続 太郎さんの相続（デモ）",
-  progress: { completed: ["decedent", "heirs", "assets", "debts"] },
+  progress: { completed: ["decedent", "heirs", "assets", "debts", "review", "division", "tax"] },
   decedent: {
     name: "相続 太郎",
     kana: "ソウゾク タロウ",
@@ -116,7 +116,7 @@ export const demoCase: Case = {
       prices: { close: 3_150, monthAvg: 3_080, prevMonthAvg: 3_020, prev2MonthAvg: 3_110 },
     },
     { id: "ins", kind: "insurance", label: "みほん生命 死亡保険金", amount: 20_000_000, recipientId: "hanako" },
-    { id: "cash", kind: "cash", label: "現金（自宅保管）", amount: 520_000 },
+    { id: "cash", kind: "cash", label: "亡くなる前後に引き出した現金", amount: 520_000 },
   ],
   debts: [
     { id: "funeral", kind: "funeral", label: "葬儀費用（架空斎場ほか）", amount: 1_850_000, creditor: "架空斎場", creditorAddress: "東京都千代田区架空町二丁目5番1号", bearers: [{ personId: "ichiro", amount: 1_850_000 }] },
@@ -133,4 +133,25 @@ export const demoCase: Case = {
   ],
   priorGifts: [{ personId: "sakura", date: "2024-12-20", amount: 1_100_000, giftTaxPaid: 0 }],
   filing: { taxOffice: "麹町" },
+  // 申告前の確認：回答済み（引き出しは、葬儀費用を引いた残りを現金として財産に追加ずみ）。
+  // 審査やお試しでは、どれかを「ある」に変えると、コンパスくんの聞き取りや相談の流れを見られる
+  review: {
+    answers: {
+      company: "no",
+      esop: "no",
+      nominee: "no",
+      valuables: "no",
+      loans: "no",
+      realEstateDeal: "no",
+      receivables: "no",
+      insuranceRights: "no",
+      online: "no",
+      withdrawal: "yes",
+      unknownOutflow: "no",
+      homeSpecial: "no",
+      foreign: "no",
+    },
+    withdrawal: { amount: 2_370_000, used: 1_850_000 },
+    added: ["withdrawal"],
+  },
 };
