@@ -18,7 +18,7 @@ import { saveBlob } from "@/lib/download";
 import { useOverall, useRequireHearing } from "@/lib/overall";
 import type { ItemStatus } from "@/lib/planStore";
 import { daysLeftLabel, taskStatus } from "@/lib/taskStatus";
-import { showBelowHeader } from "./scroll";
+import { isWide, showBelowHeader } from "./scroll";
 import { AUTO_DONE_NOTE, DetailStatus, RowStatus } from "./StatusButtons";
 import { docsToUpload, UploadPrompt } from "./UploadPrompt";
 
@@ -76,6 +76,10 @@ export function showInList(list: HTMLElement | null, id: string, tries = 3) {
     if (!row) return void (tries > 1 && showInList(list, id, tries - 1));
     const head = row.parentElement?.closest("li")?.querySelector<HTMLElement>(":scope > p");
     list.scrollTop = listScrollFor(list.scrollTop, row.getBoundingClientRect().top, list.getBoundingClientRect().top, head?.offsetHeight ?? 0);
+    // パソコンでは一覧の下の端が画面の外に出ることがあるので、いちばん下の行のときは画面も送って行を見せる
+    // （スマホは詳細の先頭まで画面を送るので、ここでは送らない）
+    const below = row.getBoundingClientRect().bottom - window.innerHeight;
+    if (isWide() && below > 0) window.scrollBy({ top: Math.ceil(below + 8) });
   });
 }
 

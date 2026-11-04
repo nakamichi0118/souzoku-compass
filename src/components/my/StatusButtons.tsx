@@ -29,6 +29,7 @@ export function RowStatus({ status, onChange, label, locked, muted }: { status: 
         onClick={() => onChange(status === "na" ? "open" : "na")}
         disabled={!!locked}
         aria-pressed={status === "na"}
+        aria-label={`${label}を不要にする`}
         title={locked ?? "自分には関係ない・やらない場合"}
         className="group flex h-9 items-center px-1 disabled:opacity-40"
       >

@@ -91,6 +91,11 @@ describe("「完了」チェックと「不要」ボタン（RowStatus）", () =
     expect(html()).toMatch(/<button type="button"[^>]*class="group flex h-9 items-center[^"]*"><span class="rounded-full border[^"]*">不要<\/span><\/button>/);
   });
 
+  it("読み上げでも、どの手続きの「不要」かが分かる", () => {
+    expect(html()).toMatch(/<button type="button"[^>]*aria-label="死亡届を不要にする"/);
+    expect(html()).toContain('aria-label="死亡届を完了にする"');
+  });
+
   it("自動で決まる項目は、どちらも押せない", () => {
     const h = html("相続税申告の画面で済んでいます");
     expect(h).toMatch(/<input[^>]*disabled=""/);

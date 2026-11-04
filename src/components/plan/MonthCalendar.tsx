@@ -78,7 +78,7 @@ export function MonthCalendar({ tasks, done, today, compact }: { tasks: Task[]; 
                   {ts.length > 2 && <span className="block text-[10px] text-stone-500">ほか{ts.length - 2}件</span>}
                 </span>
               )}
-              {ts.length > 0 && <span className={`absolute h-1 w-1 rounded-full ${compact ? "bottom-0" : "bottom-1.5 sm:hidden"} ${hard ? "bg-orange-500" : "bg-sky-500"}`} />}
+              {ts.length > 0 && <span className={`absolute h-1 w-1 rounded-full ${compact ? "bottom-0" : "bottom-1.5 sm:hidden"} ${open.length === 0 ? "bg-stone-300" : hard ? "bg-orange-500" : "bg-sky-500"}`} />}
             </button>
           );
         })}

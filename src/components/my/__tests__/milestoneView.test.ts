@@ -221,6 +221,15 @@ describe("パソコンの上に出す、期限の流れ", () => {
     expect(html).not.toContain('id=death"');
   });
 
+  it("区切りが多いとき（自営業・世帯主で11の区切り）は、名前の字を少し小さくする", () => {
+    const many = buildTasks(demoInterview()).tasks.filter((t) => !t.optional);
+    const self = buildTasks({ ...demoInterview(), work: "selfEmployed", householdHead: true, pension: "national" }).tasks.filter((t) => !t.optional);
+    expect(flow({ tasks: many })).not.toContain("px-0.5 text-xs");
+    const dense = flow({ tasks: self });
+    expect(dense.match(/<li class="row-span-5 grid grid-rows-subgrid[^"]*">/g)!.length).toBeGreaterThan(10);
+    expect(dense).toContain("px-0.5 text-xs");
+  });
+
   it("今日がすべての期限よりあとなら、今日の列はいちばん右", () => {
     const late = flow({ today: "2029-04-01" });
     expect(late.lastIndexOf(">今日<")).toBeGreaterThan(late.indexOf("相続登記"));

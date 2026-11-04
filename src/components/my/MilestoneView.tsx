@@ -36,8 +36,18 @@ export function MilestoneView({ tasks, done, today, death, onMark, locked }: { t
   const tl = timeline(tasks, done, today, death);
   const lastYear = yearOf(tl.stops[tl.stops.length - 1].date);
   // 開いたときに済んでいた（不要にした）手続きだけをたたむ。この画面で済ませた手続きは、その場にグレーで残す
-  const [foldable] = useState(() => new Set(tasks.filter((t) => done.includes(t.id) || done.includes(naId(t.id))).map((t) => t.id)));
-  const row = { onMark, locked, foldable };
+  // この画面で付け外しした手続きは、それからはたたまない（チェックし直した行が、閉じたまとまりの中に消えないように）
+  const [foldable, setFoldable] = useState(() => new Set(tasks.filter((t) => done.includes(t.id) || done.includes(naId(t.id))).map((t) => t.id)));
+  const mark: Mark = (id, v) => {
+    if (foldable.has(id))
+      setFoldable((s) => {
+        const n = new Set(s);
+        n.delete(id);
+        return n;
+      });
+    onMark(id, v);
+  };
+  const row = { onMark: mark, locked, foldable };
 
   return (
     <div className="relative">
@@ -249,7 +259,7 @@ export function MilestoneFlow({ tasks, done, today, death }: { tasks: Task[]; do
           );
         return (
           <li key={c.m.id} className="row-span-5 grid grid-rows-subgrid">
-            <FlowStep m={c.m} today={today} year={year} line={line} />
+            <FlowStep m={c.m} today={today} year={year} line={line} dense={cols.length > 10} />
           </li>
         );
       })}
@@ -278,7 +288,7 @@ function Node({ m }: { m: Milestone }) {
 }
 
 /** 流れの中の1つの区切り：線の上の印、名前、期間、日付、残りの日数 */
-function FlowStep({ m, today, year, line }: { m: Milestone; today: string; year: string | null; line: React.ReactNode }) {
+function FlowStep({ m, today, year, line, dense }: { m: Milestone; today: string; year: string | null; line: React.ReactNode; dense?: boolean }) {
   const closed = isClosed(m.state);
   const state =
     m.state === "start" ? null : m.state === "done" ? (
@@ -296,7 +306,8 @@ function FlowStep({ m, today, year, line }: { m: Milestone; today: string; year:
         {line}
         <Node m={m} />
       </span>
-      <span className={`px-1 pt-1 text-[13px] font-bold leading-snug text-balance [word-break:auto-phrase] ${closed ? "text-stone-400" : "text-stone-900"}`}>{m.name}</span>
+      {/* 区切りが多い（列が狭い）ときは、名前の字を少し小さくして、1文字だけ次の行に回らないようにする */}
+      <span className={`pt-1 font-bold leading-snug text-balance [word-break:auto-phrase] ${dense ? "px-0.5 text-xs" : "px-1 text-[13px]"} ${closed ? "text-stone-400" : "text-stone-900"}`}>{m.name}</span>
       <span className="px-1 text-[11px] leading-4 text-stone-500">
         {m.kind === "aim" && <span className={`mr-1 font-semibold ${closed ? "" : "text-sky-800"}`}>目安</span>}
         {m.period}

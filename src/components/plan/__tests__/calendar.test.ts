@@ -25,3 +25,13 @@ describe("月のカレンダー（スマホ）", () => {
     expect(html.match(/absolute h-1 w-1 rounded-full bottom-0 /g)).toHaveLength(2);
   });
 });
+
+describe("月のカレンダーの済んだ手続き", () => {
+  it("その日の手続きがすべて済んでいれば、点も一覧の印もグレー（緑にしない）", () => {
+    const html = renderToStaticMarkup(createElement(MonthCalendar, { tasks, done: ["a", "b"], today: "2027-01-10" }));
+    // 15日はすべて済み、20日はまだ（目安）
+    expect(html.match(/absolute h-1 w-1 rounded-full bottom-1.5 sm:hidden bg-stone-300/g)).toHaveLength(1);
+    expect(html.match(/absolute h-1 w-1 rounded-full bottom-1.5 sm:hidden bg-sky-500/g)).toHaveLength(1);
+    expect(html).not.toMatch(/emerald/);
+  });
+});
