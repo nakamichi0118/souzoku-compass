@@ -31,6 +31,7 @@ async function download(url: string, body: unknown, filename: string) {
 export function handFilledBlanks(result: TaxResult | null): string[] {
   return [
     "マイナンバー",
+    ...(result?.persons.some((p) => p.gifts > 0) ? ["第14表の贈与された財産の種類・細目・所在場所"] : []),
     ...(result?.persons.some((p) => p.successiveCredit > 0) ? ["第7表の前の相続で亡くなった方の氏名・続柄・申告書を出した税務署"] : []),
     ...(result?.assets.some((l) => smallLines(l).some((x) => x.detail.kind === "business")) ? ["第11・11の2表の付表1の事業内容（お店や工場などの事業の種類）"] : []),
     // 全部または一部の分け方が決まっているときは、第11表に分割の日を書く
@@ -107,7 +108,7 @@ export function DocumentsStep() {
         <details className="mb-3 text-xs text-stone-600">
           <summary className="cursor-pointer py-2 font-medium text-teal-800">作る表を見る</summary>
           <p className="leading-relaxed">
-            令和8年分の様式の、第1表・第1表（続）・第2表・第5表・第6表・第7表・第9表・第10表・第11表と付表1〜4・第11・11の2表の付表1（小規模宅地等）・第13表・第15表です（使う表だけが入ります）。
+            令和8年分の様式の、第1表・第1表（続）・第2表・第5表・第6表・第7表・第8の8表・第9表・第10表・第11表と付表1〜4・第11・11の2表の付表1（小規模宅地等）・第13表・第14表・第15表です（使う表だけが入ります）。
           </p>
         </details>
         {missing.length > 0 && (

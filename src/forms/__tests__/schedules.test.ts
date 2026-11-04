@@ -73,5 +73,5 @@ describe("第5表", () => {
 });
 
 it("申告書一式の順序", () => {
-  expect(buildFilingPages(demoCase, r).map((p) => p.page)).toEqual(["t01", "t01c", "t02", "t05", "t06", "t09", "t11", "t11_f1", "t11_f2", "t11_f3", "t11_f4", "t11_11_2_f1", "t13", "t15", "t15c"]);
+  expect(buildFilingPages(demoCase, r).map((p) => p.page)).toEqual(["t01", "t01c", "t02", "t05", "t06", "t08_8", "t09", "t11", "t11_f1", "t11_f2", "t11_f3", "t11_f4", "t11_11_2_f1", "t13", "t14", "t15", "t15c"]);
 });

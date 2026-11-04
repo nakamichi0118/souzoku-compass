@@ -73,7 +73,7 @@ describe("申告書一式", () => {
     expect(order.indexOf("t10")).toBeLessThan(order.indexOf("t11"));
     expect(order.indexOf("t11_11_2_f1")).toBeLessThan(order.indexOf("t13"));
     const missing = formsNotGenerated(c, r).map((m) => m.form).join();
-    expect(missing).not.toMatch(/第6表|第9表|第10表|付表1/);
-    expect(missing).toMatch(/第8の8表/);
+    expect(missing).not.toMatch(/第6表|第8の8表|第9表|第10表|付表1/);
+    expect(order).toContain("t08_8");
   });
 });

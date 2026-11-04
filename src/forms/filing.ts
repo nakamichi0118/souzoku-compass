@@ -7,7 +7,7 @@ import type { PersonTax, TaxResult } from "@/domain/tax/engine";
 import type { Case, Person } from "@/domain/types";
 import { ageAt, wareki, yen, yenOrBlank } from "./format";
 import type { PageFill } from "./render";
-import { build06, build07, build09, build10, buildF1, smallLines } from "./attachments";
+import { build06, build07, build08_8, build09, build10, build14, buildF1, smallLines } from "./attachments";
 import { buildSchedule11 } from "./schedule11";
 import { build13, build15, build5, filingPersons } from "./schedules";
 
@@ -213,11 +213,13 @@ export function buildFilingPages(c: Case, r: TaxResult): PageFill[] {
   pages.push(...build5(c, r)); // 第5表
   pages.push(...build06(c, r)); // 第6表
   pages.push(...build07(c, r)); // 第7表
+  pages.push(...build08_8(c, r)); // 第8の8表
   pages.push(...build09(c, r)); // 第9表
   pages.push(...build10(c, r)); // 第10表
   pages.push(...buildSchedule11(c, r)); // 第11表・付表1〜4
   pages.push(...buildF1(c, r)); // 第11・11の2表の付表1・付表1（続）
   pages.push(...build13(c, r)); // 第13表
+  pages.push(...build14(c, r)); // 第14表
   pages.push(...build15(c, r)); // 第15表・第15表（続）
   return pages;
 }
@@ -231,14 +233,6 @@ export function formsNotGenerated(c: Case, r: TaxResult): { form: string; reason
   if (r.persons.some((p) => p.surcharge > 0))
     out.push({ form: "第4表（相続税額の加算金額の計算書）", reason: "相続税が2割増しになる人（孫・兄弟姉妹など）がいるため" });
   if (r.persons.some((p) => p.giftTaxCredit > 0)) out.push({ form: "第4表の2（暦年課税分の贈与税額控除額の計算書）", reason: "贈与税額控除を使うため" });
-  if (r.persons.some((p) => p.otherCredits > 0)) {
-    const used = [
-      r.persons.some((p) => p.minorCredit > 0 || p.transfersIn.some((t) => t.kind === "minor")) && "未成年者控除",
-      r.persons.some((p) => p.disabilityCredit > 0 || p.transfersIn.some((t) => t.kind === "disability")) && "障害者控除",
-      r.persons.some((p) => p.successiveCredit > 0) && "相次相続控除",
-    ].filter(Boolean);
-    out.push({ form: "第8の8表（税額控除額及び納付税額の計算書）", reason: `${used.length ? used.join("・") : "未成年者控除・障害者控除"}を使うため` });
-  }
   if (r.persons.some((p) => p.settlementGifts > 0 || p.settlementCredit > 0))
     out.push({
       form: "第11の2表（相続時精算課税適用財産の明細書・相続時精算課税分の贈与税額控除額の計算書）",
@@ -259,8 +253,6 @@ export function formsNotGenerated(c: Case, r: TaxResult): { form: string; reason
       form: "第11・11の2表の付表1（別表1）（小規模宅地等についての課税価格の計算明細）",
       reason: shared ? "特例の土地を2人以上で分けたため" : "特例を使う貸している土地に空き部屋があるため",
     });
-  if (r.persons.some((p) => p.gifts > 0))
-    out.push({ form: "第14表（純資産価額に加算される暦年課税分の贈与財産価額などの明細書）", reason: "3年以内の贈与があるため" });
   if (r.totalRefund > 0)
     out.push({ form: "第1表の付表2（還付される税額の受取場所）", reason: "精算課税の贈与税が戻る人がいるため" });
   if (r.undivided)

@@ -1,0 +1,487 @@
+{
+ "page": "t14",
+ "title": "第14表",
+ "fields": [
+  {
+   "id": "d.name",
+   "seed": [
+    2120,
+    540
+   ],
+   "size": 11
+  },
+  {
+   "id": "g0.name",
+   "seed": [
+    250,
+    964
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "g0.era",
+   "seed": [
+    424,
+    964
+   ],
+   "align": "center",
+   "size": 10
+  },
+  {
+   "id": "g0.y",
+   "seed": [
+    510,
+    964
+   ],
+   "align": "center",
+   "size": 10
+  },
+  {
+   "id": "g0.m",
+   "seed": [
+    594,
+    964
+   ],
+   "align": "center",
+   "size": 10
+  },
+  {
+   "id": "g0.d",
+   "seed": [
+    680,
+    964
+   ],
+   "align": "center",
+   "size": 10
+  },
+  {
+   "id": "g0.kind",
+   "seed": [
+    820,
+    964
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "g0.detail",
+   "seed": [
+    1010,
+    964
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "g0.place",
+   "seed": [
+    1250,
+    964
+   ],
+   "size": 8,
+   "lines": 2
+  },
+  {
+   "id": "g0.amount",
+   "seed": [
+    1750,
+    964
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "g0.special",
+   "seed": [
+    2040,
+    964
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "g0.added",
+   "seed": [
+    2320,
+    964
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "g1.name",
+   "seed": [
+    250,
+    1078
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "g1.era",
+   "seed": [
+    424,
+    1078
+   ],
+   "align": "center",
+   "size": 10
+  },
+  {
+   "id": "g1.y",
+   "seed": [
+    510,
+    1078
+   ],
+   "align": "center",
+   "size": 10
+  },
+  {
+   "id": "g1.m",
+   "seed": [
+    594,
+    1078
+   ],
+   "align": "center",
+   "size": 10
+  },
+  {
+   "id": "g1.d",
+   "seed": [
+    680,
+    1078
+   ],
+   "align": "center",
+   "size": 10
+  },
+  {
+   "id": "g1.kind",
+   "seed": [
+    820,
+    1078
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "g1.detail",
+   "seed": [
+    1010,
+    1078
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "g1.place",
+   "seed": [
+    1250,
+    1078
+   ],
+   "size": 8,
+   "lines": 2
+  },
+  {
+   "id": "g1.amount",
+   "seed": [
+    1750,
+    1078
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "g1.special",
+   "seed": [
+    2040,
+    1078
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "g1.added",
+   "seed": [
+    2320,
+    1078
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "g2.name",
+   "seed": [
+    250,
+    1192
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "g2.era",
+   "seed": [
+    424,
+    1192
+   ],
+   "align": "center",
+   "size": 10
+  },
+  {
+   "id": "g2.y",
+   "seed": [
+    510,
+    1192
+   ],
+   "align": "center",
+   "size": 10
+  },
+  {
+   "id": "g2.m",
+   "seed": [
+    594,
+    1192
+   ],
+   "align": "center",
+   "size": 10
+  },
+  {
+   "id": "g2.d",
+   "seed": [
+    680,
+    1192
+   ],
+   "align": "center",
+   "size": 10
+  },
+  {
+   "id": "g2.kind",
+   "seed": [
+    820,
+    1192
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "g2.detail",
+   "seed": [
+    1010,
+    1192
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "g2.place",
+   "seed": [
+    1250,
+    1192
+   ],
+   "size": 8,
+   "lines": 2
+  },
+  {
+   "id": "g2.amount",
+   "seed": [
+    1750,
+    1192
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "g2.special",
+   "seed": [
+    2040,
+    1192
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "g2.added",
+   "seed": [
+    2320,
+    1192
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "g3.name",
+   "seed": [
+    250,
+    1304
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "g3.era",
+   "seed": [
+    424,
+    1304
+   ],
+   "align": "center",
+   "size": 10
+  },
+  {
+   "id": "g3.y",
+   "seed": [
+    510,
+    1304
+   ],
+   "align": "center",
+   "size": 10
+  },
+  {
+   "id": "g3.m",
+   "seed": [
+    594,
+    1304
+   ],
+   "align": "center",
+   "size": 10
+  },
+  {
+   "id": "g3.d",
+   "seed": [
+    680,
+    1304
+   ],
+   "align": "center",
+   "size": 10
+  },
+  {
+   "id": "g3.kind",
+   "seed": [
+    820,
+    1304
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "g3.detail",
+   "seed": [
+    1010,
+    1304
+   ],
+   "size": 9,
+   "lines": 2
+  },
+  {
+   "id": "g3.place",
+   "seed": [
+    1250,
+    1304
+   ],
+   "size": 8,
+   "lines": 2
+  },
+  {
+   "id": "g3.amount",
+   "seed": [
+    1750,
+    1304
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "g3.special",
+   "seed": [
+    2040,
+    1304
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "g3.added",
+   "seed": [
+    2320,
+    1304
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p0.name",
+   "seed": [
+    1160,
+    1416
+   ],
+   "size": 10
+  },
+  {
+   "id": "p0.total",
+   "seed": [
+    1160,
+    1530
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p1.name",
+   "seed": [
+    1540,
+    1416
+   ],
+   "size": 10
+  },
+  {
+   "id": "p1.total",
+   "seed": [
+    1540,
+    1530
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p2.name",
+   "seed": [
+    1910,
+    1416
+   ],
+   "size": 10
+  },
+  {
+   "id": "p2.total",
+   "seed": [
+    1910,
+    1530
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p3.name",
+   "seed": [
+    2250,
+    1416
+   ],
+   "size": 10
+  },
+  {
+   "id": "p3.total",
+   "seed": [
+    2250,
+    1530
+   ],
+   "align": "right",
+   "size": 10
+  },
+  {
+   "id": "p.total",
+   "seed": [
+    780,
+    1530
+   ],
+   "align": "right",
+   "size": 10
+  }
+ ]
+}

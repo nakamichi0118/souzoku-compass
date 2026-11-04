@@ -56,8 +56,9 @@ describe("あなたへのお知らせの文", () => {
 });
 
 describe("相続コンパスからのお知らせ（SYSTEM_NOTICES）", () => {
-  it("新しいお知らせは、郵便番号から住所を入れること・画面の文字を減らしたこと", () => {
-    const [first, second] = SYSTEM_NOTICES;
+  it("新しいお知らせは、第8の8表・第14表、郵便番号から住所を入れること、画面の文字を減らしたこと", () => {
+    const [latest, first, second] = SYSTEM_NOTICES;
+    expect(latest).toMatchObject({ id: "2026-11-04-forms-8-8-14", date: "2026-11-04", title: "第8の8表と第14表も自動で作ります" });
     expect(first).toMatchObject({ id: "2026-11-04-zip", date: "2026-11-04", title: "郵便番号から住所を入れられます" });
     expect(second).toMatchObject({ id: "2026-11-04-less-text", date: "2026-11-04", title: "画面の文字を減らし、見やすくしました" });
     expect(second.body.match(/。/g)).toHaveLength(1);
