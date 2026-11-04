@@ -10,6 +10,7 @@ import { hasRealEstate } from "@/domain/realEstate";
 import type { Case } from "@/domain/types";
 import { naId, usePlan, type ItemStatus } from "./planStore";
 import { filingSteps } from "./progress";
+import { assetsMissingDoc } from "./assetDocs";
 import { useCase } from "./store";
 
 
@@ -62,8 +63,16 @@ export function useOverall() {
   const docs: DocItem[] = useMemo(() => {
     const m = new Map<string, Task[]>();
     for (const t of live) for (const id of t.docs) if (DOCS[id]) m.set(id, [...(m.get(id) ?? []), t]);
-    return [...m.entries()].map(([id, used]) => ({ id, used, done: done.includes(`doc:${id}`), na: done.includes(naId(`doc:${id}`)) }));
-  }, [live, done]);
+    // 口座・土地ごとの書類：同じ種類の財産が2件以上あるときは、全部に書類がそろうまで「そろった」にしない
+    // （2行のうち1行だけ読み取ったときに、もう1行が収集案内から消えないように）
+    const assets = sameCase ? c.assets : [];
+    return [...m.entries()].map(([id, used]) => ({
+      id,
+      used,
+      done: done.includes(`doc:${id}`) && assetsMissingDoc(id, assets, done).length === 0,
+      na: done.includes(naId(`doc:${id}`)),
+    }));
+  }, [live, done, sameCase, c.assets]);
 
   const liveDocs = docs.filter((d) => !d.na);
   const doneTasks = live.filter((t) => done.includes(t.id)).length;

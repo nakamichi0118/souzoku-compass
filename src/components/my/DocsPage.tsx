@@ -1,7 +1,7 @@
 "use client";
 
 import { useCase } from "@/lib/store";
-import { DOC_OF, assetHasDoc } from "@/components/steps/AssetsStep";
+import { DOC_OF, assetHasDoc, assetsMissingDoc } from "@/lib/assetDocs";
 import { AskCompass, useAsk } from "@/components/compass/AskCompass";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -30,11 +30,11 @@ const shortDate = (d: string, today: string) => (yearOf(d) === yearOf(today) ? j
 export const docAnchor = (id: string) => `doc-${id}`;
 
 /** この書類を使う財産ごとの「書類あり／まだ」（口座・土地が2件以上あるとき。どの口座の書類がまだかを分かるように） */
-function AssetDocList({ docId, done }: { docId: string; done: boolean }) {
+function AssetDocList({ docId }: { docId: string }) {
   const { data } = useCase();
+  const { done: doneIds } = usePlan();
   const list = data.assets.filter((a) => DOC_OF[a.kind] === docId);
   if (list.length < 2) return null;
-  const doneIds = done ? [`doc:${docId}`] : [];
   return (
     <div>
       <p className="font-semibold text-stone-500">財産ごと</p>
@@ -51,9 +51,12 @@ function AssetDocList({ docId, done }: { docId: string; done: boolean }) {
 }
 
 function DocCard({ item, address, open, onOpen, focus }: { item: DocItem; address: string; open: boolean; onOpen: (v: boolean) => void; focus: boolean }) {
-  const { setStatus } = usePlan();
+  const { setStatus, done: planDone } = usePlan();
+  const { data, update } = useCase();
   const doc = DOCS[item.id];
   const key = `doc:${item.id}`;
+  // 同じ種類の財産が2件以上あるとき、まだ書類がない財産（口座ごと）
+  const missing = assetsMissingDoc(item.id, data.assets, planDone);
   const ref = useRef<HTMLLIElement>(null);
   // 開いた書類は画面より長いので、名前とチェックが見えるよう、先頭を上の見出しのすぐ下に出す
   useEffect(() => {
@@ -61,6 +64,11 @@ function DocCard({ item, address, open, onOpen, focus }: { item: DocItem; addres
   }, [focus]);
   const setSt = (v: ItemStatus) => {
     setStatus(key, v);
+    // 手で「済」にしたときは、まだ書類のない財産（口座など）も全部そろったものとする
+    if (v === "done" && missing.length > 0) {
+      const ids = new Set(missing.map((a) => a.id));
+      update((c) => ({ ...c, assets: c.assets.map((a) => (ids.has(a.id) ? { ...a, docFrom: a.docFrom || "手元にあり" } : a)) }));
+    }
     // 読み取れる書類は、そろったらアップロードを促す
     if (v === "done" && doc.readable) onOpen(true);
   };
@@ -78,6 +86,9 @@ function DocCard({ item, address, open, onOpen, focus }: { item: DocItem; addres
             {doc.readable && <span className="ml-2 whitespace-nowrap rounded-full bg-teal-100 px-2 py-0.5 text-[11px] font-bold text-teal-800">読み取り可</span>}
           </p>
           {/* 閉じたときは件数だけ（1件なら名前）。一覧は開いたときに出す */}
+          {!item.done && !item.na && missing.length > 0 && missing.length < data.assets.filter((a) => DOC_OF[a.kind] === item.id).length && (
+            <p className="mt-0.5 text-xs font-semibold text-orange-700">まだ：{missing.map((a) => a.label || "（名称未入力）").join("、")}</p>
+          )}
           {item.used.length > 0 && <p className="mt-0.5 text-xs text-stone-500">{item.used.length === 1 ? `${item.used[0].title}で使う` : `${item.used.length}件の手続きで使う`}</p>}
         </button>
       </div>
@@ -90,7 +101,7 @@ function DocCard({ item, address, open, onOpen, focus }: { item: DocItem; addres
             </div>
           )}
           {doc.readable && <Reader docId={item.id} onRegistered={() => setStatus(key, "done")} />}
-          <AssetDocList docId={item.id} done={item.done} />
+          <AssetDocList docId={item.id} />
           <p>{doc.purpose}</p>
           <dl className="grid gap-x-4 gap-y-1 sm:grid-cols-[7rem_1fr]">
             {item.used.length > 0 && (
