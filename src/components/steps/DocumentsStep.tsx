@@ -14,6 +14,9 @@ import { markCompleted } from "@/lib/progress";
 import { usePlan } from "@/lib/planStore";
 import { FilingGuide } from "./FilingGuide";
 import { saveBlob } from "@/lib/download";
+import Link from "next/link";
+import { draftReason, reviewSummary } from "@/domain/review/topics";
+import { Check } from "@/components/ui";
 
 async function download(url: string, body: unknown, filename: string) {
   const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -60,6 +63,15 @@ export function DocumentsStep() {
   const [err, setErr] = useState<string | null>(null);
 
   const noDivisionDoc = divisionDocUnavailable(data);
+  const consent = data.review?.consent;
+  const agreed = !!(consent?.terms && consent.responsibility);
+  const setConsent = (k: "terms" | "responsibility", v: boolean) =>
+    update((c) => {
+      const cur = c.review?.consent ?? { terms: false, responsibility: false, at: "" };
+      return { ...c, review: { ...c.review, consent: { ...cur, [k]: v, at: new Date().toISOString() } } };
+    });
+  const draft = draftReason(data.review);
+  const review = reviewSummary(data.review);
   const division = (() => {
     if (noDivisionDoc) return { warnings: [] };
     try {
@@ -105,7 +117,28 @@ export function DocumentsStep() {
             <p className="mt-1 text-xs">様式は国税庁のホームページ「相続税の申告書等の様式一覧（令和8年分用）」にあります。</p>
           </div>
         )}
-        <Button onClick={() => run("tax", "/api/forms", "相続税申告書_令和8年分.pdf")} disabled={busy !== null}>
+        {draft && (
+          <div className="mb-3">
+            <Note tone="warn">
+              {draft}（残り {review.open.length} 件）。このまま作ると、申告書の各ページに「下書き」と入ります。
+              <Link href="/case/review" className="ml-2 font-semibold underline">
+                申告前の確認へ ›
+              </Link>
+            </Note>
+          </div>
+        )}
+        <div className="mb-3 space-y-1 rounded-lg border border-stone-200 bg-stone-50 p-3">
+          <Check checked={!!consent?.terms} onChange={(v) => setConsent("terms", v)} label="利用規約に同意します" />
+          <Check
+            checked={!!consent?.responsibility}
+            onChange={(v) => setConsent("responsibility", v)}
+            label="相続コンパスは申告書を作るための道具であり、申告内容の確認と最終的な責任は自分にあることを理解しました"
+          />
+          <Link href="/terms" target="_blank" className="block pl-6 text-xs text-teal-800 underline">
+            利用規約を読む
+          </Link>
+        </div>
+        <Button onClick={() => run("tax", "/api/forms", "相続税申告書_令和8年分.pdf")} disabled={busy !== null || !agreed}>
           {busy === "tax" ? "作成中…" : "申告書PDFをダウンロード"}
         </Button>
         <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-stone-600">

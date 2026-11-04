@@ -14,6 +14,7 @@ const LIMITS = {
   offices: 40,
   ratio: 20,
   locate: 30,
+  review: 60,
 } as const;
 
 /** 問題があれば返すべき応答、なければ null */

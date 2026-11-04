@@ -1,5 +1,6 @@
 import type { TaxResult } from "@/domain/tax/engine";
 import type { Case } from "@/domain/types";
+import { reviewSummary } from "@/domain/review/topics";
 import { STEPS } from "./steps";
 
 /** 遺産分割で分ける財産（保険金・退職金は受取人が受け取るため除く） */
@@ -14,7 +15,7 @@ export const unallocatedAssets = (c: Case) => divisibleAssets(c).filter((a) => !
 /** 遺産の分け方の入力が終わっているか：すべての財産に取得する人が決まっているか、未分割で申告すると選んだ */
 export const divisionReady = (c: Case) => c.assets.length > 0 && (!!c.undivided || unallocatedAssets(c).length === 0);
 
-/** 相続税申告の7ステップの進み具合（「次へ」で完了にしたもの＋入力の有無） */
+/** 相続税申告の各ステップの進み具合（「次へ」で完了にしたもの＋入力の有無） */
 export function filingSteps(c: Case, r: TaxResult | null) {
   const completed = new Set(c.progress?.completed ?? []);
   const has: Record<string, boolean> = {
@@ -22,6 +23,10 @@ export function filingSteps(c: Case, r: TaxResult | null) {
     heirs: c.persons.length > 0,
     assets: c.assets.length > 0,
     debts: true,
+    review: (() => {
+      const s = reviewSummary(c.review);
+      return s.answered === s.total;
+    })(),
     division: divisionReady(c),
     tax: !!r,
     documents: true,

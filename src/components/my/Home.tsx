@@ -11,6 +11,7 @@ import { daysBetween, jpDate } from "@/domain/procedures/dates";
 import { useOverall } from "@/lib/overall";
 import { daysLeftLabel, taskStatus } from "@/lib/taskStatus";
 import { CatIcon } from "./icons";
+import { STEPS } from "@/lib/steps";
 
 const man = (n: number) => `約${Math.round(n / 10_000).toLocaleString("ja-JP")}万円`;
 
@@ -110,7 +111,7 @@ export function Home() {
           </Panel>
 
           {o.filing && (
-            <Panel title="相続税申告の進捗（7ステップ）" more={{ href: `/case/${nextStep?.slug ?? "documents"}`, label: "申告書づくりへ" }}>
+            <Panel title={`相続税申告の進捗（${STEPS.length}ステップ）`} more={{ href: `/case/${nextStep?.slug ?? "documents"}`, label: "申告書づくりへ" }}>
               <ol className="flex items-start justify-between">
                 {o.steps.map((s, i) => (
                   <li key={s.slug} className="flex flex-1 flex-col items-center text-center">
