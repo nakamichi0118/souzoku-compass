@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/cloud", () => ({ useSession: () => ({ signedIn: () => {} }) }));
 
-const { AuthForm } = await import("../auth/AuthForm");
+const { AuthForm, missingHint } = await import("../auth/AuthForm");
 
 const render = (kind: "signup" | "login") => renderToStaticMarkup(createElement(AuthForm, { kind }));
 
@@ -36,5 +36,12 @@ describe("利用者登録・ログインの画面（スマホ）", () => {
     const textInputs = inputs.filter((i) => !i.includes('type="checkbox"'));
     expect(textInputs).toHaveLength(3);
     for (const i of textInputs) expect(i).toMatch(/class="[^"]*\btext-base\b/);
+  });
+});
+
+describe("利用者登録：押せないときの案内", () => {
+  it("足りないものを1行で示す（メールアドレスが正しくないときは、そう書く）", () => {
+    expect(missingHint("太郎", false, true, true)).toBe("まだ足りないもの：正しいメールアドレス");
+    expect(missingHint("", true, false, false)).toBe("まだ足りないもの：お名前、パスワード、同意のチェック");
   });
 });

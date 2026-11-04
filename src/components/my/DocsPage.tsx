@@ -21,6 +21,8 @@ import { RowStatus } from "./StatusButtons";
 
 /** 亡くなった方の住所で請求先が決まる書類 */
 const LOOKUP = new Set(["juminhyoJokyo", "hyokaCert", "nayose", "houteiJoho"]);
+/** 財産の書類の種類（そろったら相続税の判定へ誘う） */
+const ASSET_CATS: DocCategory[] = ["預貯金", "保険", "不動産", "株式"];
 const ORDER: DocCategory[] = ["戸籍・住民票", "預貯金", "保険", "不動産", "株式", "年金・税金", "その他"];
 
 /** 今年なら「3月24日（火）」、違う年なら「2027年1月15日（金）」 */
@@ -178,6 +180,13 @@ export function DocsPage() {
     .filter(([, has]) => !has)
     .map(([label]) => label);
 
+  // 財産の書類（預貯金・保険・不動産・株式）がそろったら、相続税の判定・申告の準備へ誘う
+  const assetDocs = ASSET_CATS.flatMap((k) => o.byCategory.get(k) ?? []).filter((d) => !d.na);
+  const assetDocsReady = assetDocs.length > 0 && assetDocs.every((d) => d.done);
+  const nextStep = o.steps.find((st) => !st.done);
+  const taxDone = o.steps.find((st) => st.slug === "tax")?.done;
+  const taxLikely = (o.verdict ?? o.est?.verdict) !== "none";
+
   return (
     <AppShell wide>
       <PageHead
@@ -204,6 +213,18 @@ export function DocsPage() {
           );
         })}
       </ul>
+
+      {assetDocsReady && !taxDone && (
+        <section className="mb-5 flex flex-wrap items-center gap-3 rounded-2xl border-2 border-brand/40 bg-brand-soft p-4">
+          <CompassAvatar size={44} />
+          <p className="min-w-0 flex-1 font-bold text-stone-900">
+            財産の資料がそろいました！{taxLikely ? "相続税申告の準備をはじめましょう。" : "相続税がかかるか確かめましょう。"}
+          </p>
+          <Link href={`/case/${nextStep?.slug ?? "decedent"}`} className="rounded-full bg-brand px-6 py-2.5 font-bold text-white shadow hover:brightness-95">
+            {taxLikely ? "申告の準備へ" : "相続税を判定する"} ›
+          </Link>
+        </section>
+      )}
 
       <details className="mb-5 rounded-xl border border-teal-200 bg-white p-4">
         <summary className="cursor-pointer font-bold text-teal-900">ほかの書類も読み取る（葬儀の領収書など）</summary>

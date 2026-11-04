@@ -80,3 +80,26 @@ describe("メニューの項目（NavLinks）", () => {
     expect(html).not.toContain("残り0件");
   });
 });
+
+describe("「財産と相続税」の行き先", () => {
+  it("はじめは ①亡くなった方。まだ終わっていない最初のステップを渡せばそこへ", () => {
+    const html = (caseHref?: string) => renderToStaticMarkup(createElement(NavLinks, { path: "/my", left: null, className: "x", caseHref }));
+    expect(html()).toContain('href="/case/decedent"');
+    expect(html("/case/heirs")).toContain('href="/case/heirs"');
+    expect(html("/case/heirs")).not.toContain('href="/case/assets"');
+  });
+});
+
+describe("使い方（ヘルプ）", () => {
+  it("画面ごとに使い方があり、財産と相続税は①から順にと案内する", async () => {
+    const { helpFor, HELP } = await import("@/data/help");
+    expect(helpFor("/my")?.id).toBe("home");
+    expect(helpFor("/my/tasks")?.id).toBe("tasks");
+    expect(helpFor("/case/heirs")?.id).toBe("case");
+    expect(helpFor("/case/map")?.id).toBe("map");
+    expect(helpFor("/case/registration")?.id).toBe("papers");
+    expect(helpFor("/case/decedent")?.what).toContain("①亡くなった方から");
+    // 文は短く（できることは3つまで）
+    for (const h of HELP) expect(h.points.length).toBeLessThanOrEqual(3);
+  });
+});

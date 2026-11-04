@@ -327,14 +327,16 @@ export function Hearing() {
               ]}
             />
           </Q>
-          <Q label="年金を受け取っていましたか？">
+          <Q label="亡くなった方は年金を受け取っていましたか？" hint="専業主婦（夫）だった方も国民年金を受け取っています。">
             <Choice
               value={a("pension")}
               onChange={(v) => pick("pension", v)}
               options={[
-                { value: "employees", label: "厚生年金（会社員だった）" },
-                { value: "national", label: "国民年金だけ" },
+                { value: "employees", label: "厚生年金（会社員・公務員の時期あり）" },
+                { value: "national", label: "国民年金だけ（自営業・専業主婦など）" },
+                { value: "survivor", label: "遺族年金（先に亡くした夫や妻の年金）" },
                 { value: "none", label: "受け取っていない" },
+                { value: "unknown", label: "分からない" },
               ]}
             />
           </Q>

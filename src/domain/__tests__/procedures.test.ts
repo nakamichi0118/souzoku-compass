@@ -303,3 +303,16 @@ describe("相続登記の期限（不動産登記法76条の2、改正法附則5
     expect(registrationDue("2010-01-05")).toBe("2027-03-31");
   });
 });
+
+describe("年金の受給停止（亡くなった方が受けていた年金の種類）", () => {
+  const stop = (pension: Interview["pension"]) => buildTasks(iv({ pension })).tasks.find((t) => t.id === "pension-stop");
+  it("国民年金だけなら14日以内、厚生年金・遺族年金・分からないは10日以内", () => {
+    expect(stop("national")?.date).toBe(withinDays("2026-01-06", 14));
+    for (const p of ["employees", "survivor", "unknown"] as const) expect(stop(p)?.date).toBe(withinDays("2026-01-06", 10));
+    expect(stop("survivor")?.title).toContain("遺族年金");
+    expect(stop("none")).toBeUndefined();
+  });
+  it("分からないときは、確かめ方を案内する", () => {
+    expect(stop("unknown")?.what).toContain("年金事務所に問い合わせ");
+  });
+});

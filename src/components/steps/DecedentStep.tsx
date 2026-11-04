@@ -7,7 +7,25 @@ import { isValidDate, monthsDeadline, nextOpenDay } from "@/domain/procedures/da
 import type { Decedent } from "@/domain/types";
 import { useCase } from "@/lib/store";
 import { Choice } from "@/components/plan/inputs";
+import { ConsultLink } from "@/components/compass/ConsultLink";
 import { wareki } from "@/forms/format";
+
+const YES_NO_UNKNOWN: { value: boolean | "unknown"; label: string }[] = [
+  { value: true, label: "はい" },
+  { value: false, label: "いいえ" },
+  { value: "unknown", label: "分からない" },
+];
+
+/** 「分からない」を選んだときの確かめ方と、税理士への相談の入り口 */
+function HowToCheck({ topic, stop, children }: { topic: string; stop?: boolean; children: React.ReactNode }) {
+  return (
+    <div className={`mt-3 rounded-xl border p-3 text-sm ${stop ? "border-amber-300 bg-amber-50 text-amber-950" : "border-sky-200 bg-sky-50 text-sky-950"}`}>
+      <p className="font-semibold">確かめ方</p>
+      <ul className="mt-1 list-disc space-y-1 pl-5">{children}</ul>
+      <ConsultLink topic={topic} className="mt-3" />
+    </div>
+  );
+}
 
 export function DecedentStep() {
   const { data, update, result } = useCase();
@@ -64,15 +82,19 @@ export function DecedentStep() {
         <p className="mt-1 text-xs text-stone-500">例：先に亡くなった配偶者から相続していた。今回の相続税が少なくなります。</p>
         <div className="mt-3">
           <Choice
-            value={d.priorInheritanceTax ?? false}
+            value={d.priorInheritanceTax}
             onChange={(v) => update((c) => ({ ...c, decedent: { ...c.decedent, priorInheritanceTax: v } }))}
-            options={[
-              { value: false, label: "いいえ・分からない" },
-              { value: true, label: "はい" },
-            ]}
+            options={YES_NO_UNKNOWN}
           />
         </div>
-        {d.priorInheritanceTax && (
+        {d.priorInheritanceTax === "unknown" && (
+          <HowToCheck topic="相次相続控除">
+            <li>先に亡くなった家族（例：配偶者）の相続税の申告書の控えを探す</li>
+            <li>見つからなければ、そのとき申告した税務署で申告書の閲覧を申し込む</li>
+            <li>分からないままなら「いいえ」と同じ扱いで計算します（控除は使いません）</li>
+          </HowToCheck>
+        )}
+        {d.priorInheritanceTax === true && (
           <div className="mt-4 space-y-3">
             <div className="grid gap-4 sm:grid-cols-3">
               <Field label="前の相続があった日" hint={wareki(pi.date)?.text ?? "前に亡くなった方が亡くなった日"}>
@@ -111,15 +133,20 @@ export function DecedentStep() {
         </details>
         <div className="mt-3">
           <Choice
-            value={d.settlementGift ?? false}
+            value={d.settlementGift}
             onChange={(v) => update((c) => ({ ...c, decedent: { ...c.decedent, settlementGift: v } }))}
-            options={[
-              { value: false, label: "いいえ・分からない" },
-              { value: true, label: "はい" },
-            ]}
+            options={YES_NO_UNKNOWN}
           />
         </div>
-        {d.settlementGift && (
+        {d.settlementGift === "unknown" && (
+          <HowToCheck topic="相続時精算課税" stop>
+            <li>
+              亡くなった方の最後の住所の税務署に<strong>「相続税法第49条第1項の開示請求」</strong>を出すと、精算課税の贈与と、亡くなる前の贈与税の申告分を教えてもらえます
+            </li>
+            <li>入れ忘れは後で追加の納税になりやすいので、確かめるまで税額は出しません</li>
+          </HowToCheck>
+        )}
+        {d.settlementGift === true && (
           <p className="mt-3 text-sm text-stone-700">
             贈与は
             <Link href="/case/debts" className="mx-1 font-semibold underline">

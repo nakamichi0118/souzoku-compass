@@ -1271,7 +1271,7 @@ function computeBase(c: Case, valueOf: (a: Asset) => Valuation) {
 
   // 相次相続控除（相続税法20条）に使う前の相続の内容
   let prior: { date: string; prevTax: number; prevAcquired: number } | undefined;
-  if (c.decedent.priorInheritanceTax) {
+  if (c.decedent.priorInheritanceTax === true) {
     const pi = c.decedent.priorInheritance ?? {};
     const missing = [
       !isValidISODate(pi.date) && "前の相続の日（前に亡くなった方が亡くなった日）",
@@ -1288,7 +1288,11 @@ function computeBase(c: Case, valueOf: (a: Asset) => Valuation) {
       prior = { date: pi.date!, prevTax: Math.floor(Number(pi.prevTax)), prevAcquired: Math.floor(Number(pi.prevAcquired)) };
     }
   }
-  if (c.decedent.settlementGift && !c.priorGifts.some((g) => g.settlement)) {
+  if (c.decedent.settlementGift === "unknown") {
+    blockers.push(
+      "「相続時精算課税」を選んだ贈与があるか分かっていません。入れ忘れると後で追加の納税になるため、税務署への開示請求（相続税法49条）か税理士への相談で確かめてから、亡くなった方の画面で「はい」か「いいえ」を選んでください。",
+    );
+  } else if (c.decedent.settlementGift && !c.priorGifts.some((g) => g.settlement)) {
     blockers.push(
       "「相続時精算課税」を選んだ贈与があると選ばれていますが、その贈与がまだ入っていません。債務・葬式費用の画面の贈与の一覧にその贈与を加え、「相続時精算課税」にチェックを入れてください。",
     );

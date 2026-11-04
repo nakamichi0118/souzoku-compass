@@ -63,8 +63,8 @@ const AIM_IDS = ["division"];
  */
 const KNOWN: Record<string, { name: string; periods?: string[] | ((t: Pick<Task, "title">) => string[]) }> = {
   "death-report": { name: "死亡届", periods: ["7日以内"] },
-  // 厚生年金は10日以内、国民年金は14日以内（どちらかは手続きの名前に出ている）
-  "pension-stop": { name: "年金の停止", periods: (t) => [t.title.includes("厚生年金") ? "10日以内" : "14日以内"] },
+  // 国民年金だけなら14日以内、それ以外（厚生年金・遺族年金・分からない）は10日以内（種類は手続きの名前に出ている）
+  "pension-stop": { name: "年金の停止", periods: (t) => [t.title.includes("国民年金") ? "14日以内" : "10日以内"] },
   "health-insurance": { name: "健康保険の手続き", periods: ["14日以内"] },
   "household-head": { name: "世帯主の変更", periods: ["14日以内"] },
   "business-close": { name: "廃業届", periods: ["1か月"] },

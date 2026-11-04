@@ -88,10 +88,13 @@ export interface Decedent {
   deathDate: ISODate;
   address: string;
   occupation?: string;
-  /** 亡くなった方が、亡くなる前10年以内に相続で財産を受け取り相続税を納めていた（相次相続控除の対象。自動計算の対象外） */
-  priorInheritanceTax?: boolean;
-  /** 相続時精算課税を選んで贈与した財産がある（贈与の欄で「精算課税」の印を付けた贈与を計算に入れる） */
-  settlementGift?: boolean;
+  /** 亡くなった方が、亡くなる前10年以内に相続で財産を受け取り相続税を納めていた（相次相続控除の対象）。"unknown"＝分からない（控除は見込まず、確かめ方を案内する） */
+  priorInheritanceTax?: boolean | "unknown";
+  /**
+   * 相続時精算課税を選んで贈与した財産がある（贈与の欄で「精算課税」の印を付けた贈与を計算に入れる）。
+   * "unknown"＝分からない。入れ忘れると後で追加の納税になりやすいので、確かめるまで計算を止める
+   */
+  settlementGift?: boolean | "unknown";
   /**
    * 相次相続控除の計算に使う前の相続の内容（priorInheritanceTax のとき）。
    * 相続税法20条：A × C/(B−A)（100/100が上限） × (10−E)/10

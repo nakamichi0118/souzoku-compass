@@ -11,6 +11,7 @@ export function AuthForm({ kind }: { kind: "signup" | "login" }) {
   const { signedIn } = useSession();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [emailLeft, setEmailLeft] = useState(false);
   const [password, setPassword] = useState("");
   const [agree, setAgree] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -65,7 +66,20 @@ export function AuthForm({ kind }: { kind: "signup" | "login" }) {
           )}
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-stone-700">メールアドレス</span>
-            <TextInput type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="例：you@example.com" autoComplete="email" />
+            <TextInput
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onBlur={() => setEmailLeft(true)}
+              placeholder="例：you@example.com"
+              autoComplete="email"
+              aria-invalid={emailLeft && email !== "" && !emailOk}
+            />
+            {email !== "" && !emailOk && (emailLeft || email.includes("@")) && (
+              <span role="alert" className="mt-1 block text-xs text-rose-700">
+                正しいメールアドレスを入力してください（例：you@example.com）
+              </span>
+            )}
           </label>
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-stone-700">パスワード</span>
@@ -83,6 +97,9 @@ export function AuthForm({ kind }: { kind: "signup" | "login" }) {
                 に同意します
               </span>
             </label>
+          )}
+          {signup && !ok && (name || email || password) && (
+            <p className="text-center text-xs text-stone-600">{missingHint(name, emailOk, pwOk, agree)}</p>
           )}
           {error && <p role="alert" className="break-words rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-900">{error}</p>}
           <button type="submit" disabled={!ok || busy} className="w-full rounded-full bg-sky-700 px-6 py-3 font-bold text-white hover:bg-sky-800 disabled:bg-stone-300">
@@ -108,4 +125,14 @@ export function AuthForm({ kind }: { kind: "signup" | "login" }) {
       </div>
     </main>
   );
+}
+
+/** 登録ボタンが押せないとき、何が足りないかを1行で示す */
+export function missingHint(name: string, emailOk: boolean, pwOk: boolean, agree: boolean): string {
+  const miss: string[] = [];
+  if (!name.trim()) miss.push("お名前");
+  if (!emailOk) miss.push("正しいメールアドレス");
+  if (!pwOk) miss.push("パスワード");
+  if (!agree) miss.push("同意のチェック");
+  return `まだ足りないもの：${miss.join("、")}`;
 }
