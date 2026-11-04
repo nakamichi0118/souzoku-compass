@@ -13,6 +13,8 @@ const SYSTEM = `あなたは相続手続きの書類から財産情報を読み�
 書かれていた項目だけを fields に入れ、書かれていない項目は入れないでください（推測で補わない）。読み取れなかった項目は notes に理由を書いてください。金額は円単位の数字だけ（カンマ・単位なし）で書いてください。
 評価額の計算はしないでください。
 同じ財産を、別々の候補として重ねて出さないでください（例：土地と家屋は分けるが、同じ土地を2回出さない）。
+書類には、亡くなった方のほかに相続人・請求者・宛名の人などの名前が出てきます。亡くなった方が誰かは、依頼文で示された名前と亡くなった日に従ってください。
+宛名の「ご相続人」「請求者」として書かれた人は相続人であり、亡くなった方として扱わないでください。依頼文で示されていないときは、誰が亡くなった方かを決めつけないでください。
 notes は書類を見ている一般の方に向けて書き、英語の項目名（amount・kind など）や「スキーマ」「null」などの言葉は使わないでください。`;
 
 const MEDIA = new Set(["image/png", "image/jpeg", "image/webp", "image/gif", "application/pdf"]);
@@ -27,6 +29,12 @@ export async function POST(req: Request) {
   if (!(file instanceof File)) return NextResponse.json({ error: "ファイルがありません。" }, { status: 400 });
   if (!MEDIA.has(file.type)) return NextResponse.json({ error: "画像（PNG/JPEG）かPDFを選んでください。" }, { status: 400 });
   if (file.size > 15 * 1024 * 1024) return NextResponse.json({ error: "ファイルが大きすぎます（15MBまで）。" }, { status: 400 });
+  // 亡くなった方の名前と亡くなった日（画面で入れたもの）。書類の中の別の人を亡くなった方と取り違えないように伝える
+  const name = String(form.get("decedentName") ?? "").replace(/[\r\n「」]/g, " ").trim().slice(0, 40);
+  const died = String(form.get("deathDate") ?? "");
+  const who = name
+    ? `亡くなった方は「${name}」さんです${/^\d{4}-\d{2}-\d{2}$/.test(died) ? `（${died}に亡くなりました）` : ""}。それ以外の名前の人は、亡くなった方ではありません。\n`
+    : "";
   const data = Buffer.from(await file.arrayBuffer()).toString("base64");
   const source =
     file.type === "application/pdf"
@@ -41,7 +49,7 @@ export async function POST(req: Request) {
       max_tokens: 8000,
       output_config: { effort: "medium", format: zodOutputFormat(ClaudeResult) },
       system: SYSTEM,
-      messages: [{ role: "user", content: [source, { type: "text", text: "この書類から相続財産の情報を取り出してください。" }] }],
+      messages: [{ role: "user", content: [source, { type: "text", text: `${who}この書類から相続財産の情報を取り出してください。` }] }],
     });
     if (res.stop_reason === "refusal" || !res.parsed_output) {
       return NextResponse.json({ error: "書類を読み取れませんでした。" }, { status: 422 });

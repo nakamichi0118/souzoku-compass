@@ -396,8 +396,10 @@ export function refExists(c: Case, r: Ref): boolean {
   return r.type === "asset" ? c.assets.some((a) => a.id === r.id) : c.debts.some((d) => d.id === r.id);
 }
 
-/** 書類のファイルを送って読み取る */
-export function useExtract() {
+/**
+ * 書類を送って読み取る。hint は亡くなった方の名前と亡くなった日（書類に出てくる名前のうち、どれが亡くなった方かを Claude が取り違えないように）
+ */
+export function useExtract(hint?: () => { decedentName?: string; deathDate?: string }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [res, setRes] = useState<Extracted | null>(null);
@@ -410,6 +412,9 @@ export function useExtract() {
     try {
       const fd = new FormData();
       fd.append("file", f);
+      const h = hint?.();
+      if (h?.decedentName?.trim()) fd.append("decedentName", h.decedentName.trim().slice(0, 40));
+      if (h?.deathDate) fd.append("deathDate", h.deathDate);
       const r = await fetch("/api/extract", { method: "POST", body: fd });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error ?? "読み取りに失敗しました");

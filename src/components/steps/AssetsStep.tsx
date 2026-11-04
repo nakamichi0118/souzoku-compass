@@ -61,7 +61,20 @@ export function blankAsset(kind: AssetKind, recipientId = ""): Asset {
 }
 
 /** 財産の種類ごとに、評価の根拠になる書類（資料集めのチェックと連動） */
-const DOC_OF: Partial<Record<AssetKind, string>> = { land: "hyokaCert", building: "hyokaCert", condo: "hyokaCert", deposit: "balanceCert", listedStock: "securitiesCert", insurance: "insurancePay" };
+/** 財産の種類 → その評価に使う書類（資料集めの書類の id） */
+export const DOC_OF: Partial<Record<AssetKind, string>> = { land: "hyokaCert", building: "hyokaCert", condo: "hyokaCert", deposit: "balanceCert", listedStock: "securitiesCert", insurance: "insurancePay" };
+/**
+ * 財産ごとの「書類あり」。書類を読み取って登録した財産か、「書類が手元にある」にした財産。
+ * 資料集めで書類の種類に「済」を付けただけのときは、その種類の財産が1件だけなら書類ありとする
+ * （預金口座が2つ以上あると、どの口座の書類かが分からないため）
+ */
+export function assetHasDoc(a: Asset, all: Asset[], done: string[]): boolean {
+  const docId = DOC_OF[a.kind];
+  if (!docId) return false;
+  if (a.docFrom) return true;
+  return done.includes(`doc:${docId}`) && all.filter((x) => DOC_OF[x.kind] === docId).length === 1;
+}
+
 const GROUPS: { label: string; kinds: AssetKind[] }[] = [
   { label: "土地・建物", kinds: ["land", "building", "condo"] },
   { label: "預貯金・現金", kinds: ["deposit", "cash"] },
@@ -161,7 +174,8 @@ export function AssetsStep() {
 
   const valueOf = (id: string) => result?.assets.find((l) => l.asset.id === id);
   // 評価の根拠になる書類が、資料集めでまだそろっていない財産の数
-  const missingDocs = data.assets.filter((a) => DOC_OF[a.kind] && !done.includes(`doc:${DOC_OF[a.kind]}`)).length;
+  const hasDoc = (a: Asset) => assetHasDoc(a, data.assets, done);
+  const missingDocs = data.assets.filter((a) => DOC_OF[a.kind] && !hasDoc(a)).length;
   const total = result?.assets.reduce((a, l) => a + l.valuation.value, 0) ?? 0;
 
   return (
@@ -230,7 +244,7 @@ export function AssetsStep() {
           const line = valueOf(a.id);
           const open = openId === a.id;
           const docId = DOC_OF[a.kind];
-          const got = docId ? done.includes(`doc:${docId}`) : null;
+          const got = docId ? hasDoc(a) : null;
           const missingRecipient = (a.kind === "insurance" || a.kind === "retirement") && !living.some((p) => p.id === a.recipientId);
           return (
             <li
@@ -259,6 +273,13 @@ export function AssetsStep() {
               </button>
               {open && (
                 <div className="space-y-3 border-t border-stone-100 px-4 py-4">
+                  {docId && (
+                    <Check
+                      checked={!!a.docFrom}
+                      onChange={(v) => update((c) => ({ ...c, assets: c.assets.map((x) => (x.id === a.id ? { ...x, docFrom: v ? x.docFrom || "手元にあり" : undefined } : x)) }))}
+                      label={a.docFrom && a.docFrom !== "手元にあり" ? `この財産の書類あり（${a.docFrom} から読み取り）` : "この財産の書類（残高証明書・評価証明書など）が手元にある"}
+                    />
+                  )}
                   {a.pending && a.pending.length > 0 && (
                     <Note tone="warn">
                       <p className="font-semibold">書類から読み取って登録しました。次の項目を確かめて入れてください。</p>
