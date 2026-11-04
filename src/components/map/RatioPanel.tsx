@@ -38,7 +38,7 @@ type MultiplierMethod = Extract<LandAsset["method"], { type: "multiplier" }>;
 type RatioSource = NonNullable<MultiplierMethod["source"]>;
 
 /** 評価倍率表を探している間の案内と、待ち時間の目安（表のPDFを丸ごと読むので、数十秒かかることがある） */
-export const RATIO_WAIT = "コンパスくんが国税庁の評価倍率表から、この土地の地域の行を探しています";
+export const RATIO_WAIT = "評価倍率表から、この土地の地域の行を探しています";
 const RATIO_PROGRESS: Progress = { at: 0, until: 1, expectSec: 30 };
 
 /** 宅地の欄の「1.1」「1.10」などを倍率の数に。「路線」「比準」などは null */
@@ -273,7 +273,7 @@ export function RatioPanel({
                 <p>
                   <span className="font-bold">{where}</span> の宅地は、<span className="font-bold">固定資産税評価額 × {rowRate}倍</span> で評価します。間違いないですか？
                 </p>
-                <p className="text-xs text-teal-900">下の評価倍率表のページと見比べてください。適用地域（「全域」「○○線より北」など）が土地の場所に合っているかも確かめてください。</p>
+                <p className="text-xs text-teal-900">下の表と見比べ、適用地域（「全域」「○○線より北」など）が土地の場所に合うか確かめてください。</p>
                 <div className="flex flex-wrap gap-2">
                   <Button
                     onClick={() => {
@@ -398,7 +398,7 @@ export function RatioPanel({
         </div>
       )}
       <Note tone="info">
-        倍率地域でも、間口が狭い・形がいびつ・がけ地などで評価を下げられる場合があります（ここでは下げていません）。下げられるかは税理士に確認できます。
+        形がいびつ・がけ地などの減額はしていません（下げられるかは税理士へ）。
         <span className="mt-2 block">
           <ConsultLink topic="土地の評価" />
         </span>

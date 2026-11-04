@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Bell, Clock, Megaphone } from "lucide-react";
+import { AlertTriangle, Bell, ChevronDown, Clock, Megaphone } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useOutsideClose } from "./useOutsideClose";
@@ -10,18 +10,42 @@ import { useOverall } from "@/lib/overall";
 
 type Tab = "personal" | "system";
 
-function Item({ n, unread, onOpen }: { n: Notice; unread: boolean; onOpen?: () => void }) {
-  const Icon = n.kind === "system" ? Megaphone : n.level === "danger" ? AlertTriangle : Clock;
+/** タイトル（未読なら頭に点）。summary の中にも置けるよう、p ではなく span で出す */
+function Title({ n, unread }: { n: Notice; unread: boolean }) {
+  return (
+    <span className={`block text-sm ${unread ? "font-bold text-stone-900" : "font-semibold text-stone-700"}`}>
+      {unread && <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-orange-500 align-middle" aria-label="未読" />}
+      {n.title}
+    </span>
+  );
+}
+
+/**
+ * お知らせの1件。
+ * あなたへのお知らせ：タイトルと期限の行（押すと手続きを開く）。相続コンパスから：タイトルだけを出し、押すと本文が開く
+ */
+export function NoticeItem({ n, unread, onOpen }: { n: Notice; unread: boolean; onOpen?: () => void }) {
+  if (n.kind === "system")
+    return (
+      <details className="group">
+        <summary className="flex cursor-pointer list-none items-start gap-3 rounded-lg px-3 py-2 hover:bg-stone-50 [&::-webkit-details-marker]:hidden">
+          <Megaphone className="mt-0.5 h-5 w-5 shrink-0 text-brand" aria-hidden />
+          <span className="min-w-0 flex-1">
+            <Title n={n} unread={unread} />
+          </span>
+          <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-stone-400 transition group-open:rotate-180" aria-hidden />
+        </summary>
+        <p className="px-3 pb-2 pl-11 text-xs leading-relaxed text-stone-600">{n.body}</p>
+      </details>
+    );
+  const Icon = n.level === "danger" ? AlertTriangle : Clock;
   const color = n.level === "danger" ? "text-rose-600" : n.level === "warn" ? "text-orange-600" : "text-brand";
   const body = (
     <div className="flex gap-3">
       <Icon className={`mt-0.5 h-5 w-5 shrink-0 ${color}`} aria-hidden />
       <div className="min-w-0">
-        <p className={`text-sm ${unread ? "font-bold text-stone-900" : "font-semibold text-stone-700"}`}>
-          {unread && <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-orange-500 align-middle" aria-label="未読" />}
-          {n.title}
-        </p>
-        <p className="mt-0.5 text-xs leading-relaxed text-stone-600">{n.kind === "system" ? `${jpDate(n.date)}　${n.body}` : n.body}</p>
+        <Title n={n} unread={unread} />
+        <p className="mt-0.5 text-xs leading-relaxed text-stone-600">{n.body}</p>
       </div>
     </div>
   );
@@ -32,6 +56,17 @@ function Item({ n, unread, onOpen }: { n: Notice; unread: boolean; onOpen?: () =
   ) : (
     <div className="px-3 py-2">{body}</div>
   );
+}
+
+/** 日付ごとにまとめる（並び順はそのまま）。日付は各お知らせではなく、まとまりの見出しに1回だけ出す */
+export function byDate(list: Notice[]): [string, Notice[]][] {
+  const out: [string, Notice[]][] = [];
+  for (const n of list) {
+    const last = out.at(-1);
+    if (last && last[0] === n.date) last[1].push(n);
+    else out.push([n.date, [n]]);
+  }
+  return out;
 }
 
 export function NoticeTabs({ compact, onOpen }: { compact?: boolean; onOpen?: () => void }) {
@@ -64,9 +99,16 @@ export function NoticeTabs({ compact, onOpen }: { compact?: boolean; onOpen?: ()
       </div>
       <div className={`${compact ? "max-h-[min(24rem,calc(100dvh-10rem))] overflow-y-auto" : ""} divide-y divide-stone-100 py-1`}>
         {list.length === 0 && <p className="px-3 py-6 text-center text-sm text-stone-500">{tab === "personal" ? "いま急ぎのお知らせはありません。" : "お知らせはありません。"}</p>}
-        {(compact ? list.slice(0, 8) : list).map((n) => (
-          <Item key={n.id} n={n} unread={nt.unread(n)} onOpen={onOpen} />
-        ))}
+        {tab === "personal"
+          ? (compact ? list.slice(0, 8) : list).map((n) => <NoticeItem key={n.id} n={n} unread={nt.unread(n)} onOpen={onOpen} />)
+          : byDate(compact ? list.slice(0, 8) : list).map(([date, items]) => (
+              <section key={date} aria-label={jpDate(date)}>
+                <p className="px-3 pb-0.5 pt-2 text-xs font-semibold text-stone-500">{jpDate(date)}</p>
+                {items.map((n) => (
+                  <NoticeItem key={n.id} n={n} unread={nt.unread(n)} />
+                ))}
+              </section>
+            ))}
       </div>
     </div>
   );

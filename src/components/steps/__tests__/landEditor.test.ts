@@ -57,8 +57,10 @@ describe("土地の使い方（家賃・地代をもらっているか）ui-1 / 
 
   it("選択の下に、無料で貸しているときの短い案内を出し、くわしい説明は Tips に入れる", () => {
     const h = html(land());
-    expect(h).toContain("家族に無料（固定資産税くらいの負担だけ）で貸しているときは「自分で使っている」を選びます");
+    expect(h).toContain("家族に無料で貸している土地も「自分で使っている」");
     expect(h).toContain("Tips：土地の使い方の選び方");
+    // 「固定資産税くらいの額だけ」のくわしい話は Tips に入れる
+    expect(h).toContain("固定資産税くらいの額を受け取るだけのときも同じです");
     expect(h).toContain("使用貸借");
     // 地代を払わずに人の土地を借りているときは、土地を財産に入れない
     expect(h).toContain("この土地は財産に入れません");
@@ -82,7 +84,7 @@ describe("土地の使い方（家賃・地代をもらっているか）ui-1 / 
     for (const asset of [building, condo] as Asset[]) {
       const h = renderToStaticMarkup(createElement(AssetEditor, { living, asset, patch: noop }));
       expect(h).toContain("家賃をもらって人に貸している");
-      expect(h).toContain("家族に無料（固定資産税くらいの負担だけ）で貸しているときは、チェックしません。");
+      expect(h).toContain("家族に無料で貸しているだけなら、チェックしません。");
       expect(h).not.toContain(">人に貸している<");
     }
   });
@@ -132,8 +134,8 @@ describe("貸している割合の入力 ui-11 / valuation-8 / valuation-5", () 
 
   it("一時的な空き部屋は貸しているものとして数え、廊下・階段などは床面積に入れないと案内する", () => {
     const h = field(0.9);
-    expect(h).toContain("一時的に空いている部屋も、貸しているものとして数えます");
-    expect(h).toContain("廊下・階段などは床面積に入れません");
+    expect(h).toContain("一時的な空室も貸しているものとして数えます");
+    expect(h).toContain("廊下・階段は床面積に入れません");
     expect(h).not.toContain("全体の床面積");
   });
 
@@ -186,9 +188,12 @@ describe("路線価方式の Tips と補正率の欄 ui-15", () => {
     expect(h.indexOf("この土地に当てはまること</span>")).toBeLessThan(h.indexOf("Tips：計算していないことと補正率の入れ方"));
   });
 
-  it("補正率の欄の案内は短くし、不整形地補正率・規模格差補正率・1 の入れ方は Tips で説明する", () => {
+  it("補正率の欄は畳み、案内は短くし、不整形地補正率・規模格差補正率・1 の入れ方は Tips で説明する", () => {
     const h = rosenka();
-    expect(h).toContain("税理士に確認したときだけ入れます（例：0.92。減額なしなら 1）。空欄なら補正なしで計算します");
+    // 税理士に確認したときだけ使う欄なので、まだ入れていなければ閉じておく（見出しは評価の案内と同じ「税理士に確認した補正率」）
+    expect(h).toMatch(/<details class="[^"]*"><summary [^>]*>税理士に確認した補正率（任意）<\/summary>/);
+    expect(h).toContain("例：0.92（減額なしなら 1。空欄なら補正なしで計算します）");
+    expect(h).toContain("下の「税理士に確認した補正率」を開いて入れる");
     expect(h).not.toContain("間口を空欄にしてください");
     expect(h).toContain("最後の不整形地補正率（間口が狭い・奥行が長い分も含めた率）");
     expect(h).toContain("規模格差補正率");
@@ -213,8 +218,18 @@ describe("路線価方式の Tips と補正率の欄 ui-15", () => {
     expect(h).toContain("間口が狭い・奥行が長い補正はふつうどおりします");
   });
 
-  it("当てはまることの案内は、配偶者居住権でも合うように「評価が変わる」と書く", () => {
-    expect(html(land())).toContain("当てはまるときは評価が変わるため、税理士への相談をご案内します");
+  it("補正率を入れてある土地（1を超える古い値も）は、補正率の欄を開いておく", () => {
+    const open = (otherCorrection: number) =>
+      rosenka({ method: { type: "rosenka", routePrice: 0, depthCorrection: 1, otherCorrection, roads: [{ edge: 0, price: 200_000, depth: 30, frontage: 5 }] } });
+    expect(open(0.9)).toMatch(/<details class="[^"]*" open=""><summary [^>]*>税理士に確認した補正率（任意）/);
+    expect(open(1.2)).toMatch(/<details class="[^"]*" open=""><summary [^>]*>税理士に確認した補正率（任意）/);
+    expect(open(1.2)).toContain("以前に入れた値が1を超えているため");
+  });
+
+  it("当てはまることの欄は、選ぶと評価の画面に相談の案内が出るので、欄の下に重ねて書かない", () => {
+    const h = html(land());
+    expect(h).toContain("この土地に当てはまること");
+    expect(h).not.toContain("税理士への相談をご案内します");
   });
 });
 
@@ -242,7 +257,7 @@ describe("小規模宅地等の特例と遺産の分け方 ui-13", () => {
 
   const box = (division?: Parameters<typeof SmallResidential>[0]["division"]) =>
     renderToStaticMarkup(createElement(SmallResidential, { living, a: land({ smallResidential: sr }), patch: noop, division }));
-  const reduce = "330㎡までの部分の評価額を80%減らして計算します";
+  const reduce = "330㎡まで評価額を80%減らします。";
 
   it("分け方が決まっていれば、80%減らして計算すると見せる", () => {
     expect(box()).toContain(reduce);
@@ -339,8 +354,8 @@ describe("共有で受け継いだ土地・面積の一部だけに特例を使�
   const home = { ownHome: "yes" as const, special: "no" as const };
   const box = (smallResidential: LandAsset["smallResidential"], division?: Parameters<typeof SmallResidential>[0]["division"], people = family) =>
     renderToStaticMarkup(createElement(SmallResidential, { living: people, a: land({ smallResidential }), patch: noop, division }));
-  const othersSummary = "この土地を何人かで受け継ぎ、ほかの人も特例を使うとき";
-  const areaSummary = "受け継いだ面積の一部だけに特例を使うとき";
+  const othersSummary = "何人かで受け継ぐとき";
+  const areaSummary = "面積の一部だけに特例を使うとき";
 
   it("2人目以降の判定には、土地についての答えは最初の人の答え、人ごとの答えはその人の答えを使う", () => {
     const merged = otherAcquirerCheck(
@@ -433,7 +448,7 @@ describe("共有で受け継いだ土地・面積の一部だけに特例を使�
     expect(otherAcquirerQuestions("rental", { continues: "no" }, go, child, "この土地", false).map((q) => q.key)).toEqual(["continues", "keep"]);
     expect(otherAcquirerQuestions("rental", {}, {}, child, "この土地")[0].q).toBe("一郎さんは、申告期限まで貸し続けますか？");
     expect(otherAcquirerQuestions("business", { ownHome: "no", business: "yes" }, {}, child, "この土地")[0].q).toBe(
-      "一郎さんは、申告期限（亡くなった日から10か月）までにその事業を引き継ぎ、続けますか？",
+      "一郎さんは、申告期限までにその事業を引き継ぎ、続けますか？",
     );
     // 3年以内かを聞くのは、聞く必要のある人のうち、はじめの1人の欄だけ
     const others = [{ acquirerId: "c", check: { continues: "yes" as const } }, { acquirerId: "d", check: go }, { acquirerId: "x", check: go }];
@@ -458,7 +473,7 @@ describe("共有で受け継いだ土地・面積の一部だけに特例を使�
   it("一緒に取得する人ごとに、最初の人と同じ判定の文を出す", () => {
     const ok = box({ applies: true, acquirerId: "w", check: home, others: [{ acquirerId: "c", check: { livedTogether: "yes", keep: "yes" } }] });
     expect(ok).toContain(`${othersSummary}（1人）`);
-    expect(ok).toContain("配偶者が取得する自宅の敷地は、ほかの条件なしで特例を使えます。");
+    expect(ok).toContain("配偶者が取得するので使えます。");
     expect(ok).toContain("同居していた親族が取得し、申告期限まで住み続け・持ち続けるので特例を使えます。");
     expect(ok).toContain("一郎さんは、亡くなる直前まで亡くなった方と同じ家に住んでいましたか？");
     expect(ok).toContain('aria-label="この人を外す"');
@@ -521,7 +536,7 @@ describe("共有で受け継いだ土地・面積の一部だけに特例を使�
       smallResidential: { applies: true, acquirerId: "w", check: home, others: [{ acquirerId: "c", check: { livedTogether: "yes", keep: "yes" } }] },
     };
     const h = renderToStaticMarkup(createElement(AssetEditor, { living: family, asset: condo, patch: noop, division: { allocations: [{ assetId: "C1", shares: [{ personId: "c", numerator: 1, denominator: 4 }] }] } }));
-    expect(h).toContain("この部屋を何人かで受け継ぎ、ほかの人も特例を使うとき（1人）");
+    expect(h).toContain("何人かで受け継ぐとき（1人）");
     expect(h).toContain("特例の対象になる面積は10㎡です");
   });
 
@@ -560,7 +575,7 @@ describe("共有で受け継いだ土地・面積の一部だけに特例を使�
   });
 
   it("FAQ に共有の土地と面積の一部の説明がある", () => {
-    const a = FAQS.assets.find((f) => f.q === "共有の土地や面積の一部に特例を使うには？")!.a;
+    const a = FAQS.assets.find((f) => f.q === "共有・一部の面積の特例は？")!.a;
     expect(a).toContain("受け継いだ人ごとに判断");
     expect(a).toContain("配偶者はそのまま使えます");
     expect(a).toContain("貸し続け、持ち続ける");

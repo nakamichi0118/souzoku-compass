@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import { AppShell, PageHead } from "@/components/shell/AppShell";
 import { ConsultInbox, type ConsultItem } from "@/components/consult/ConsultThread";
-import { ConsultForm, FirmBadge } from "@/components/compass/ConsultForm";
-import { CONSULT_FIRM } from "@/data/consultFirm";
+import { ConsultDemoNotice, ConsultForm, FirmBadge } from "@/components/compass/ConsultForm";
 import { useSession } from "@/lib/cloud";
 
 export default function MyConsultPage() {
@@ -27,12 +26,12 @@ export default function MyConsultPage() {
   return (
     <AppShell>
       <div className="mx-auto max-w-5xl space-y-5">
-        <PageHead title="税理士への相談" say={`${CONSULT_FIRM.name}とのやりとりや、打ち合わせの案内がここに届きます。`} />
+        <PageHead title="税理士への相談" say="返事と打ち合わせの案内は、ここに届きます。" />
         <div className="rounded-xl border border-sky-100 bg-white p-3">
           <FirmBadge />
         </div>
         {!user && ready ? (
-          <p className="text-sm text-stone-600">相談を送るには、利用者登録をしてログインしてください（デモでは送れません）。</p>
+          <ConsultDemoNotice />
         ) : err ? (
           <p className="text-sm text-red-700">{err}</p>
         ) : items === null ? (
@@ -44,7 +43,7 @@ export default function MyConsultPage() {
             onChange={change}
             empty={
               <div className="space-y-3">
-                <p className="text-sm text-stone-600">まだ相談はありません。入力した内容をもとに、相談の文面を自動で入れています。</p>
+                <p className="text-sm text-stone-600">まだ相談はありません。</p>
                 <ConsultForm onSent={load} />
               </div>
             }

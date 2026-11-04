@@ -51,8 +51,13 @@ describe("マイページ共通の見出し（スマホ）", () => {
     expect(tagWith(html, "whitespace-nowrap").length).toBeGreaterThanOrEqual(2);
     expect(html).toMatch(/<span class="whitespace-nowrap text-stone-600">全体の進捗<\/span>/);
     expect(html).toMatch(/<span class="[^"]*\bhidden\b[^"]*\bsm:inline\b[^"]*">（28 \/ 49 件）<\/span>|<span class="[^"]*\bhidden\b[^"]*\bsm:inline\b[^"]*">（<!-- -->28<!-- --> \/ <!-- -->49<!-- --> 件）<\/span>/);
-    expect(html).toMatch(/<span class="[^"]*\bhidden\b[^"]*\bsm:inline\b[^"]*">手続き中の相続<\/span>/);
     expect(html).toMatch(/<span class="min-w-0 truncate [^"]*">相続 太郎さんの相続<\/span>/);
+  });
+
+  it("帯には「〇〇さんの相続」だけを出す（同じことを言う「手続き中の相続」の札は出さない）", () => {
+    const html = header();
+    expect(html).toContain("相続 太郎さんの相続");
+    expect(html).not.toContain("手続き中の相続");
   });
 
   it("お知らせの一覧は、スマホではベルではなく見出しの幅に合わせる（左にはみ出さない）", () => {

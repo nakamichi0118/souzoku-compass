@@ -42,6 +42,8 @@ const MapView = dynamic(() => import("./MapView"), { ssr: false, loading: () => 
 const TOKYO_STATION: LatLng = [35.681236, 139.767125];
 /** コンパスくんが路線価図（道路のまわり）を読む待ち時間の目安 */
 const READ_PROGRESS: Progress = { at: 0, until: 1, expectSec: 15 };
+/** 2. 土地の形：赤い枠の動かし方（文にせず、操作ごとの短いラベルにする） */
+const SHAPE_OPS = ["● 角をドラッグで移動", "＋ 辺の真ん中で角を増やす", "角をダブルクリックで消す", "✥ 全体を移動"];
 
 type Route = "rosenka" | "ratio";
 interface ReadResult {
@@ -529,7 +531,7 @@ function LandWizard() {
     const g = gen.current;
     const list = frontages.map((f) => ({ f, key: keyOf(f), ctx: frontageContext(ctx, f) })).filter((x) => force || needsRead(readings, x.key, x.ctx));
     if (list.length === 0) return;
-    await run("コンパスくんが路線価図を読んでいます", async () => {
+    await run("路線価図を読み取っています", async () => {
       const results = await Promise.all(
         list.map(async ({ f, key, ctx: c }) => {
           const at = api.current?.toSheet(f.outside);
@@ -712,7 +714,8 @@ function LandWizard() {
           {step === 1 && (
             <div className="space-y-3">
               <h2 className="font-bold text-stone-800">1. 土地の場所を選んでください</h2>
-              <p className="text-sm text-stone-600">地図で評価する土地をクリックします。住所で探すこともできます。</p>
+              {/* 地図をクリックすることは地図の上の帯で伝えるので、ここでは住所で探せることだけ言う */}
+              <p className="text-sm text-stone-600">住所で探すこともできます。</p>
               <div className="relative flex gap-2">
                 <TextInput className="min-w-0" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && search()} placeholder={land.location || "例：福岡市博多区博多駅前4丁目"} />
                 <Button variant="secondary" className="shrink-0 whitespace-nowrap" onClick={search} disabled={!query.trim()}>
@@ -764,7 +767,14 @@ function LandWizard() {
           {route === "rosenka" && step === 2 && (
             <div className="space-y-3">
               <h2 className="font-bold text-stone-800">2. 土地の形を囲んでください</h2>
-              <p className="text-sm text-stone-600">赤い枠を土地の形に合わせます。角の丸をドラッグして動かし、辺の真ん中の「＋」で角を増やせます。角をダブルクリックすると消せます。真ん中の ✥ で全体を動かせます。</p>
+              <p className="text-sm text-stone-600">赤い枠を土地に合わせます。</p>
+              <ul className="flex flex-wrap gap-1.5 text-xs text-stone-600" aria-label="枠の動かし方">
+                {SHAPE_OPS.map((t) => (
+                  <li key={t} className="rounded-full bg-stone-100 px-2 py-1">
+                    {t}
+                  </li>
+                ))}
+              </ul>
               <p className="rounded-lg bg-stone-50 p-2 text-sm text-stone-700">
                 囲んだ広さ 約 {fmt(Math.round(shapeArea))}㎡
                 {land.areaSqm > 0 && `（登記の地積 ${land.areaSqm}㎡）`}
@@ -856,7 +866,7 @@ function LandWizard() {
                         コンパスくんが図番号 <span className="font-mono font-bold">{located.no}</span> を選びました
                         {located.confidence === "low" ? "（自信は低めです）" : ""}。{located.reason}
                       </p>
-                      {!located.frame && <p className="text-xs">重ねる位置までは分からなかったので、下の「手で合わせる」で合わせてください。</p>}
+                      {!located.frame && <p className="text-xs">重ねる位置は「手で合わせる」で合わせてください。</p>}
                     </div>
                   ) : located && !located.no ? (
                     <Note tone="warn">コンパスくんにもどの図か分かりませんでした。{located.reason} 下の図番号から選んでください。</Note>
@@ -881,7 +891,7 @@ function LandWizard() {
               {alignOpen && sheet && (
                 <div className="space-y-3 rounded-lg border border-stone-200 p-3">
                   <h3 className="text-sm font-bold text-stone-800">手で合わせる</h3>
-                  <p className="text-xs text-stone-600">路線価図の道路が、地図の青い点線（道路の中心線）に重なるように、緑の枠の ✥ をドラッグし、縮尺と向きを合わせます。</p>
+                  <p className="text-xs text-stone-600">緑の枠の ✥ をドラッグし、縮尺と向きも合わせて、路線価図の道路を青い点線（道路）に重ねます。</p>
                   <FrameControls frame={frame} setFrame={setFrame} property={property} />
                   <PointControls
                     sheet={sheet}
@@ -923,7 +933,7 @@ function LandWizard() {
                 <Note tone="warn">道路に接している辺がありません。地図の赤い枠の辺をクリックして、道路に接している辺を選んでください。</Note>
               ) : (
                 <>
-                  <p className="text-sm text-stone-700">コンパスくんが確認しました。この土地は、次の道路に接していますか？</p>
+                  <p className="text-sm text-stone-700">この土地が接している道路は、これで合っていますか？</p>
                   <ul className="space-y-2">
                     {frontages.map((f, i) => {
                       const k = keyOf(f);
@@ -990,7 +1000,7 @@ function LandWizard() {
                   {!roadsComplete && <p className="text-xs text-amber-800">路線価が空の道路があります。路線価図を見て「420D」のように入れてください。</p>}
                   {roadsAnswer === "no" && (
                     <Note tone="info">
-                      地図の赤い枠の辺をクリックすると、「道路に接している（太い赤線）」「接していない」を切り替えられます。路線価は上の欄で直すか、読み取り直してください。
+                      地図の赤い枠の辺をクリックすると、道路に接している（太い赤線）・接していないを切り替えられます。路線価は上の欄で直せます。
                       <span className="mt-2 flex flex-wrap gap-2">
                         <Button variant="secondary" onClick={() => readPrices(true)} disabled={!!busy}>
                           路線価を読み取り直す
@@ -1008,13 +1018,13 @@ function LandWizard() {
               {roadsAnswer === "yes" && evaluation && (
                 <section className="space-y-3">
                   <p className="rounded-lg bg-rose-50 p-2 text-sm text-rose-950">
-                    正面路線は <span className="font-bold">{directionLabel(frontages[classes.indexOf(evaluation.front.edge)]?.bearing ?? 0)}の道路（{evaluation.front.notation ?? fmt(evaluation.front.price)}）</span>
-                    です。路線価 × 奥行価格補正率 がいちばん高い道路を正面にします。
+                    {/* どの道路を正面にしたかの理由は、下の計算過程に出る */}
+                    正面の道路：<span className="font-bold">{directionLabel(frontages[classes.indexOf(evaluation.front.edge)]?.bearing ?? 0)}（{evaluation.front.notation ?? fmt(evaluation.front.price)}）</span>
                   </p>
-                  <Field label="地積（登記簿・課税明細書の面積）" hint={`地図で囲んだ広さは約 ${fmt(Math.round(shapeArea))}㎡ です。評価には登記簿の地積を使います。`}>
+                  <Field label="地積（登記簿の面積）" hint={`地図で囲んだ広さ：約 ${fmt(Math.round(shapeArea))}㎡`}>
                     <NumInput value={area} onChange={setArea} unit="㎡" />
                   </Field>
-                  <Field label="地区区分" hint="路線価を囲む記号の形で決まります（記号がなければ普通住宅地区）">
+                  <Field label="地区区分" hint="路線価を囲む記号の形で決まります（記号なしは普通住宅地区）">
                     <Select
                       value={district}
                       onChange={(v) => {
@@ -1039,9 +1049,8 @@ function LandWizard() {
                   </div>
                   <Note tone="info">
                     {irregularRate
-                      ? "形がいびつな土地なので、間口が狭い・奥行が長い補正はせず、土地の画面で入れた税理士に確認した補正率を使います。角地の加算率を使い、がけ地などの減額はしていないため、高めに出ることがあります。"
-                      : "間口が狭い・奥行が長い土地の補正はしています。角地の加算率を使い、形がいびつ・がけ地などの減額はしていないため、高めに出ることがあります。"}
-                    下げられるかは税理士に確認できます。
+                      ? "形がいびつな土地なので、土地の画面で入れた税理士に確認した補正率を使います。がけ地などの減額はしていません（高めに出ることがあります）。"
+                      : "形がいびつ・がけ地などの減額はしていません（高めに出ることがあります）。"}
                     <span className="mt-2 block">
                       <ConsultLink topic="土地の評価" />
                     </span>
@@ -1096,7 +1105,7 @@ function SheetLayout({ found, current, disabled, onPick }: { found: FindResult |
   return (
     <div className="space-y-1">
       <p className="text-xs text-stone-600">
-        {found.town ? `「${found.town}」` : "この場所"}が載っている路線価図（濃い枠）と、そのとなりの図です。上が北です。違う図ならクリックして選び直せます。{layout.some((l) => l.separate) && "点線で囲んだ図は、ほかの図とつながっていない候補です。"}
+        濃い枠がこの場所の図です（上が北）。違えばクリックで選び直せます。{layout.some((l) => l.separate) && "点線の図は、離れた場所の候補です。"}
       </p>
       <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${nc}, minmax(0, 3.5rem))` }}>
         {layout.map((l) => (

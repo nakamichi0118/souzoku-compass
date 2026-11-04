@@ -56,9 +56,11 @@ export type AskState = ReturnType<typeof useAsk>;
  * コンパスくんに相談する欄。
  * fill：パソコンで横に貼りついた欄のときは、与えられた高さに収め、答えと想定質問の部分だけを中で動かす
  * （入力欄と「コンパスくんに聞く」は、いつも下に見えるように）
+ * lead：答えが出る前の吹き出し。null なら、答えが出るまで吹き出しを出さない
  */
-export function AskCompass({ state, placeholder, lead, id, fill }: { state: AskState; placeholder: string; lead?: React.ReactNode; id?: string; fill?: boolean }) {
+export function AskCompass({ state, placeholder = "質問を入力", lead, id, fill }: { state: AskState; placeholder?: string; lead?: React.ReactNode; id?: string; fill?: boolean }) {
   const { q, setQ, busy, answer, asked, ask, pick } = state;
+  const intro = lead === undefined ? "気軽に聞いてくださいね。" : lead;
   const faqs = FAQS[state.step] ?? [];
   const answerRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -85,9 +87,11 @@ export function AskCompass({ state, placeholder, lead, id, fill }: { state: AskS
               コンパスくんに相談
             </p>
             {asked && <p className="text-sm text-stone-600">「{asked}」</p>}
-            <Bubble>
-              {busy ? "ちょっと調べています…" : answer ? <div className="text-sm text-stone-800"><Markdown text={answer} /></div> : (lead ?? "分からないことがあれば、なんでも聞いてくださいね。")}
-            </Bubble>
+            {(busy || answer || intro) && (
+              <Bubble>
+                {busy ? "ちょっと調べています…" : answer ? <div className="text-sm text-stone-800"><Markdown text={answer} /></div> : intro}
+              </Bubble>
+            )}
           </div>
         </div>
         {faqs.length > 0 && (

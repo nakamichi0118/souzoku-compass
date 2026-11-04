@@ -49,10 +49,14 @@ export function AuthForm({ kind }: { kind: "signup" | "login" }) {
         </Link>
         <div className="mt-6 flex items-end gap-2">
           <CompassKun className="h-24 w-auto shrink-0" />
-          <Bubble className="mb-4 min-w-0 flex-1">{signup ? "はじめまして、コンパスくんです。マイページを作って、一緒に進めていきましょう。" : "おかえりなさい。続きから進めましょう。"}</Bubble>
+          <Bubble className="mb-4 min-w-0 flex-1">{signup ? "はじめまして！一緒に進めましょう。" : "おかえりなさい！"}</Bubble>
         </div>
         <form onSubmit={submit} className="mt-2 space-y-4 rounded-2xl border border-white bg-white/95 p-6 shadow-xl">
-          <h1 className="text-xl font-bold text-sky-950">{signup ? "利用者登録" : "ログイン"}</h1>
+          {/* 試作版のあいだは、架空の内容で試してもらうことを見出しの横に短く出す */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <h1 className="text-xl font-bold text-sky-950">{signup ? "利用者登録" : "ログイン"}</h1>
+            {signup && <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-900">試作版・架空の内容でお試しください</span>}
+          </div>
           {signup && (
             <label className="block">
               <span className="mb-1 block text-sm font-medium text-stone-700">お名前（ニックネーム可）</span>
@@ -66,7 +70,7 @@ export function AuthForm({ kind }: { kind: "signup" | "login" }) {
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-stone-700">パスワード</span>
             <TextInput type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={signup ? "new-password" : "current-password"} />
-            {signup && <span className={`mt-1 block text-xs ${password && !pwOk ? "text-rose-700" : "text-stone-500"}`}>8文字以上で、英字と数字を両方入れてください。</span>}
+            {signup && <span className={`mt-1 block text-xs ${password && !pwOk ? "text-rose-700" : "text-stone-500"}`}>8文字以上・英字と数字を含む</span>}
           </label>
           {signup && (
             <label className="flex items-start gap-2 text-sm text-stone-700">
@@ -76,7 +80,7 @@ export function AuthForm({ kind }: { kind: "signup" | "login" }) {
                 <Link href="/privacy" target="_blank" className="text-sky-800 underline">
                   プライバシーポリシー
                 </Link>
-                に同意します。ハッカソン用の試作のため、架空の内容でお試しください。
+                に同意します
               </span>
             </label>
           )}
@@ -86,24 +90,18 @@ export function AuthForm({ kind }: { kind: "signup" | "login" }) {
           </button>
           <p className="text-center text-sm text-stone-600">
             {signup ? (
-              <>
-                登録済みの方は
-                <Link href="/login" className="ml-1 text-sky-800 underline">
-                  ログイン
-                </Link>
-              </>
+              <Link href="/login" className="text-sky-800 underline">
+                ログインはこちら
+              </Link>
             ) : (
-              <>
-                はじめての方は
-                <Link href="/signup" className="ml-1 text-sky-800 underline">
-                  利用者登録
-                </Link>
-              </>
+              <Link href="/signup" className="text-sky-800 underline">
+                利用者登録はこちら
+              </Link>
             )}
           </p>
           <p className="text-center text-sm">
             <Link href="/demo" className="text-sky-800 underline">
-              登録せずにデモ（架空の家族）を見る
+              デモを見る（架空の家族）
             </Link>
           </p>
         </form>

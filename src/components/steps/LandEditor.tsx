@@ -3,6 +3,7 @@
 /** 土地の入力（評価方法・面している道路と路線価・土地の使い方）と、小規模宅地等の特例の確認 */
 import { MapPin } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 import { ConsultLink } from "@/components/compass/ConsultLink";
 import { Choice } from "@/components/plan/inputs";
 import { Button, Check, Field, Note, NumInput, OptionalNumInput, Select, TextInput, YenInput, fmt } from "@/components/ui";
@@ -33,7 +34,7 @@ export const rentRatioLooksTooSmall = (r: number | undefined) => r != null && r 
  */
 export function RentRatioField({ value, onChange }: { value: number | undefined; onChange: (v: number) => void }) {
   return (
-    <Field label="貸している割合" hint="入居者の入れ替えなどで一時的に空いている部屋も、貸しているものとして数えます。廊下・階段などは床面積に入れません">
+    <Field label="貸している割合" hint="一時的な空室も貸しているものとして数えます（廊下・階段は床面積に入れません）">
       <NumInput value={value == null ? 100 : toPercent(value)} onChange={(v) => onChange(v / 100)} unit="%" />
       {rentRatioLooksTooSmall(value) && <span className="mt-1 block text-xs text-amber-800">1%以下になっています。%で入れているか確かめてください</span>}
     </Field>
@@ -168,12 +169,12 @@ type Question = { key: keyof SmallResidentialCheck; q: string; hint?: string };
 
 /** 確認の質問の文（最初の取得者と、一緒に取得する人とで同じ文を使う） */
 const Q = {
-  rentalContinues: (who: string): Question => ({ key: "continues", q: `${who}は、申告期限まで貸し続けますか？`, hint: "申告期限は、亡くなった日から10か月です。" }),
+  rentalContinues: (who: string): Question => ({ key: "continues", q: `${who}は、申告期限まで貸し続けますか？` }),
   keepUse: (what: string): Question => ({ key: "keep", q: `申告期限まで、${what}を持ち続けますか？` }),
   rentalRecent: { key: "recent", q: "亡くなる前3年以内に貸し始めましたか？" } as Question,
   livedTogether: (who: string): Question => ({ key: "livedTogether", q: `${who}は、亡くなる直前まで亡くなった方と同じ家に住んでいましたか？`, hint: "住民票が同じでも、実際に一緒に暮らしていなければ「いいえ」です。" }),
-  keepHome: { key: "keep", q: "申告期限（亡くなった日から10か月）まで、この家に住み続け、土地を持ち続けますか？" } as Question,
-  businessContinues: (who: string): Question => ({ key: "continues", q: `${who}は、申告期限（亡くなった日から10か月）までにその事業を引き継ぎ、続けますか？` }),
+  keepHome: { key: "keep", q: "申告期限まで、この家に住み続け、土地を持ち続けますか？" } as Question,
+  businessContinues: (who: string): Question => ({ key: "continues", q: `${who}は、申告期限までにその事業を引き継ぎ、続けますか？` }),
   businessRecent: { key: "recent", q: "亡くなる前3年以内に始めた事業ですか？" } as Question,
 };
 
@@ -291,8 +292,8 @@ export function SmallResidential({
   return (
     <div className="space-y-3 rounded-lg bg-stone-50 p-3 sm:col-span-2">
       <p className="font-bold text-stone-800">小規模宅地等の特例（評価が最大80%下がる）</p>
-      <p className="text-xs text-stone-500">使えるかどうかを順に確認します。条件がはっきりしない場合は特例を使わずに計算し、税理士への相談をご案内します。</p>
-      <Field label={`${what}を取得する人`} hint="遺産の分け方で決めた人を選んでください。">
+      <p className="text-xs text-stone-500">分からないときは特例を使わずに計算します。</p>
+      <Field label={`${what}を取得する人`}>
         <Select
           value={sr.acquirerId ?? ""}
           // 取得する人を変えたら、前の人についての答え（同居・続けるか・持ち続けるか）と税理士への確認は引き継がない
@@ -311,11 +312,7 @@ export function SmallResidential({
         <>
           {ask({ key: "ownHome", q: "亡くなった方が住んでいた自宅の敷地ですか？" })}
           {check.ownHome === "yes" &&
-            ask({
-              key: "special",
-              q: "老人ホームへの入居、二世帯住宅、建物の一部を貸していた などの事情はありますか？",
-              hint: "亡くなる前に老人ホームへ入っていた場合や、二世帯住宅の場合は、使える範囲の判断が変わります。",
-            })}
+            ask({ key: "special", q: "老人ホームへの入居、二世帯住宅、建物の一部を貸していた などの事情はありますか？" })}
           {check.ownHome === "yes" && check.special === "no" && acquirer && !isSpouse && (
             <>
               {ask(Q.livedTogether(`${acquirer.name || "取得する人"}さん`))}
@@ -333,16 +330,16 @@ export function SmallResidential({
           )}
         </>
       )}
-      {tone && <Note tone={tone}>{j.reason}</Note>}
+      {tone && (
+        <Note tone={tone}>
+          {j.reason}
+          {/* 事業用・貸付用は判定の文に限度面積と割合が入っているので、自宅のときだけ添える */}
+          {j.result === "ok" && !gap && kind === "residence" && `${rule.limitSqm}㎡まで評価額を${rule.rate}%減らします。`}
+        </Note>
+      )}
       {gap && (
         <p className="text-xs font-medium text-amber-800">
           {gap === "undivided" ? "分け方が決まるまでは、特例を使わずに計算します。" : `${what}の分け方に、取得する人が入っていません。遺産の分け方を確かめてください。`}
-        </p>
-      )}
-      {j.result === "ok" && !gap && kind === "residence" && (
-        // 事業用・貸付用は判定の文に限度面積と割合が入っているので、自宅のときだけ添える
-        <p className="text-xs text-stone-600">
-          {rule.limitSqm}㎡までの部分の評価額を{rule.rate}%減らして計算します（{rule.name}・租税特別措置法69条の4）。
         </p>
       )}
       {j.result === "consult" && (
@@ -400,7 +397,7 @@ function OtherAcquirers({
   return (
     <details className={detailsCls}>
       <summary className={summaryCls}>
-        {what}を何人かで受け継ぎ、ほかの人も特例を使うとき{others.length > 0 ? `（${others.length}人）` : ""}
+        何人かで受け継ぐとき{others.length > 0 ? `（${others.length}人）` : ""}
       </summary>
       <div className="mt-2 space-y-3">
         <p className="text-xs text-stone-500">使えるかは受け継いだ人ごとに決まり、その人が受け継いだ分だけに使えます。</p>
@@ -484,7 +481,7 @@ function PartialArea({
   const entered = rows.some((r) => r.value != null);
   return (
     <details className={detailsCls}>
-      <summary className={summaryCls}>受け継いだ面積の一部だけに特例を使うとき{entered ? "（入力あり）" : ""}</summary>
+      <summary className={summaryCls}>面積の一部だけに特例を使うとき{entered ? "（入力あり）" : ""}</summary>
       <div className="mt-2 space-y-3">
         <p className="text-xs text-stone-500">空欄なら、使える面積をすべて使います。</p>
         {rows.map((r) => {
@@ -523,9 +520,11 @@ function RoadsEditor({ a, m, patch }: { a: LandAsset; m: RosenkaMethod; patch: (
   const role = (e: Edge) => ev?.lines.find((l) => l.edge === e)?.role;
   // 路線価か奥行が入っていない道路があると評価額は確定しない（その道路を外して低く計算しないため）
   const incomplete = !!m.roads?.length && m.roads.some((r) => !(r.price > 0) || !(r.depth > 0));
+  // 補正率の欄を最初から開いておくか（開いた後に空欄にしても、入力中に閉じないよう最初の値だけで決める）
+  const [correctionOpen] = useState(m.otherCorrection != null);
   return (
     <div className="space-y-3 sm:col-span-2">
-      <Field label="地区区分" hint="路線価図で路線価を囲む記号の形で決まります（記号がなければ普通住宅地区）">
+      <Field label="地区区分" hint="路線価を囲む記号の形で決まります（記号なしは普通住宅地区）">
         <Select value={district} onChange={(v) => save(roads, v as District)} options={DISTRICTS.map((d) => ({ value: d, label: d }))} />
       </Field>
       <div className="space-y-2">
@@ -565,22 +564,20 @@ function RoadsEditor({ a, m, patch }: { a: LandAsset; m: RosenkaMethod; patch: (
             ＋ 道路を追加（角地・二方路線など）
           </Button>
         )}
-        <p className="text-xs text-stone-500">
-          路線価図の数字は千円単位です（例：「420D」→ 420,000円）。奥行は、その道路から土地の反対側までの距離、間口は、その道路に接している部分の長さです。
-        </p>
+        <p className="text-xs text-stone-500">路線価図の数字は千円単位（420D → 420,000円）</p>
       </div>
       {incomplete && <Note tone="warn">路線価か奥行が入っていない道路があります。すべての道路に入れるまで評価額は計算しません。面していない道路は「削除」してください。</Note>}
       {ev && !incomplete && (
         <div className="rounded-lg bg-teal-50 p-3 text-sm text-teal-950">
           <p className="font-semibold">1㎡あたり {fmt(ev.perSqm)}円</p>
-          {ev.lines.length > 1 && <p className="text-xs">正面は、路線価×奥行価格補正率がいちばん高い道路です（財産評価基本通達16）。</p>}
+          {ev.lines.length > 1 && <p className="text-xs">正面は、路線価×奥行価格補正率がいちばん高い道路です。</p>}
         </div>
       )}
       <Note tone="info">
         {irregular
           ? "形がいびつな土地なので、間口が狭い・奥行が長い補正はせず、税理士に確認した補正率を使います。"
-          : "間口を入れると、間口が狭い・奥行が長い土地の補正（減額）もします。"}
-        がけ地などの減額はしていないため、高めに出ることがあります。
+          : "間口を入れると、間口が狭い・奥行が長い分も減額します。"}
+        がけ地などの減額はしていません（高めに出ることがあります）。
         <span className="mt-2 block">
           <ConsultLink topic="土地の評価" />
         </span>
@@ -588,32 +585,36 @@ function RoadsEditor({ a, m, patch }: { a: LandAsset; m: RosenkaMethod; patch: (
       <details className="text-xs text-stone-600">
         <summary className="cursor-pointer py-2 font-medium text-teal-800">Tips：計算していないことと補正率の入れ方</summary>
         <ul className="mt-2 list-disc space-y-1 pl-5">
+          <li>奥行は、その道路から土地の反対側までの距離、間口は、その道路に接している部分の長さです。</li>
           <li>間口が狭い・奥行が長い補正は、正面の道路の間口を入れたときだけします（財産評価基本通達20-4）。</li>
           <li>角地は、一方が行き止まりの道路の角（準角地）かどうかを区別せず、加算の大きい角地として計算します。</li>
           <li>横や裏の道路に一部しか接していない場合も、全部接しているものとして計算します。</li>
           <li>形がいびつな土地（不整形地）、がけ地、道路に接していない土地、都市計画道路の予定地などの減額はしていません。形がいびつな土地は、上の「この土地に当てはまること」で選んでください。</li>
-          <li>税理士に補正率を確認した場合は、下の「税理士に確認した補正率」に入れると計算に使います。</li>
+          <li>税理士に補正率を確認した場合は、下の「税理士に確認した補正率」を開いて入れると計算に使います。</li>
           <li>形がいびつな土地は、税理士に確認した最後の不整形地補正率（間口が狭い・奥行が長い分も含めた率）を入れてください。このときは間口による補正はしません（二重に下げないため）。</li>
           <li>広い土地（地積規模の大きな宅地）にもあたるときは、その補正（規模格差補正率）も掛け合わせた率を入れてください。</li>
           <li>税理士に確認して、減額にならない（当てはまらない）と分かったときは 1 を入れてください。形による補正なしで計算します（間口が狭い・奥行が長い補正はふつうどおりします）。</li>
         </ul>
       </details>
-      <Field
-        label="税理士に確認した補正率（任意）"
-        hint="税理士に確認したときだけ入れます（例：0.92。減額なしなら 1）。空欄なら補正なしで計算します"
-      >
-        <OptionalNumInput
-          value={m.otherCorrection}
-          accept={(v) => v > 0 && v <= 1}
-          onChange={(v) => patch({ method: { ...m, otherCorrection: v } })}
-          invalidMessage={
-            // 以前の入力で1を超える値が保存されていると、評価額を計算できず税額も出せない。打ち直した値は保存しないので補正なしで計算する
-            m.otherCorrection != null && m.otherCorrection > 1
-              ? "補正率は0より大きく1以下の数です。以前に入れた値が1を超えているため、このままでは評価額と相続税を計算できません。正しい補正率に直すか、空欄にしてください。"
-              : "補正率は0より大きく1以下の数です。いまはこの値を使わず、補正なしで計算しています。"
-          }
-        />
-      </Field>
+      {/* 税理士に確認したときだけ使う欄なので畳む。入れてあれば（1を超える古い値も）開いておく */}
+      <details className={detailsCls} open={correctionOpen}>
+        <summary className={summaryCls}>税理士に確認した補正率（任意）</summary>
+        <div className="mt-2">
+          <Field label="補正率" hint="例：0.92（減額なしなら 1。空欄なら補正なしで計算します）">
+            <OptionalNumInput
+              value={m.otherCorrection}
+              accept={(v) => v > 0 && v <= 1}
+              onChange={(v) => patch({ method: { ...m, otherCorrection: v } })}
+              invalidMessage={
+                // 以前の入力で1を超える値が保存されていると、評価額を計算できず税額も出せない。打ち直した値は保存しないので補正なしで計算する
+                m.otherCorrection != null && m.otherCorrection > 1
+                  ? "補正率は0より大きく1以下の数です。以前に入れた値が1を超えているため、このままでは評価額と相続税を計算できません。正しい補正率に直すか、空欄にしてください。"
+                  : "補正率は0より大きく1以下の数です。いまはこの値を使わず、補正なしで計算しています。"
+              }
+            />
+          </Field>
+        </div>
+      </details>
       {a.method.type === "rosenka" && a.method.lot && <p className="text-xs text-stone-500">地図で合わせた枠：間口{a.method.lot.width}m × 奥行{a.method.lot.depth}m</p>}
     </div>
   );
@@ -708,7 +709,7 @@ export function LandEditor({
       <Field label="地積">
         <NumInput value={a.areaSqm} onChange={(v) => patch({ areaSqm: v })} unit="㎡" />
       </Field>
-      <Field label="土地の使い方" hint="家族に無料（固定資産税くらいの負担だけ）で貸しているときは「自分で使っている」を選びます">
+      <Field label="土地の使い方" hint="家族に無料で貸している土地も「自分で使っている」">
         <Select value={use} onChange={(v) => setUse(v as LandUse)} options={USE_OPTIONS} />
       </Field>
       {usesRentRatio(use) && <RentRatioField value={a.rentRatio} onChange={(v) => patch({ rentRatio: v })} />}
@@ -734,11 +735,11 @@ export function LandEditor({
         ))}
       <UseTips />
       {(a.landUse === "宅地" || a.landUse === "雑種地") && (
-        <Field label="この土地に当てはまること" hint="当てはまるときは評価が変わるため、税理士への相談をご案内します">
+        <Field label="この土地に当てはまること">
           <Select value={a.condition ?? ""} onChange={(v) => patch({ condition: (v || undefined) as LandAsset["condition"] })} options={CONDITION_OPTIONS} />
         </Field>
       )}
-      <Field label="評価方法" hint="路線価図に道路の価格が書かれていれば路線価方式、倍率地域なら倍率方式です">
+      <Field label="評価方法" hint="分からなければ「地図で評価する」で決まります">
         <Select
           value={m.type}
           onChange={(v) =>
@@ -761,7 +762,7 @@ export function LandEditor({
       <div className="flex items-end">
         <Link href={`/case/map?asset=${a.id}`} className="inline-flex items-center gap-1.5 rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800">
           <MapPin className="h-4 w-4" aria-hidden />
-          地図で土地を評価する（路線価・倍率）
+          地図で評価する
         </Link>
       </div>
       {m.type === "rosenka" && <RoadsEditor a={a} m={m} patch={patch} />}
@@ -796,9 +797,7 @@ export function LandEditor({
               onChange={(v) => patch({ method: { ...m, publicPrivateRoad: v || undefined } })}
               label="誰でも通り抜けできる私道なので、評価しない（0円）"
             />
-            <p className="text-xs text-stone-500">
-              道路として誰でも通り抜けに使っている私道は、相続税では評価しません（財産評価基本通達24）。行き止まりで近くの家の人だけが使う私道などは0円になりません。分からないときは税理士にご相談ください。
-            </p>
+            <p className="text-xs text-stone-500">行き止まりで近くの家の人だけが使う私道などは0円になりません。分からなければ税理士にご相談ください。</p>
           </div>
         </>
       )}

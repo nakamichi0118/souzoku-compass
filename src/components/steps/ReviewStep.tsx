@@ -57,20 +57,14 @@ export function ReviewStep() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-start gap-3 rounded-2xl border border-sky-200 bg-white p-4 shadow-sm">
-        <CompassAvatar size={44} />
-        <div className="min-w-0 text-sm text-stone-800">
-          <p className="font-semibold">申告の前に、入れ忘れがないか一緒に確かめましょう。</p>
-          <p className="mt-0.5 text-stone-600">
-            {sum.answered}/{sum.total} 問 回答
-            {sum.confirmed ? (
-              <span className="ml-2 font-semibold text-teal-700">確認OK</span>
-            ) : (
-              sum.open.length > 0 && <span className="ml-2 text-orange-700">残り {sum.open.length} 件</span>
-            )}
-          </p>
-        </div>
-      </div>
+      <p className="text-sm tabular-nums text-stone-600">
+        {sum.answered}/{sum.total} 回答
+        {sum.confirmed ? (
+          <span className="font-semibold text-teal-700">・確認OK</span>
+        ) : (
+          sum.open.length > 0 && <span className="text-orange-700">・残り{sum.open.length}件</span>
+        )}
+      </p>
 
       {GROUPS.map((g) => (
         <Card key={g.id} title={g.title}>
@@ -88,19 +82,13 @@ export function ReviewStep() {
           <Check
             checked={consultIds.length === 0}
             onChange={(v) => set((r) => ({ ...r, consulted: v ? [...new Set([...(r.consulted ?? []), ...consultIds])] : [] }))}
-            label="相談をおすすめされた項目は、すべて税理士に相談し、問題ないことを確かめました"
+            label="相談をすすめられた項目を税理士に相談し、問題ないと確かめた"
           />
         </div>
       )}
       {sum.unsure.length > 0 && (
-        <Note tone="warn">「分からない」と答えた項目は、未確認のまま残ります。分かった時点で答え直してください。未確認のまま申告書を作ると「下書き」と入ります。</Note>
+        <Note tone="warn">「分からない」のままだと、申告書に「下書き」と入ります。分かったら答え直してください。</Note>
       )}
-      <details className="text-xs text-stone-600">
-        <summary className="cursor-pointer py-2 font-medium text-teal-800">Tips：この確認について</summary>
-        <p className="mt-1 leading-relaxed">
-          税務調査では、財産の入れ漏れや、過去のお金の動きがよく確かめられます。ここでは決まった質問で入れ漏れを探し、判断が分かれるものは税理士への相談をおすすめします。コンパスくんが聞き取るのは「ある」と答えた一部の項目だけで、申告に入れるかどうかを最後に決めるのはご本人です。
-        </p>
-      </details>
     </div>
   );
 }
@@ -120,7 +108,7 @@ function TopicRow({ t, review, set }: { t: Topic; review: ReviewState; set: (fn:
     <li className="py-3" data-q={t.id}>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <p className="min-w-0 text-sm text-stone-800">
-          {st.kind === "clear" && <CheckIcon className="mr-1 inline h-4 w-4 text-teal-600" aria-label="確認済み" />}
+          {st.kind === "clear" && <CheckIcon className="mr-1 inline h-4 w-4 text-stone-400" aria-label="確認済み" />}
           {t.question}
         </p>
         <div className="flex shrink-0 gap-1" role="group" aria-label={t.question}>
@@ -180,7 +168,7 @@ function TopicRow({ t, review, set }: { t: Topic; review: ReviewState; set: (fn:
           )}
           {st.kind === "clear" && (review.added ?? []).some((k) => k === t.id || k.startsWith(`${t.id}:`)) && (
             <Link href="/case/assets" className="text-xs font-semibold text-teal-800 underline">
-              追加した財産を確かめる（確認待ちの項目を入れてください） ›
+              追加した財産を確かめる ›
             </Link>
           )}
         </div>
@@ -230,7 +218,7 @@ function Withdrawal({ review, set, done, onAdd }: { review: ReviewState; set: (f
           <YenInput value={w.amount} onChange={(v) => patch({ amount: v })} />
         </label>
         <label className="block">
-          <span className="text-xs font-semibold text-stone-600">そのうち使い道が分かっている額（葬儀・入院費など）</span>
+          <span className="text-xs font-semibold text-stone-600">使い道が分かる額（葬儀・入院費など）</span>
           <YenInput value={w.used} onChange={(v) => patch({ used: v })} />
         </label>
       </div>
@@ -238,7 +226,7 @@ function Withdrawal({ review, set, done, onAdd }: { review: ReviewState; set: (f
         手もとの現金として入れる額：<span className="font-bold tabular-nums">{fmt(cash)}円</span>
       </p>
       {done ? (
-        <p className="text-xs text-teal-800">財産に追加しました。金額を変えたときは、財産の画面で直してください。</p>
+        <p className="text-xs text-teal-800">財産に追加しました（直すときは財産の画面で）。</p>
       ) : (
         <Button variant="secondary" onClick={() => onAdd(cash)} disabled={!(Number(w.amount) > 0)}>
           ＋ 現金として財産に追加
@@ -285,7 +273,7 @@ function Talk({ t, review, set }: { t: Topic; review: ReviewState; set: (fn: (r:
   return (
     <div className="space-y-2">
       <ul className="space-y-2">
-        <CompassSays>コンパスくんが少しだけ詳しく聞きます。分かる範囲で、ふだんの言葉で書いてください。</CompassSays>
+        <CompassSays>分かる範囲で、少し詳しく教えてください。</CompassSays>
         {chat.map((m, i) =>
           m.role === "user" ? (
             <li key={i} className="flex justify-end">

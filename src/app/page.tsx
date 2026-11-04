@@ -5,18 +5,21 @@ import { HeaderCta } from "@/components/HeaderCta";
 import { SiteHeader } from "@/components/SiteHeader";
 
 const HOW = [
-  { title: "はじめる", text: "お名前とメールアドレスだけの簡単な登録で、あなたのマイページを作ります。" },
-  { title: "質問に答える", text: "家族構成や財産のおおよその額など、約3分の質問に答えます。" },
-  { title: "やることが分かる", text: "必要な手続き・期限・提出先・集める書類がマイページに並びます。相続税がかかるかも分かります。" },
-  { title: "書類を作る", text: "財産を評価して、相続税申告書・遺産分割協議書・登記申請書のPDFを作ります。" },
+  { title: "はじめる", text: "名前とメールだけで登録" },
+  { title: "質問に答える", text: "家族と財産のおおよそを約3分で" },
+  { title: "やることが分かる", text: "手続き・期限・集める書類と、相続税がかかるか" },
+  { title: "書類を作る", text: "申告書・遺産分割協議書・登記申請書をPDFで" },
 ];
+
+// 自分で進めるより、税理士・弁護士に相談したほうがいいケース
+const HARD = ["借金が多い", "国外財産", "非上場株式", "分け方で争いがある"];
 
 const FLOW = ["聞き取り", "相続税の判定", "手続き", "書類集め", "申告書"];
 
 const FEATURES = [
-  { img: "/brand/feature-progress.png", title: "やることが期限順に分かる", text: "死亡届から相続登記まで、あなたの家族に必要な手続きだけを期限つきで。カレンダーにもまとめて入ります。" },
-  { img: "/brand/feature-property.png", title: "土地・マンションの評価", text: "地図をクリックすると国税庁の路線価図を重ねて表示。小規模宅地等の特例も自動で計算します。" },
-  { img: "/brand/feature-filing.png", title: "正式な申告書を作成", text: "国税庁の令和8年分の正式な様式に記入した相続税申告書と、遺産分割協議書のPDFを作ります。" },
+  { img: "/brand/feature-progress.png", title: "やることが期限順に分かる", text: "死亡届から相続登記まで、必要な手続きだけを期限つきで" },
+  { img: "/brand/feature-property.png", title: "土地・マンションの評価", text: "地図で土地を選ぶと、路線価図を重ねて評価します" },
+  { img: "/brand/feature-filing.png", title: "正式な申告書を作成", text: "国税庁の正式な様式（令和8年分）で作ります" },
 ];
 
 export default function Home() {
@@ -26,8 +29,7 @@ export default function Home() {
       <section className="relative overflow-hidden bg-cover bg-bottom" style={{ backgroundImage: "url(/brand/hero-background.png)" }}>
         <div className="mx-auto grid max-w-6xl items-center gap-8 px-4 py-12 md:grid-cols-[1.1fr_0.9fr] md:py-16">
           <div>
-            <p className="inline-block rounded-full bg-sky-100 px-4 py-1.5 text-sm font-bold text-sky-900">相続の手続きを、自分で進められる</p>
-            <h1 className="mt-5 text-4xl font-black leading-tight tracking-tight text-sky-950 sm:text-5xl">
+            <h1 className="text-4xl font-black leading-tight tracking-tight text-sky-950 sm:text-5xl">
               相続の手続きを、
               <br />
               迷わず
@@ -37,11 +39,7 @@ export default function Home() {
               </span>
               。
             </h1>
-            <p className="mt-5 text-base leading-relaxed text-stone-700 sm:text-lg">
-              何から手をつければいいか分からない。相続税はかかるの？
-              <br />
-              いくつかの質問に答えるだけで、必要な手続き・集める書類・提出先がわかり、申告書の完成まで進めます。
-            </p>
+            <p className="mt-5 text-base leading-relaxed text-stone-700 sm:text-lg">質問に答えるだけで、やることと集める書類が分かり、申告書まで作れます。</p>
             <div className="mt-7 flex flex-wrap gap-3">
               <HeaderCta big />
               <Link href="/demo" className="rounded-full border-2 border-sky-700 bg-white px-7 py-3 font-bold text-sky-800 hover:bg-sky-50">
@@ -69,8 +67,7 @@ export default function Home() {
               <div className="mt-4 flex items-end gap-2 rounded-xl bg-gradient-to-b from-emerald-50 to-sky-50 p-3">
                 <CompassKun className="h-28 w-auto" />
                 <div className="mb-6 flex-1">
-                  <p className="mb-1 text-sm font-bold text-sky-950">コンパスくんがご案内</p>
-                  <Bubble>相続税がかかるか、まずは家族の人数から確かめましょう。</Bubble>
+                  <Bubble>まずは家族の人数から確かめましょう。</Bubble>
                 </div>
               </div>
             </div>
@@ -90,10 +87,9 @@ export default function Home() {
               </li>
             ))}
           </ol>
-          <p className="mt-5 text-center text-sm text-stone-600">
-            まずは雰囲気を見たい方は{" "}
+          <p className="mt-5 text-center text-sm">
             <Link href="/demo" className="font-semibold text-sky-800 underline">
-              デモの家族（すべて架空）でマイページを見る
+              ▶ デモ（架空の家族）を見る
             </Link>
           </p>
         </div>
@@ -110,14 +106,21 @@ export default function Home() {
           ))}
         </div>
         <div className="mx-auto mt-8 max-w-6xl px-4">
-          <div className="rounded-full bg-sky-50 px-6 py-4 text-center text-base font-bold text-sky-950">
-            むずかしいケース（借金が多い・国外財産・非上場株式・遺産分割で争いがある など）は、税理士・弁護士への相談をおすすめします
+          <div className="rounded-2xl bg-sky-50 px-6 py-4 text-center">
+            <p className="text-base font-bold text-sky-950">税理士・弁護士への相談がおすすめ</p>
+            <ul className="mt-2 flex flex-wrap justify-center gap-2">
+              {HARD.map((h) => (
+                <li key={h} className="rounded-full border border-sky-200 bg-white px-3 py-1 text-sm font-semibold text-sky-900">
+                  {h}
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
       </section>
 
       <footer className="mx-auto max-w-6xl px-4 py-8 text-xs leading-relaxed text-stone-500">
-        デモはすべて架空のダミーデータです。申告書様式の出典：国税庁「相続税の申告書等の様式一覧（令和8年分用）」を加工して作成。手続きの内容は一般的な案内で、自治体や窓口によって異なる場合があります。
+        デモは架空のデータです。様式の出典：国税庁「相続税の申告書等の様式一覧（令和8年分用）」を加工して作成。手続きは窓口により異なる場合があります。
         <Link href="/terms" className="ml-2 underline">利用規約</Link>
         <Link href="/privacy" className="ml-2 underline">プライバシーポリシー</Link>
       </footer>

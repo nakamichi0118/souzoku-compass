@@ -21,11 +21,11 @@ export function ConsultPage() {
       <div className="mx-auto max-w-3xl space-y-5">
         <PageHead
           title="税理士に相談する"
-          say={`${topic ? `「${topic}」のように` : ""}判断で税額が大きく変わるところは、税理士に確認すると安心です。相談のときに伝えることをまとめておきました！`}
+          say={topic ? `「${topic}」は判断で税額が変わるので、税理士に確かめると安心です。` : "判断で税額が変わるところは、税理士に確かめると安心です。"}
         />
         <Card title="相談のときに伝えること">
           {points.length === 0 ? (
-            <p className="text-sm text-stone-600">いまのところ、特に確認が必要な点は見つかっていません。気になることがあれば、そのまま相談して大丈夫です。</p>
+            <p className="text-sm text-stone-600">いまのところ、特に確認が必要な点はありません。</p>
           ) : (
             <ul className="list-disc space-y-1.5 pl-5 text-sm text-stone-800">
               {points.map((p) => (
@@ -47,14 +47,13 @@ export function ConsultPage() {
             className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
           >
             <Copy className="h-4 w-4" aria-hidden />
-            {copied ? "コピーしました" : "相談メモをコピー（メールや問い合わせフォームに貼れます）"}
+            {copied ? "コピーしました" : "相談メモをコピー"}
           </button>
         </Card>
         <Card title="相談先を探す">
           <ul className="space-y-3 text-sm">
             <li className="space-y-2">
               <FirmBadge />
-              <p className="text-stone-600">ここから相談できます。相談内容は、上の「相談のときに伝えること」を自動で入れています。</p>
               <ConsultForm />
             </li>
             <li>
@@ -62,11 +61,11 @@ export function ConsultPage() {
                 税理士情報検索サイト（日本税理士会連合会）
                 <ExternalLink className="h-3.5 w-3.5" aria-hidden />
               </a>
-              <p className="mt-0.5 text-stone-600">地域や業務内容から、登録されている税理士・税理士法人を探せます。相続税の申告を多く扱っている事務所を選ぶと安心です。</p>
+              <p className="mt-0.5 text-stone-600">地域から探せます。相続税の申告を多く扱う事務所が安心です。</p>
             </li>
             <li>
               <p className="font-semibold text-stone-800">相続コンパスで作った資料を持っていく</p>
-              <p className="mt-0.5 text-stone-600">財産の一覧・申告書の下書き（PDF）・集めた書類があると、相談がスムーズで費用の見積もりも出しやすくなります。</p>
+              <p className="mt-0.5 text-stone-600">財産の一覧・申告書の下書き（PDF）・集めた書類があると、相談も見積もりも早く進みます。</p>
             </li>
           </ul>
         </Card>

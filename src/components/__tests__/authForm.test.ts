@@ -11,7 +11,7 @@ const render = (kind: "signup" | "login") => renderToStaticMarkup(createElement(
 describe("利用者登録・ログインの画面（スマホ）", () => {
   it("同意の文は、リンクと文を1つのまとまりにする（スマホで2つの列に分かれない）", () => {
     const html = render("signup");
-    expect(html).toMatch(/<span class="min-w-0"><a [^>]*href="\/privacy"[^>]*>プライバシーポリシー<\/a>に同意します。/);
+    expect(html).toMatch(/<span class="min-w-0"><a [^>]*href="\/privacy"[^>]*>プライバシーポリシー<\/a>に同意します<\/span>/);
     // チェックボックスは指で押しやすい大きさにし、縮めない
     expect(html).toMatch(/<input type="checkbox"[^>]*class="[^"]*h-5 w-5 shrink-0/);
   });
@@ -23,6 +23,11 @@ describe("利用者登録・ログインの画面（スマホ）", () => {
       expect(html).toContain('type="submit"');
     }
     expect(render("signup")).toContain("マイページを作成する");
+  });
+
+  it("試作版のあいだは、架空の内容で試すよう登録の画面に短く出す（ログインには出さない）", () => {
+    expect(render("signup")).toContain("架空の内容でお試しください");
+    expect(render("login")).not.toContain("架空の内容でお試しください");
   });
 
   it("入力欄の文字は 16px（iPhone で画面が拡大されない）", () => {

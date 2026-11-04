@@ -50,7 +50,7 @@ function useHeight<E extends HTMLElement>() {
   return [h, ref] as const;
 }
 
-/** 画面の下に固定する「次へ」の帯。スマホでは文を短くして、帯が後ろのボタンを隠さないよう低くする */
+/** 画面の下に固定する「次へ」の帯。文は短くして、帯が後ろのボタンを隠さないよう低くする（理由は下の Tips に畳む） */
 export function FinishBar({ dateOk, unanswered, onFinish, barRef }: { dateOk: boolean; unanswered: number; onFinish: () => void; barRef?: React.Ref<HTMLDivElement> }) {
   return (
     <div ref={barRef} className="fixed inset-x-0 bottom-0 z-30 border-t border-stone-200 bg-white/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
@@ -59,10 +59,7 @@ export function FinishBar({ dateOk, unanswered, onFinish, barRef }: { dateOk: bo
           {!dateOk ? (
             "亡くなった日を入力してください。"
           ) : unanswered > 0 ? (
-            <>
-              <span className="sm:hidden">選んでいない質問があと{unanswered}問</span>
-              <span className="hidden sm:inline">まだ選んでいない質問があと{unanswered}問あります。選ばないままだと仮の答えで手続きを出すため、必要な手続きが抜けることがあります（答えはあとから変えられます）。</span>
-            </>
+            `選んでいない質問があと${unanswered}問`
           ) : (
             "答えはあとから変えられます。"
           )}
@@ -74,10 +71,20 @@ export function FinishBar({ dateOk, unanswered, onFinish, barRef }: { dateOk: bo
           onClick={onFinish}
           className="shrink-0 whitespace-nowrap rounded-lg bg-sky-700 px-4 py-3 font-semibold text-white hover:bg-sky-800 disabled:bg-stone-300 sm:px-6"
         >
-          次へ（マイページへ） →
+          マイページへ →
         </button>
       </div>
     </div>
+  );
+}
+
+/** 選んでいない質問があるときに、そのままだとどうなるかを畳んで出す（パソコンでもスマホでも） */
+export function UnansweredTips() {
+  return (
+    <details className="mt-5 text-xs text-stone-600">
+      <summary className="cursor-pointer py-2 font-medium text-teal-800">Tips：選んでいない質問があるときは</summary>
+      <p className="mt-2 leading-relaxed">選ばないままだと仮の答えで手続きを出すため、必要な手続きが抜けることがあります。答えはあとから変えられます。</p>
+    </details>
   );
 }
 
@@ -149,7 +156,7 @@ export function Hearing() {
   return (
     <AppShell>
       <div className="mx-auto max-w-3xl">
-      <PageHead title="最初に、状況を教えてください" say="いくつかの質問に答えるだけで、あなたの手続きの道筋が見えてきます！金額はだいたいで大丈夫です。" />
+      <PageHead title="状況を教えてください" say="答えると、必要な手続きと期限が分かります。" />
 
       <div
         ref={listRef}
@@ -159,7 +166,7 @@ export function Hearing() {
         }}
       >
         <Card title="1. 亡くなった方の情報">
-          <Q label="いまの状況にいちばん近いものは？" hint="すでに済んだ時期の手続きは、最初から「完了」にしておきます（あとで戻せます）。">
+          <Q label="いまの状況にいちばん近いものは？" hint="済んだ時期の手続きは「完了」にしておきます。">
             <Choice
               value={a("stage")}
               onChange={(v) => pick("stage", v)}
@@ -173,10 +180,10 @@ export function Hearing() {
           <Q label="お名前（任意）">
             <TextInput value={iv.decedentName} onChange={(e) => set("decedentName", e.target.value)} placeholder="例：相続 太郎" />
           </Q>
-          <Q label="亡くなった方は、あなたから見て？" hint="窓口に電話するときの伝え方の文例に使います。">
+          <Q label="亡くなった方は、あなたから見て？">
             <Choice value={a("myRelation")} onChange={(v) => pick("myRelation", v)} options={["父", "母", "夫", "妻", "祖父", "祖母", "その他"].map((x) => ({ value: x, label: x }))} />
           </Q>
-          <Q label="亡くなった方の最後の住所" hint="死亡届や相続税申告の提出先（市区町村役場・税務署など）を調べるのに使います。">
+          <Q label="亡くなった方の最後の住所" hint="役所・税務署を探すのに使います。">
             <TextInput value={iv.address} onChange={(e) => set("address", e.target.value)} placeholder="例：東京都千代田区架空町一丁目2番3号" />
           </Q>
           <Q label="亡くなった日" hint="期限はこの日から数えます。">
@@ -188,10 +195,10 @@ export function Hearing() {
           <Q label="配偶者（夫・妻）はご存命ですか？">
             <YesNo value={a("spouse")} onChange={(v) => pick("spouse", v)} />
           </Q>
-          <Q label="お子さんは何人いますか？" hint="養子も含めます。先に亡くなったお子さんは次の質問で答えてください。">
+          <Q label="お子さんは何人いますか？" hint="養子も含め、ご存命の方だけ数えます。">
             <Counter value={iv.children} onChange={(v) => set("children", v)} />
           </Q>
-          <Q label="先に亡くなったお子さんに、子ども（孫）はいますか？" hint="その孫が代わりに相続人になります（代襲相続）。いなければ0人のままで。">
+          <Q label="先に亡くなったお子さんの子（孫）の人数" hint="いなければ0人のまま。">
             <Counter value={iv.grandchildrenOfPredeceased} onChange={(v) => set("grandchildrenOfPredeceased", v)} />
           </Q>
           {iv.children === 0 && iv.grandchildrenOfPredeceased === 0 && (
@@ -206,16 +213,17 @@ export function Hearing() {
               )}
             </>
           )}
-          <Q label="相続人の中に、18歳未満の方はいますか？">
+          <Q label="18歳未満の相続人はいますか？">
             <YesNo value={a("minorHeir")} onChange={(v) => pick("minorHeir", v)} />
           </Q>
-          <Q label="相続人の中に、海外に住んでいる方はいますか？">
+          <Q label="海外に住む相続人はいますか？">
             <YesNo value={a("heirAbroad")} onChange={(v) => pick("heirAbroad", v)} />
           </Q>
+          {iv.heirAbroad && <Note tone="info">海外の相続人は、印鑑証明書の代わりに大使館でサイン証明・在留証明を取ります。相続税は税理士に相談してください。</Note>}
           <p className="mt-2 rounded-lg bg-teal-50 px-4 py-3 text-sm text-teal-900">
-            相続税の計算に使う相続人の数は <strong>{est.heirCount}人</strong>、基礎控除は <strong>{(est.basicDeduction / 10_000).toLocaleString()}万円</strong> です。
+            基礎控除 <strong>{(est.basicDeduction / 10_000).toLocaleString()}万円</strong>（相続人 <strong>{est.heirCount}人</strong>）
           </p>
-          {noHeirs && <Note tone="warn">相続人がいない場合は、家庭裁判所で相続財産清算人を選ぶ手続きになります。専門家に相談してください。</Note>}
+          {noHeirs && <Note tone="warn">相続人がいないときは家庭裁判所の手続きになります。専門家に相談してください。</Note>}
         </Card>
 
         <Card title="3. 遺言書と借金">
@@ -244,13 +252,11 @@ export function Hearing() {
               ]}
             />
           </Q>
-          {iv.debts === "large" && <Note tone="warn">借金が多い場合は、3か月以内なら相続放棄ができます。財産を使ったり処分したりすると放棄できなくなるので注意してください。</Note>}
+          {iv.debts === "large" && <Note tone="warn">3か月以内なら相続放棄ができます。財産を使ったり処分したりすると放棄できなくなります。</Note>}
         </Card>
 
         <Card title="4. 財産のおおよその額">
-          <p className="mb-3 text-sm text-stone-600">
-            相続税がかかりそうかを判定するための目安です。分からないものは0のままで構いません。あとから見つかった財産も、「財産と相続税」で登録すると、必要な手続きと集める書類が自動で追加されます。
-          </p>
+          <p className="mb-3 text-sm text-stone-600">だいたいで大丈夫です。分からなければ0のままで。</p>
           <div className="grid gap-x-6 sm:grid-cols-2 sm:[&>*:nth-child(2)]:border-t-0 sm:[&>*:nth-child(2)]:pt-0">
             <Q align label="自宅（土地・建物）" hint="固定資産税の通知書の評価額や、近所の相場から。">
               <ManYen value={iv.homeValue} onChange={(v) => set("homeValue", v)} />
@@ -278,7 +284,7 @@ export function Hearing() {
             </Q>
           </div>
           {iv.homeValue > 0 && (
-            <Q label="自宅は、配偶者か同居している家族が受け継ぎますか？" hint="受け継ぐ場合は、小規模宅地等の特例で自宅の土地の評価が最大80%下がる可能性があります。">
+            <Q label="自宅は、配偶者か同居している家族が受け継ぎますか？" hint="受け継ぐと、土地の評価が最大80%下がることがあります。">
               <Choice
                 value={a("homeToFamily")}
                 onChange={(v) => pick("homeToFamily", v)}
@@ -290,6 +296,10 @@ export function Hearing() {
               />
             </Q>
           )}
+          <details className="mt-3 text-xs text-stone-600">
+            <summary className="cursor-pointer py-2 font-medium text-teal-800">Tips：あとから見つかった財産は</summary>
+            <p className="mt-2 leading-relaxed">「財産と相続税」で登録すると、必要な手続きと集める書類が自動で追加されます。</p>
+          </details>
         </Card>
 
         <Card title="5. 暮らしのこと">
@@ -316,7 +326,7 @@ export function Hearing() {
               ]}
             />
           </Q>
-          <Q label="健康保険は？" hint="保険証に書いてあります。75歳以上は後期高齢者医療です。">
+          <Q label="健康保険は？" hint="75歳以上なら後期高齢者医療です。">
             <Choice
               value={a("health")}
               onChange={(v) => pick("health", v)}
@@ -331,10 +341,10 @@ export function Hearing() {
           <Q label="毎年、確定申告をしていましたか？" hint="不動産の賃貸収入や事業収入があった場合など。">
             <YesNo value={a("filedTaxReturn")} onChange={(v) => pick("filedTaxReturn", v)} />
           </Q>
-          <Q label="亡くなる前に入院するなど、医療費が多くかかりましたか？">
+          <Q label="亡くなる前に、医療費が多くかかりましたか？">
             <YesNo value={a("highMedical")} onChange={(v) => pick("highMedical", v)} />
           </Q>
-          <Q label="亡くなった方は世帯主で、同じ世帯に2人以上が残りますか？" hint="2人以上残るときは、14日以内に役所へ「世帯主の変更届」を出します。残るのが1人なら届出は要りません。">
+          <Q label="亡くなった方は世帯主で、同じ世帯に2人以上が残りますか？">
             <YesNo value={a("householdHead")} onChange={(v) => pick("householdHead", v)} />
           </Q>
           <Q label="賃貸住宅に住んでいましたか？">
@@ -343,19 +353,13 @@ export function Hearing() {
           <Q label="自動車を持っていましたか？">
             <YesNo value={a("car")} onChange={(v) => pick("car", v)} />
           </Q>
-          <Q label="スマートフォンやネット銀行を使っていましたか？">
+          <Q label="スマホやネット銀行を使っていましたか？">
             <YesNo value={a("digital")} onChange={(v) => pick("digital", v)} />
           </Q>
-          {iv.heirAbroad && <Note tone="info">海外に住む相続人は、印鑑証明書の代わりに現地の日本大使館等でサイン証明・在留証明を取ります。相続税は税理士への相談をおすすめします。</Note>}
         </Card>
       </div>
 
-      {unanswered > 0 && (
-        <details className="mt-5 text-xs text-stone-600 sm:hidden">
-          <summary className="cursor-pointer py-2 font-medium text-teal-800">Tips：選んでいない質問があるときは</summary>
-          <p className="mt-2 leading-relaxed">選ばないままだと仮の答えで手続きを出すため、必要な手続きが抜けることがあります。答えはあとから変えられます。</p>
-        </details>
-      )}
+      {unanswered > 0 && <UnansweredTips />}
       {/* 下に固定した帯と同じ高さの余白（いちばん下の質問やボタンが帯に隠れないように） */}
       <div aria-hidden style={{ height: (barH ?? 96) + 16 }} />
       <FinishBar dateOk={dateOk} unanswered={unanswered} onFinish={finish} barRef={barRef} />

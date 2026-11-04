@@ -9,12 +9,10 @@ import { MonthCalendar } from "@/components/plan/MonthCalendar";
 import { AppShell, PageHead } from "@/components/shell/AppShell";
 import { Panel } from "@/components/ui/Panel";
 import { icsStamp, toICS } from "@/domain/procedures/calendar";
-import { jpDate } from "@/domain/procedures/dates";
 import { encodeInterview } from "@/domain/procedures/share";
 import { saveBlob } from "@/lib/download";
 import { naId, type ItemStatus } from "@/lib/planStore";
 import { useOverall } from "@/lib/overall";
-import { daysLeftLabel } from "@/lib/taskStatus";
 
 type View = "steps" | "month";
 /** このブラウザだけで覚える（アカウントには保存しない） */
@@ -76,7 +74,7 @@ export function CalendarPage() {
   if (!o.heard || !o.valid)
     return (
       <AppShell>
-        <PageHead title="カレンダー" say="まず、質問に答えてくださいね。手続きの期限をカレンダーに並べます。" />
+        <PageHead title="カレンダー" say="質問に答えると、期限がここに並びます。" />
         <Link href="/my/hearing" className="rounded-full bg-sky-700 px-6 py-3 font-bold text-white">
           質問に答える ›
         </Link>
@@ -100,12 +98,11 @@ export function CalendarPage() {
     setPrompt(docs.length ? { docs, open: false } : null);
   };
   const locked = (id: string) => (o.autoDone.includes(id) ? AUTO_DONE_NOTE : undefined);
-  const upcoming = o.main.filter((t) => !o.closed(t.id) && t.date >= o.now).slice(0, 6);
   const overdue = o.main.filter((t) => !o.closed(t.id) && t.date < o.now);
 
   return (
     <AppShell wide>
-      <PageHead title="カレンダー" say="手続きの期限と目安の日を、手続きごと・月ごとに並べました。オレンジは法律上の期限がある日です。" />
+      <PageHead title="カレンダー" say="オレンジは法律で決まった期限です。" />
       {/* パソコンでは、亡くなった日からの期限の流れを上に出す（どちらの表示でも同じ） */}
       <section aria-label="手続きの流れ" className="mb-5 hidden rounded-2xl border border-sky-100 bg-white px-3 pb-2 pt-3 shadow-sm lg:block">
         <h2 className="mb-1 px-1 text-sm font-bold text-stone-700">手続きの流れ</h2>
@@ -114,11 +111,13 @@ export function CalendarPage() {
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <section className="rounded-2xl border border-sky-100 bg-white p-4 shadow-sm sm:p-5">
           <ViewSwitch view={view} onChange={setView} />
+          {/* これからの予定は下のリストと同じなので、日付を過ぎた手続きの知らせだけをリストの上に出す */}
+          {overdue.length > 0 && <p className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800">日付を過ぎた手続きが{overdue.length}件あります。</p>}
           {view === "month" ? <MonthCalendar tasks={o.live} done={o.done} today={o.now} /> : <MilestoneView tasks={o.main} done={o.done} today={o.now} death={o.iv.deathDate} onMark={mark} locked={locked} />}
           <p className="mt-3 flex flex-wrap gap-4 text-xs text-stone-500">
             <span>
               <span className="mr-1 inline-block h-2 w-2 rounded-full bg-orange-500" />
-              期限（法律で決まっている）
+              期限（法律）
             </span>
             <span>
               <span className="mr-1 inline-block h-2 w-2 rounded-full bg-sky-500" />
@@ -131,40 +130,24 @@ export function CalendarPage() {
           </p>
         </section>
         <div className="space-y-5">
-          <Panel title="これからの予定">
-            {overdue.length > 0 && <p className="mb-2 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800">日付を過ぎた手続きが{overdue.length}件あります。</p>}
-            <ul className="space-y-2 text-sm">
-              {upcoming.map((t) => (
-                <li key={t.id}>
-                  <Link href={`/my/tasks?id=${t.id}`} className="block rounded-lg px-2 py-1 hover:bg-stone-50">
-                    <span className={`text-xs font-semibold ${t.hard ? "text-orange-700" : "text-stone-500"}`}>
-                      {jpDate(t.date)}（{daysLeftLabel(o.now, t.date)}）
-                    </span>
-                    <span className="block font-semibold text-stone-800">{t.title}</span>
-                  </Link>
-                </li>
-              ))}
-              {upcoming.length === 0 && <li className="text-stone-500">これからの予定はありません。</li>}
-            </ul>
-          </Panel>
           <Panel title="いつものカレンダーに入れる">
-            <p className="text-sm text-stone-600">{o.live.length}件の手続きをまとめて追加します。期限のあるものは1週間前と前日に通知します。</p>
+            <p className="text-sm text-stone-600">{o.live.length}件をまとめて追加し、期限の1週間前と前日に通知します。</p>
             <div className="mt-3 flex flex-col gap-2">
               <a href={googleSubscribe} target="_blank" rel="noreferrer" className="rounded-lg bg-sky-700 px-4 py-2 text-center text-sm font-semibold text-white hover:bg-sky-800">
-                Googleカレンダーにまとめて追加
+                Googleカレンダーに追加
               </a>
               <a href={appleSubscribe} className="rounded-lg border border-stone-300 px-4 py-2 text-center text-sm font-semibold hover:bg-stone-50">
-                iPhone・Macのカレンダーに追加
+                iPhone・Macに追加
               </a>
               <button type="button" onClick={downloadICS} className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-semibold hover:bg-stone-50">
-                Outlookなどほかのカレンダーに追加（ファイルを保存）
+                Outlook・その他（ファイルを保存）
               </button>
             </div>
-            <p className="mt-2 text-xs leading-relaxed text-stone-500">相続の手続き専用のカレンダーとして追加されます。あとから質問の答えを変えたり、手続きを「不要」にしたりしたときは、追加し直してください。</p>
+            <p className="mt-2 text-xs leading-relaxed text-stone-500">答えを変えたり「不要」にしたりしたら、追加し直してください。</p>
           </Panel>
         </div>
       </div>
-      <p className="mt-4 text-xs text-stone-500">期限は亡くなった日を起算日として計算しています。法律上の期限が土日祝日・年末年始にあたる場合は、次の平日にしています。</p>
+      <p className="mt-4 text-xs text-stone-500">期限は亡くなった日から数えています（土日祝・年末年始なら次の平日）。</p>
       {prompt && <UploadPrompt docs={prompt.docs} open={prompt.open} onOpen={() => setPrompt({ ...prompt, open: true })} onClose={() => setPrompt(null)} onRegistered={(d) => o.setStatus(`doc:${d}`, "done")} />}
     </AppShell>
   );

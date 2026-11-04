@@ -3,7 +3,7 @@
 import type { ItemStatus } from "@/lib/planStore";
 
 /** 相続税申告の画面の進み具合で自動的に完了になった項目に出す説明（押せなくした「完了」に添える） */
-export const AUTO_DONE_NOTE = "相続税申告の画面でこの段階を終えたので、自動で完了にしています。";
+export const AUTO_DONE_NOTE = "申告の画面で済んだので、自動で完了にしています。";
 
 /**
  * 一覧の行につける「完了」チェックと「不要」ボタン。
@@ -39,19 +39,19 @@ export function RowStatus({ status, onChange, label, locked, muted }: { status: 
   );
 }
 
-/** 詳細画面の「完了」「不要」ボタン。locked のときはボタンの代わりに理由を表示する */
+/** 詳細画面の「完了」「不要」ボタン。locked のときはボタンの代わりに理由を表示する。済んだ状態は緑ではなくグレーで見せる */
 export function DetailStatus({ status, onChange, locked }: { status: ItemStatus; onChange: (s: ItemStatus) => void; locked?: string }) {
   const btn = "rounded-full px-4 py-2 text-sm font-bold";
   if (locked)
     return (
       <div className="max-w-xs text-right">
-        <span className={`${btn} inline-block bg-emerald-100 text-emerald-800`}>✓ 完了</span>
+        <span className={`${btn} inline-block bg-stone-100 text-stone-600`}>✓ 完了</span>
         <p className="mt-1 text-xs text-stone-500">{locked}</p>
       </div>
     );
   return (
     <div className="flex gap-2">
-      <button type="button" onClick={() => onChange(status === "done" ? "open" : "done")} className={`${btn} ${status === "done" ? "bg-emerald-100 text-emerald-800" : "bg-emerald-600 text-white hover:bg-emerald-700"}`}>
+      <button type="button" onClick={() => onChange(status === "done" ? "open" : "done")} className={`${btn} ${status === "done" ? "bg-stone-100 text-stone-600 hover:bg-stone-200" : "bg-emerald-600 text-white hover:bg-emerald-700"}`}>
         {status === "done" ? "✓ 完了（戻す）" : "完了にする"}
       </button>
       <button type="button" onClick={() => onChange(status === "na" ? "open" : "na")} className={`${btn} ${status === "na" ? "bg-stone-500 text-white" : "border border-stone-300 text-stone-600 hover:bg-stone-100"}`}>

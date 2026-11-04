@@ -48,20 +48,35 @@ export function MilestoneView({ tasks, done, today, death, onMark, locked }: { t
     onMark(id, v);
   };
   const row = { onMark: mark, locked, foldable };
+  // 今日より前の区切りで、区切りの手続きもその下の手続きも開いたときに済んでいた（不要にした）ものは、
+  // 続いた区切りごと1つの「済んだ手続き（○件）」にたたむ（スマホでも、今日の線が最初の画面に入るように）。亡くなった日はたたまない
+  const shut = (id: string, s: EntryState | "start") => isClosed(s) && foldable.has(id);
+  const closedStop = (s: Stop, i: number) => i > 0 && i < tl.todayAt && s.milestones.every((m) => shut(m.id, m.state)) && s.tasks.every((e) => shut(e.task.id, e.state));
+  const parts: ({ fold: Stop[] } | { stop: Stop; i: number })[] = [];
+  tl.stops.forEach((s, i) => {
+    const last = parts.at(-1);
+    if (!closedStop(s, i)) parts.push({ stop: s, i });
+    else if (last && "fold" in last) last.fold.push(s);
+    else parts.push({ fold: [s] });
+  });
 
   return (
     <div className="relative">
       <span aria-hidden className="absolute bottom-4 left-[7px] top-4 w-0.5 rounded bg-stone-200" />
       <ol className="relative space-y-1">
-        {tl.stops.map((s, i) => (
-          <Fragment key={s.date}>
-            {i === tl.todayAt && <TodayRow today={today} />}
-            {s.milestones.map((m) => (
-              <MilestoneRow key={m.id} m={m} today={today} {...row} />
-            ))}
-            {s.tasks.length > 0 && <Entries items={s.tasks} caption={i === 0 ? undefined : caption(s)} year={yearOf(s.date)} past={i < tl.todayAt} {...row} />}
-          </Fragment>
-        ))}
+        {parts.map((p) =>
+          "fold" in p ? (
+            <FoldedStops key={`fold-${p.fold[0].date}`} stops={p.fold} today={today} {...row} />
+          ) : (
+            <Fragment key={p.stop.date}>
+              {p.i === tl.todayAt && <TodayRow today={today} />}
+              {p.stop.milestones.map((m) => (
+                <MilestoneRow key={m.id} m={m} today={today} {...row} />
+              ))}
+              {p.stop.tasks.length > 0 && <Entries items={p.stop.tasks} caption={p.i === 0 ? undefined : caption(p.stop)} year={yearOf(p.stop.date)} past={p.i < tl.todayAt} {...row} />}
+            </Fragment>
+          ),
+        )}
         {tl.todayAt === tl.stops.length && <TodayRow today={today} />}
         {tl.after.length > 0 && (
           <>
@@ -145,6 +160,34 @@ function MilestoneRow({ m, today, onMark, locked }: { m: Milestone; today: strin
           {body}
         </Link>
       </div>
+    </li>
+  );
+}
+
+/** 今日より前の、すべて済んだ（不要にした）区切りをまとめた1行。開くと、区切りとその下の手続きをいつもどおりに出す */
+function FoldedStops({ stops, today, onMark, locked, foldable }: { stops: Stop[]; today: string; onMark: Mark; locked?: Locked; foldable: Set<string> }) {
+  const count = stops.reduce((n, s) => n + s.milestones.filter((m) => m.task).length + s.tasks.length, 0);
+  const na = stops.some((s) => s.milestones.some((m) => m.state === "na") || s.tasks.some((e) => e.state === "na"));
+  return (
+    <li className="relative pb-2 pl-8">
+      <span aria-hidden className="absolute left-0 top-3 grid h-4 w-4 place-items-center rounded-full bg-stone-300 ring-4 ring-white">
+        <Check className="h-3 w-3 text-white" strokeWidth={3} />
+      </span>
+      <details>
+        <summary className="cursor-pointer rounded-xl bg-stone-50 px-3 py-2.5 text-sm text-stone-600 hover:bg-stone-100">
+          {na ? "済んだ・不要にした手続き" : "済んだ手続き"}（{count}件）
+        </summary>
+        <ol className="-ml-8 mt-1 space-y-1">
+          {stops.map((s) => (
+            <Fragment key={s.date}>
+              {s.milestones.map((m) => (
+                <MilestoneRow key={m.id} m={m} today={today} onMark={onMark} locked={locked} />
+              ))}
+              {s.tasks.length > 0 && <Entries items={s.tasks} year={yearOf(s.date)} past={false} onMark={onMark} locked={locked} foldable={foldable} />}
+            </Fragment>
+          ))}
+        </ol>
+      </details>
     </li>
   );
 }

@@ -96,7 +96,7 @@ export function Reader({ docId, onRegistered }: { docId?: string; onRegistered?:
         )}
       </div>
       {ex.busy && <ProgressBar message="コンパスくんが読み取っています" progress={READ_WAIT} className="mt-3 text-sm text-teal-900" />}
-      <p className="mt-2 text-xs text-stone-500">金額や名前をコンパスくんが読み取ります。財産・債務・葬式費用・贈与のどこに入るかも振り分けます。登録する前に、必ず書類と見比べてください。</p>
+      <p className="mt-2 text-xs text-stone-500">登録する前に、必ず書類と見比べてください。</p>
       {ex.err && <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800">{ex.err}</p>}
       {ex.res && (
         <div className="mt-3 space-y-2">

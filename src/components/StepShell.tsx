@@ -39,12 +39,8 @@ export function StepShell({ step }: { step: string }) {
       <StepBar current={step} />
       <div className="mx-auto grid max-w-6xl gap-6 px-4 pb-24 pt-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <main className="min-w-0 space-y-5">
-          <div>
-            <p className="text-sm font-semibold text-teal-700">
-              ステップ {idx + 1} / {STEPS.length}
-            </p>
-            <h1 className="text-2xl font-bold text-stone-900">{STEPS[idx].title}</h1>
-          </div>
+          {/* 何番目のステップかは上の帯で分かるので、見出しだけにする */}
+          <h1 className="text-2xl font-bold text-stone-900">{STEPS[idx].title}</h1>
           {loaded ? <Comp /> : <p className="text-stone-500">読み込み中…</p>}
           <div className="flex justify-between pt-2">
             {prev ? (

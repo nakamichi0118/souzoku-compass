@@ -24,9 +24,8 @@ export function DecedentStep() {
 
   return (
     <div className="space-y-5">
-      <Card
-        title="亡くなった方の情報"
-      >
+      {/* 見出しはページの大見出し（亡くなった方）と同じなので付けない */}
+      <Card>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="氏名">
             <TextInput value={d.name} onChange={(e) => set("name", e.target.value)} placeholder="相続 太郎" />
@@ -37,26 +36,31 @@ export function DecedentStep() {
           <Field label="生年月日" hint={wareki(d.birthDate)?.text}>
             <TextInput type="date" value={d.birthDate} onChange={(e) => set("birthDate", e.target.value)} />
           </Field>
-          <Field label="亡くなった日（相続開始日）" hint={wareki(d.deathDate)?.text}>
+          <Field label="亡くなった日" hint={wareki(d.deathDate)?.text}>
             <TextInput type="date" value={d.deathDate} onChange={(e) => set("deathDate", e.target.value)} />
           </Field>
-          <Field label="最後の住所" hint="提出先の税務署はこの住所で決まります">
+          <Field label="最後の住所">
             <TextInput value={d.address} onChange={(e) => set("address", e.target.value)} />
           </Field>
           <Field label="職業">
             <TextInput value={d.occupation ?? ""} onChange={(e) => set("occupation", e.target.value)} placeholder="無職" />
           </Field>
-          <Field label="提出先の税務署" hint="例：麹町（「税務署」は不要）">
-            <TextInput
-              value={data.filing?.taxOffice ?? ""}
-              onChange={(e) => update((c) => ({ ...c, filing: { ...c.filing, taxOffice: e.target.value } }))}
-            />
+          <Field label="提出先の税務署" hint="最後の住所を担当する税務署">
+            {/* 「税務署」は欄の右に出しておき、名前だけ入れてもらう */}
+            <span className="flex items-center gap-2">
+              <TextInput
+                value={data.filing?.taxOffice ?? ""}
+                onChange={(e) => update((c) => ({ ...c, filing: { ...c.filing, taxOffice: e.target.value } }))}
+                placeholder="例：麹町"
+              />
+              <span className="shrink-0 text-sm text-stone-600">税務署</span>
+            </span>
           </Field>
         </div>
       </Card>
       <Card title="10年以内の相続">
-        <p className="text-sm text-stone-700">亡くなった方は、亡くなる前の10年以内に、ほかの方の相続で財産を受け取り、相続税を納めましたか？</p>
-        <p className="mt-1 text-xs text-stone-500">たとえば、先に亡くなった配偶者や子どもから相続していた場合です。納めた相続税の一部を今回の相続税から差し引ける「相次相続控除」の対象になります。</p>
+        <p className="text-sm text-stone-700">亡くなった方は、亡くなる前10年以内に、ほかの方の相続で相続税を納めましたか？</p>
+        <p className="mt-1 text-xs text-stone-500">例：先に亡くなった配偶者から相続していた。今回の相続税が少なくなります。</p>
         <div className="mt-3">
           <Choice
             value={d.priorInheritanceTax ?? false}
@@ -98,10 +102,12 @@ export function DecedentStep() {
         )}
       </Card>
       <Card title="相続時精算課税を選んだ贈与">
-        <p className="text-sm text-stone-700">亡くなった方から生前に贈与を受けた人の中に、贈与税の申告で「相続時精算課税」を選んだ人はいますか？</p>
-        <p className="mt-1 text-xs text-stone-500">
-          税務署に「相続時精算課税選択届出書」を出して贈与を受けた場合です。選んだ後に受けた贈与は、何年前のものでも相続税の計算に足すことになります（令和6年以降の贈与は、毎年110万円までの部分を除きます）。
-        </p>
+        <p className="text-sm text-stone-700">亡くなった方からの贈与で「相続時精算課税」を選んだ人はいますか？</p>
+        <p className="mt-1 text-xs text-stone-500">「相続時精算課税選択届出書」を出した贈与のことです。</p>
+        <details className="text-xs text-stone-600">
+          <summary className="cursor-pointer py-2 font-medium text-teal-800">詳しく</summary>
+          <p className="leading-relaxed">選んだ後に受けた贈与は、何年前のものでも相続税の計算に足します（令和6年以降の贈与は、毎年110万円までの部分を除きます）。</p>
+        </details>
         <div className="mt-3">
           <Choice
             value={d.settlementGift ?? false}
@@ -114,20 +120,20 @@ export function DecedentStep() {
         </div>
         {d.settlementGift && (
           <p className="mt-3 text-sm text-stone-700">
-            その贈与は
+            贈与は
             <Link href="/case/debts" className="mx-1 font-semibold underline">
               債務・葬式費用
             </Link>
-            の画面の贈与の一覧に入れて、「相続時精算課税」に印を付けてください。
+            の画面に入れ、「相続時精算課税」に印を付けます。
           </p>
         )}
       </Card>
       {outOfScope ? (
-        <Note tone="stop">相続コンパスは令和8年（2026年）中に亡くなった方の相続を対象にしています。それ以外の年は税制や様式が異なります。</Note>
+        <Note tone="stop">令和8年（2026年）中に亡くなった方だけが対象です（ほかの年は税制・様式が違うため）。</Note>
       ) : (
         deadline && (
           <Note tone="info">
-            申告と納税の期限は <strong>{wareki(deadline)?.text}</strong> です（亡くなったことを知った日の翌日から10か月以内。土日祝日・年末年始にあたる場合は次の平日にしています）。
+            申告・納税の期限：<strong>{wareki(deadline)?.text}</strong>（亡くなったことを知った日の翌日から10か月。休日なら次の平日）
           </Note>
         )
       )}

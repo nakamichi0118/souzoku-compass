@@ -38,7 +38,7 @@ export function NavLinks({ path, left, className, onPick }: { path: string; left
   });
 }
 
-/** マイページ共通の枠（ナビゲーション・手続き中の相続・全体の進捗） */
+/** マイページ共通の枠（ナビゲーション・いま進めている相続・全体の進捗） */
 export function AppHeader() {
   const o = useOverall();
   const path = usePathname();
@@ -88,7 +88,7 @@ export function AppHeader() {
                   <NavLinks path={path} left={left} onPick={close} className="flex items-center gap-2 rounded-lg px-3 py-2 font-medium" />
                 </div>
                 <Link href="/my/hearing" onClick={close} className="block rounded-lg px-3 py-2 hover:bg-stone-50">
-                  聞き取りの答えを直す
+                  聞き取りを直す
                 </Link>
                 <Link href="/my/consult" onClick={close} className="block rounded-lg px-3 py-2 hover:bg-stone-50">
                   税理士への相談
@@ -99,7 +99,7 @@ export function AppHeader() {
                   </Link>
                 )}
                 <Link href="/" onClick={close} className="block rounded-lg px-3 py-2 hover:bg-stone-50">
-                  相続コンパスのトップ
+                  トップページ
                 </Link>
                 <button
                   type="button"
@@ -117,7 +117,6 @@ export function AppHeader() {
         <div className="border-t border-sky-50 bg-sky-50/60">
           {/* スマホでは1行に収める（名前が長いときは省略する） */}
           <div className="mx-auto flex max-w-7xl items-center gap-x-3 gap-y-1 px-4 py-1.5 text-sm sm:flex-wrap sm:gap-x-4">
-            <span className="hidden shrink-0 rounded bg-stone-200 px-1.5 py-0.5 text-[11px] text-stone-600 sm:inline">手続き中の相続</span>
             <span className="min-w-0 truncate font-semibold text-stone-800">{o.iv.decedentName ? `${o.iv.decedentName}さんの相続` : "あなたの相続"}</span>
             <div className="ml-auto flex shrink-0 items-center gap-2">
               <span className="whitespace-nowrap text-stone-600">全体の進捗</span>

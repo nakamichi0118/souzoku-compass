@@ -160,6 +160,8 @@ export function AssetsStep() {
     update((c) => ({ ...c, assets: c.assets.filter((a) => a.id !== id), allocations: c.allocations.filter((a) => a.assetId !== id) }));
 
   const valueOf = (id: string) => result?.assets.find((l) => l.asset.id === id);
+  // 評価の根拠になる書類が、資料集めでまだそろっていない財産の数
+  const missingDocs = data.assets.filter((a) => DOC_OF[a.kind] && !done.includes(`doc:${DOC_OF[a.kind]}`)).length;
   const total = result?.assets.reduce((a, l) => a + l.valuation.value, 0) ?? 0;
 
   return (
@@ -180,18 +182,18 @@ export function AssetsStep() {
 
       {noHeirs && (
         <Note tone="warn">
-          まだ相続人が登録されていません。保険金の受取人や遺産の分け方で相続人を選ぶので、先に
+          先に
           <Link href="/case/heirs" className="mx-1 font-semibold underline">
-            相続人の登録
+            相続人
           </Link>
-          をしておくとスムーズです。
+          を登録してください（保険金の受取人や分け方で選ぶため）。
         </Note>
       )}
 
       {fromHearing(iv, data.assets).length > 0 && (
         <section className="rounded-xl border border-sky-200 bg-sky-50/60 p-4">
-          <p className="font-bold text-sky-950">聞き取りで答えた財産を登録しましょう</p>
-          <p className="mt-0.5 text-xs text-stone-600">金額は聞き取りのときの目安です。書類を見て正確な金額を入れてください。</p>
+          <p className="font-bold text-sky-950">聞き取りで答えた財産（未登録）</p>
+          <p className="mt-0.5 text-xs text-stone-600">書類で正しい額を入れてください。</p>
           <ul className="mt-2 space-y-2">
             {fromHearing(iv, data.assets).map((h) => (
               <li key={h.label} className="flex flex-wrap items-center gap-2 text-sm">
@@ -211,14 +213,17 @@ export function AssetsStep() {
       )}
 
       <p className="text-sm text-stone-600">
-        行をクリックすると、内容の入力・評価の計算過程が開きます。残高証明書などは
+        残高証明書は
         <Link href="/my/docs" className="mx-1 text-sky-800 underline">
           資料集め
         </Link>
-        からアップロードすると、読み取って登録できます。
+        から読み取って登録できます。
+        {/* 書類の印は行ごとに出さず、まだの件数をここに1回だけ出す（パソコンのみ。そろった行には「書類あり」） */}
+        {missingDocs > 0 && <span className="ml-1 hidden sm:inline">（書類まだ {missingDocs}件）</span>}
       </p>
 
-      {data.assets.length === 0 && <p className="rounded-xl border border-dashed border-stone-300 bg-white p-8 text-center text-stone-500">まだ財産がありません。下の「財産を追加」から登録してください。</p>}
+      {/* 空のときは1行だけ。すぐ下に「財産を追加」のボタンがある */}
+      {data.assets.length === 0 && <p className="rounded-xl border border-dashed border-stone-300 bg-white p-8 text-center text-stone-500">まだ財産がありません。</p>}
 
       <ul className="space-y-2">
         {data.assets.map((a) => {
@@ -246,11 +251,7 @@ export function AssetsStep() {
                 <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
                   <span className={`min-w-0 grow basis-full truncate font-semibold sm:basis-0 ${a.label ? "text-stone-900" : "text-stone-400"}`}>{a.label || "（名称未入力）"}</span>
                   {missingRecipient && <span className="shrink-0 rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-orange-800">受取人が未設定</span>}
-                  {docId && (
-                    <span className={`hidden shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold sm:inline ${got ? "bg-emerald-100 text-emerald-800" : "bg-stone-100 text-stone-500"}`}>
-                      {got ? "書類あり" : "書類まだ"}
-                    </span>
-                  )}
+                  {got && <span className="hidden shrink-0 rounded-full bg-stone-100 px-2 py-0.5 text-[11px] font-bold text-stone-500 sm:inline">書類あり</span>}
                   {(a.pending?.length || line?.valuation.needsConsultation) && <span className="shrink-0 rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-orange-800">確認待ち</span>}
                   <span className="ml-auto shrink-0 text-right font-bold tabular-nums text-teal-800 sm:w-32">{line?.valuation.needsConsultation ? <span className="text-sm text-orange-700">入力待ち</span> : line ? `${fmt(line.valuation.value)}円` : "—"}</span>
                 </span>
@@ -318,7 +319,7 @@ export function AssetsStep() {
 
       {data.assets.length > 0 && (
         <Note tone="ok">
-          登録した財産の評価額の合計（小規模宅地等の特例・非課税枠を適用する前）：<strong className="tabular-nums">{fmt(total)}円</strong>
+          財産の合計（特例・非課税枠を引く前）：<strong className="tabular-nums">{fmt(total)}円</strong>
         </Note>
       )}
 
@@ -341,7 +342,6 @@ export function AssetsStep() {
                   </button>
                 ))}
               </div>
-              {noHeirs && <p className="mt-1 px-2 text-[11px] text-orange-700">保険金・退職金の受取人は、相続人を登録してから選べます。</p>}
             </div>
           )}
           <button type="button" onClick={() => setMenu((m) => !m)} className="flex items-center gap-1.5 rounded-full bg-sky-700 px-5 py-3 font-bold text-white shadow-lg hover:bg-sky-800">
@@ -355,7 +355,7 @@ export function AssetsStep() {
 }
 
 /** 家賃をもらわずに貸しているもの（使用貸借）は「貸している」にあたらないことの短い案内（くわしくは土地の Tips） */
-const FREE_LENDING_HINT = "家族に無料（固定資産税くらいの負担だけ）で貸しているときは、チェックしません。";
+const FREE_LENDING_HINT = "家族に無料で貸しているだけなら、チェックしません。";
 
 export function AssetEditor({
   living,
@@ -380,13 +380,13 @@ export function AssetEditor({
             <YenInput value={a.amount} onChange={(v) => patch({ amount: v })} />
           </Field>
           {a.kind === "deposit" && (
-            <Field label="既経過利息（税引後）" hint="定期預金などは、亡くなった日までの利息も財産です。銀行の残高証明書に記載されます。">
+            <Field label="亡くなった日までの利息（税引後）" hint="残高証明書に書いてあります">
               <YenInput value={a.accruedInterest ?? 0} onChange={(v) => patch({ accruedInterest: v })} />
             </Field>
           )}
           {a.kind === "deposit" && (
             <>
-              <Field label="金融機関名" hint="申告書（第11表の付表3）に記載します">
+              <Field label="金融機関名">
                 <TextInput value={a.institution ?? ""} onChange={(e) => patch({ institution: e.target.value })} placeholder="みほん銀行" />
               </Field>
               <Field label="支店名">
@@ -417,7 +417,7 @@ export function AssetEditor({
           <Field label="所在・家屋番号">
             <TextInput value={a.location} onChange={(e) => patch({ location: e.target.value })} />
           </Field>
-          <Field label="固定資産税評価額" hint="固定資産税の課税明細書に記載。家屋の評価額は固定資産税評価額×1.0です">
+          <Field label="固定資産税評価額" hint="課税明細書の「評価額」の欄です">
             <YenInput value={a.fixedAssetValue} onChange={(v) => patch({ fixedAssetValue: v })} />
           </Field>
           <div className="space-y-1 sm:col-span-2">
@@ -442,7 +442,7 @@ export function AssetEditor({
               ["prev2MonthAvg", "前々月の終値平均"],
             ] as const
           ).map(([k, l]) => (
-            <Field key={k} label={l} hint={k === "close" ? "4つの価格は、1円未満の数字（例：1523.5）もそのまま入れてください" : undefined}>
+            <Field key={k} label={l} hint={k === "close" ? "小数もそのまま入れます（例：1523.5）" : undefined}>
               <NumInput value={a.prices[k]} onChange={(v) => patch({ prices: { ...a.prices, [k]: v } })} unit="円" />
             </Field>
           ))}
@@ -454,7 +454,7 @@ export function AssetEditor({
           <Field label="株数">
             <NumInput value={a.shares} onChange={(v) => patch({ shares: v })} unit="株" />
           </Field>
-          <Field label="評価額（税理士等が算定したもの）" hint="非上場株式の評価は専門的なため、相続コンパスでは評価額の入力のみ受け付けます">
+          <Field label="評価額（税理士が計算した額）" hint="相続コンパスでは計算できません">
             <YenInput value={a.value} onChange={(v) => patch({ value: v || undefined })} />
           </Field>
         </>
@@ -477,13 +477,13 @@ export function AssetEditor({
               <NumInput value={a.builtYearsMonths.months} onChange={(v) => patch({ builtYearsMonths: { ...a.builtYearsMonths, months: v } })} unit="月" />
             </div>
           </Field>
-          <Field label="総階数（地階を除く）／所在階" hint="地下を除いて2階建て以下の建物は、区分所有補正をしません">
+          <Field label="総階数（地階を除く）／所在階">
             <div className="grid grid-cols-2 gap-2">
               <NumInput value={a.totalFloors} onChange={(v) => patch({ totalFloors: v })} unit="階建" />
               <NumInput value={a.floor} onChange={(v) => patch({ floor: v })} unit="階" />
             </div>
           </Field>
-          <Field label="敷地利用権の面積／専有部分の面積" hint="敷地利用権の面積＝敷地の面積×敷地権の割合（小数点以下第3位切上げ）">
+          <Field label="敷地利用権の面積／専有部分の面積" hint="敷地の面積×敷地権の割合（小数点以下第3位切上げ）">
             <div className="grid grid-cols-2 gap-2">
               <NumInput value={a.landShareSqm} onChange={(v) => patch({ landShareSqm: v })} unit="㎡" />
               <NumInput value={a.exclusiveAreaSqm} onChange={(v) => patch({ exclusiveAreaSqm: v })} unit="㎡" />
@@ -493,9 +493,9 @@ export function AssetEditor({
             <Check
               checked={!!a.fewUnitsFamily}
               onChange={(v) => patch({ fewUnitsFamily: v || undefined })}
-              label="この建物の住まい用の部屋は3室以下で、そのすべてを持ち主（亡くなった方）や親族が住まいに使っている"
+              label="住まい用の部屋が3室以下で、全部を亡くなった方か親族が住まいに使っている（二世帯住宅など）"
             />
-            <p className="text-xs text-stone-500">二世帯住宅などで当てはまる場合は、区分所有補正をしません。当てはまるか分からない場合は、税理士に確認してください。</p>
+            <p className="text-xs text-stone-500">分からなければ税理士に確認してください。</p>
           </div>
           <div className="space-y-1 sm:col-span-2">
             <Check

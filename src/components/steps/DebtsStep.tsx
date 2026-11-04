@@ -44,16 +44,15 @@ export function DebtsStep() {
 
   return (
     <div className="space-y-5">
-      <Card title="追加する">
-        <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" onClick={() => add("debt")}>
-            ＋ 債務（借入金・未払金・未納の税金）
-          </Button>
-          <Button variant="secondary" onClick={() => add("funeral")}>
-            ＋ 葬式費用
-          </Button>
-        </div>
-      </Card>
+      {/* 追加のボタンは枠と見出しを付けず、並べるだけにする */}
+      <div className="flex flex-wrap gap-2">
+        <Button variant="secondary" onClick={() => add("debt")}>
+          ＋ 債務（借入金・未払金・未納の税金）
+        </Button>
+        <Button variant="secondary" onClick={() => add("funeral")}>
+          ＋ 葬式費用
+        </Button>
+      </div>
       {data.debts.map((d) => {
         const borne = d.bearers.reduce((a, b) => a + b.amount, 0);
         // 分け方が決まっていないときに負担額を入れなければ、法定相続分で負担したものとして計算する（合計が合わなくてもよい）
@@ -72,17 +71,17 @@ export function DebtsStep() {
                 <Field label="内容">
                   <TextInput value={d.label} onChange={(e) => patch(d.id, { label: e.target.value })} />
                 </Field>
-                <Field label={d.kind === "debt" ? "債権者（支払先）" : "支払先"} hint="申告書（第13表）に記載します">
+                <Field label="支払先">
                   <TextInput value={d.creditor ?? ""} onChange={(e) => patch(d.id, { creditor: e.target.value })} placeholder={d.kind === "debt" ? "〇〇銀行、〇〇市役所など" : "〇〇斎場など"} />
                 </Field>
-                <Field label="債権者・支払先の住所">
+                <Field label="支払先の住所">
                   <TextInput value={d.creditorAddress ?? ""} onChange={(e) => patch(d.id, { creditorAddress: e.target.value })} />
                 </Field>
                 <Field label="金額">
                   <YenInput value={d.amount} onChange={(v) => patch(d.id, withDebtAmount(d, v, data.undivided))} />
                 </Field>
                 {d.kind === "debt" && (
-                  <Field label="種類" hint="申告書（第13表）に記載します">
+                  <Field label="種類">
                     <Select
                       value={d.debtType ?? ""}
                       onChange={(v) => patch(d.id, { debtType: (v || undefined) as Debt["debtType"] })}
@@ -92,7 +91,7 @@ export function DebtsStep() {
                 )}
               </div>
               <h3 className="mb-2 mt-4 text-sm font-bold text-stone-700">誰が負担しますか</h3>
-              {data.undivided && <p className="mb-2 text-xs text-stone-500">負担する人が決まっていなければ、入っている人を×で外して空欄にしてください（法定相続分で計算します）。</p>}
+              {data.undivided && <p className="mb-2 text-xs text-stone-500">負担する人が決まっていなければ、×で外して空欄にしてください（法定相続分で計算します）。</p>}
               <div className="space-y-2">
                 {d.bearers.map((b, i) => (
                   <div key={i}>
@@ -107,7 +106,7 @@ export function DebtsStep() {
                         ×
                       </Button>
                     </div>
-                    {!isLiving(b.personId) && <p className="mt-1 text-xs font-medium text-amber-800">負担する人を選んでください。選ぶまで相続税の計算を確定できません。</p>}
+                    {!isLiving(b.personId) && <p className="mt-1 text-xs font-medium text-amber-800">負担する人を選んでください（選ぶまで税額を確定できません）。</p>}
                   </div>
                 ))}
                 {byLegalShare && d.amount > 0 && <p className="text-xs text-stone-500">（法定相続分で負担したものとして計算します）</p>}
@@ -130,8 +129,8 @@ export function DebtsStep() {
 
       <Card title={settlement ? "亡くなる前3年以内の贈与・相続時精算課税の贈与" : "亡くなる前3年以内に贈与した財産"}>
         <p className="mb-3 text-sm text-stone-600">
-          亡くなる前3年以内に、相続や遺贈で財産を受け取る人へ贈与したお金や物は、相続財産に足して計算します（納めた贈与税は差し引けます）。
-          {settlement && <span className="mt-1 block">相続時精算課税を選んだ後の贈与は、3年より前のものも含めて全部入れ、「相続時精算課税」に印を付けてください。</span>}
+          財産を受け取る人への贈与は、相続財産に足します（納めた贈与税は引けます）。
+          {settlement && <span className="mt-1 block">相続時精算課税を選んだ後の贈与は、何年前でも全部入れて「相続時精算課税」に印を付けます。</span>}
         </p>
         <details className="mb-3 text-xs text-stone-600">
           <summary className="cursor-pointer py-2 font-medium text-teal-800">Tips：入れない贈与</summary>
@@ -144,7 +143,7 @@ export function DebtsStep() {
             const set = (p: Partial<typeof g>) => update((c) => ({ ...c, priorGifts: c.priorGifts.map((x, j) => (j === i ? { ...x, ...p } : x)) }));
             return (
               <div key={i} className="grid items-end gap-2 rounded-lg border border-stone-200 p-2 sm:grid-cols-[1fr_10rem_1fr_1fr_auto]">
-                <Field label="受け取った人" hint={g.personId && !isLiving(g.personId) ? "選ばれていた人は一覧にいないか、先に亡くなっています。選び直してください" : undefined}>
+                <Field label="受け取った人" hint={g.personId && !isLiving(g.personId) ? "一覧にいないか、先に亡くなった人です。選び直してください" : undefined}>
                   <Select value={isLiving(g.personId) ? g.personId : ""} onChange={(v) => set({ personId: v })} options={[{ value: "", label: "選んでください" }, ...living.map((p) => ({ value: p.id, label: p.name || "（未入力）" }))]} />
                 </Field>
                 <Field label="贈与の日">
@@ -171,7 +170,7 @@ export function DebtsStep() {
             ＋ 贈与を追加
           </Button>
           {data.priorGifts.some((g) => !isLiving(g.personId) || !g.date) && (
-            <Note tone="warn">受け取った人と贈与の日を入れてください。入れるまで相続税の計算を確定できず、申告書も作れません。</Note>
+            <Note tone="warn">受け取った人と贈与の日を入れてください（入れるまで税額も申告書も確定できません）。</Note>
           )}
         </div>
       </Card>

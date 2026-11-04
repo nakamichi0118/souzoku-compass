@@ -4,7 +4,6 @@ import { CalendarClock, Video } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui";
 import { FirmBadge } from "@/components/compass/ConsultForm";
-import { CONSULT_FIRM } from "@/data/consultFirm";
 
 export interface ConsultItem {
   id: string;
@@ -85,14 +84,14 @@ export function ConsultThread({ item, staff, onChange }: { item: ConsultItem; st
           </div>
           <a href={item.meeting.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg bg-teal-700 px-3 py-2 font-semibold text-white hover:bg-teal-800">
             <Video className="h-4 w-4" aria-hidden />
-            打ち合わせに参加する
+            参加する
           </a>
         </div>
       )}
 
       <ul className="space-y-2">
         {item.messages.length === 0 && (
-          <li className="text-sm text-stone-500">{staff ? "まだメッセージはありません。" : `${CONSULT_FIRM.name}からの返事を待っています。返事が届くと、ここに表示されます。`}</li>
+          <li className="text-sm text-stone-500">{staff ? "まだメッセージはありません。" : "返事を待っています。"}</li>
         )}
         {item.messages.map((m, i) => (
           <li key={i} className={`flex ${mine(m.from) ? "justify-end" : "justify-start"}`}>
@@ -119,10 +118,10 @@ export function ConsultThread({ item, staff, onChange }: { item: ConsultItem; st
 
       {staff && (
         <div className="space-y-2 rounded-lg border border-stone-200 bg-stone-50 p-3 text-sm">
-          <p className="font-semibold text-stone-800">打ち合わせの案内（Google Meet・Zoom などのURL）</p>
+          <p className="font-semibold text-stone-800">打ち合わせの案内</p>
           <input value={mt.url} onChange={(e) => setMt({ ...mt, url: e.target.value })} placeholder="https://meet.google.com/…" className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-base sm:text-sm" />
           <div className="grid gap-2 sm:grid-cols-2">
-            <input value={mt.at} onChange={(e) => setMt({ ...mt, at: e.target.value })} placeholder="日時（例：11月10日（火）14:00〜）" className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-base sm:text-sm" />
+            <input value={mt.at} onChange={(e) => setMt({ ...mt, at: e.target.value })} placeholder="日時（例：11/10 14:00）" className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-base sm:text-sm" />
             <input value={mt.note} onChange={(e) => setMt({ ...mt, note: e.target.value })} placeholder="ひとこと（任意）" className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-base sm:text-sm" />
           </div>
           <Button variant="secondary" onClick={() => run(() => call(`/api/consult/${item.id}`, "PUT", mt))} disabled={busy}>
@@ -147,6 +146,8 @@ export function ConsultInbox({ items, staff, onChange, empty }: { items: Consult
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firstUnread]);
   if (!items.length || !cur) return <>{empty}</>;
+  // 利用者の画面で相談が1件だけなら、一覧は出さない（日時は「相談の内容」に出ている）
+  const list = staff || items.length > 1;
   async function pick(id: string) {
     setOpenId(id);
     setLoading(true);
@@ -159,24 +160,26 @@ export function ConsultInbox({ items, staff, onChange, empty }: { items: Consult
     }
   }
   return (
-    <div className="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
-      <ul className="space-y-1">
-        {items.map((x) => (
-          <li key={x.id}>
-            <button
-              type="button"
-              onClick={() => pick(x.id)}
-              className={`w-full rounded-lg border px-3 py-2 text-left text-sm ${x.id === cur.id ? "border-teal-600 bg-teal-50" : "border-stone-200 bg-white hover:bg-stone-50"}`}
-            >
-              <span className="flex items-center justify-between gap-2">
-                <span className="truncate font-semibold text-stone-800">{staff ? `${x.name}さん（${x.prefecture}）` : `相談（${when(x.createdAt)}）`}</span>
-                {x.unread > 0 && <span className="rounded-full bg-orange-500 px-1.5 text-[11px] font-bold text-white">{x.unread}</span>}
-              </span>
-              <span className="block text-xs text-stone-500">最終更新 {when(x.updatedAt)}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
+    <div className={list ? "grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]" : ""}>
+      {list && (
+        <ul className="space-y-1">
+          {items.map((x) => (
+            <li key={x.id}>
+              <button
+                type="button"
+                onClick={() => pick(x.id)}
+                className={`w-full rounded-lg border px-3 py-2 text-left text-sm ${x.id === cur.id ? "border-teal-600 bg-teal-50" : "border-stone-200 bg-white hover:bg-stone-50"}`}
+              >
+                <span className="flex items-center justify-between gap-2">
+                  <span className="truncate font-semibold text-stone-800">{staff ? `${x.name}さん（${x.prefecture}）` : `相談（${when(x.createdAt)}）`}</span>
+                  {x.unread > 0 && <span className="rounded-full bg-orange-500 px-1.5 text-[11px] font-bold text-white">{x.unread}</span>}
+                </span>
+                <span className="block text-xs text-stone-500">最終更新 {when(x.updatedAt)}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className={loading ? "opacity-60" : ""}>
         <ConsultThread key={cur.id} item={cur} staff={staff} onChange={onChange} />
       </div>

@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { Choice, Counter } from "../inputs";
 
-const { FinishBar, nextQuestion } = await import("../Hearing");
+const { FinishBar, UnansweredTips, nextQuestion } = await import("../Hearing");
 
 describe("答えたあとに送る先の質問（nextQuestion）", () => {
   const all = ["q1", "q2", "q3"];
@@ -54,20 +54,31 @@ const phoneText = (html: string) =>
 const disabledBtn = /<button[^>]*\sdisabled=""/;
 
 describe("画面の下の「次へ」の帯（FinishBar）", () => {
-  it("ボタンの文はそのまま。折り返さず、縮まない", () => {
+  it("ボタンの文は短く、折り返さず、縮まない", () => {
     const html = bar({ unanswered: 3 });
-    expect(html).toContain("次へ（マイページへ） →");
+    expect(html).toContain("マイページへ →");
     expect(html).toMatch(/<button[^>]*class="[^"]*shrink-0[^"]*whitespace-nowrap/);
     expect(html).toContain('id="hearing-finish"');
   });
 
-  it("スマホでは、まだ選んでいない質問の数だけを短く出し、長い説明は sm 以上だけに出す", () => {
+  it("パソコンでもスマホでも、まだ選んでいない質問の数だけを短く出す（理由は下の Tips に畳む）", () => {
     const html = bar({ unanswered: 3 });
-    expect(html).toMatch(/<span class="sm:hidden">選んでいない質問があと(<!-- -->)?3(<!-- -->)?問<\/span>/);
-    expect(html).toMatch(/<span class="hidden sm:inline">まだ選んでいない質問があと(<!-- -->)?3(<!-- -->)?問あります。.*仮の答えで手続きを出すため/);
+    // 幅で出し分ける文はない
+    expect(html).not.toContain("sm:hidden");
+    expect(html).not.toContain("hidden sm:inline");
     const phone = phoneText(html);
     expect(phone).toBe("選んでいない質問があと3問");
-    expect(phone).not.toContain("仮の答え");
+    expect(html).not.toContain("仮の答え");
+  });
+
+  it("選んでいない質問があるときの理由は、パソコンでもスマホでも畳んだ Tips で読める", () => {
+    const tips = renderToStaticMarkup(createElement(UnansweredTips));
+    expect(tips).toMatch(/^<details class="[^"]*">/);
+    expect(tips).not.toContain("sm:hidden");
+    expect(tips).not.toMatch(/<details[^>]*open/);
+    expect(tips).toContain("Tips：選んでいない質問があるときは");
+    expect(tips).toContain("仮の答えで手続きを出すため、必要な手続きが抜けることがあります");
+    expect(tips).toContain("答えはあとから変えられます。");
   });
 
   it("10問以上でも数え方は「問」（「16つ」のようにならない）", () => {
@@ -76,7 +87,7 @@ describe("画面の下の「次へ」の帯（FinishBar）", () => {
     expect(html).not.toMatch(/\d(<!-- -->)?つ/);
   });
 
-  it("スマホで見える文はどれも短い（帯を低くして、後ろのボタンを隠さない）", () => {
+  it("帯の文はどれも短い（帯を低くして、後ろのボタンを隠さない）", () => {
     for (const p of [{ dateOk: false }, { unanswered: 12 }, { unanswered: 0 }]) {
       expect(phoneText(bar(p)).length).toBeLessThanOrEqual(16);
     }

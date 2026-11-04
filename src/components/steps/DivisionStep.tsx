@@ -65,7 +65,7 @@ export function DivisionStep() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-stone-600">財産を1件ずつ、誰が受け取るかを選んでください。</p>
+        <p className="text-sm text-stone-600">財産ごとに、受け取る人を選びます。</p>
         {/* 決まった分け方として計算される（配偶者の税額軽減・小規模宅地等の特例も使う）ので、「まだ決まっていない」のときは出さない */}
         {!data.undivided && (
           <Button variant="secondary" onClick={() => update(legalShareDivision)}>
@@ -73,11 +73,10 @@ export function DivisionStep() {
           </Button>
         )}
       </div>
-      <Check
-        checked={!!data.undivided}
-        onChange={(v) => update((c) => ({ ...c, undivided: v || undefined }))}
-        label="分け方がまだ決まっていない（決まっていない財産は法定相続分で計算します）"
-      />
+      <div>
+        <Check checked={!!data.undivided} onChange={(v) => update((c) => ({ ...c, undivided: v || undefined }))} label="分け方がまだ決まっていない" />
+        {data.undivided && <p className="mt-1 pl-6 text-xs text-stone-500">決まっていない財産は法定相続分で計算します。</p>}
+      </div>
       {heirs.length === 0 && <Note tone="warn">先に「相続人」で家族を登録してください。</Note>}
       <ol className="space-y-4">
         {divisible.map((a, i) => (
@@ -87,7 +86,7 @@ export function DivisionStep() {
       {heirs.length > 0 && <CompensationList living={heirs} />}
 
       {result && (
-        <Card title="この分け方での各人の取得額と相続税">
+        <Card title="この分け方での相続税">
           <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {result.persons.map((p) => (
               <li key={p.person.id} className="rounded-lg border border-stone-200 p-3 text-sm">
@@ -104,7 +103,7 @@ export function DivisionStep() {
             家族全体で納める相続税 <span className="text-lg font-bold tabular-nums text-teal-800">{fmt(result.totalPayable)}円</span>
           </p>
           {data.assets.some((a) => a.kind === "insurance" || a.kind === "retirement") && (
-            <p className="mt-2 text-xs text-stone-500">生命保険金・死亡退職金は受取人が受け取るため、ここでは分けません（非課税枠を差し引いて計算に入れています）。</p>
+            <p className="mt-2 text-xs text-stone-500">生命保険金・死亡退職金は受取人のものなので、ここでは分けません。</p>
           )}
         </Card>
       )}
@@ -119,7 +118,7 @@ export function DivisionStep() {
 
 type ChoiceMode = "one" | "many" | "undecided";
 
-/** 財産1件の分け方：「1人が全部」「複数人で分ける」「まだ決まっていない」から選ぶ */
+/** 財産1件の分け方：「1人」（1人が全部）「複数人」（複数人で分ける）「未定」（まだ決まっていない）から選ぶ */
 function AssetChoice({ no, assetId, heirs, evenHeirs }: { no: number; assetId: string; heirs: Person[]; evenHeirs: Person[] }) {
   const { data, update, result } = useCase();
   const a = data.assets.find((x) => x.id === assetId)!;
@@ -169,16 +168,15 @@ function AssetChoice({ no, assetId, heirs, evenHeirs }: { no: number; assetId: s
           {line && <p className="tabular-nums text-stone-700">{fmt(line.valuation.value)}円</p>}
         </div>
       </div>
-      <p className="mt-3 text-sm font-semibold text-stone-700">誰が受け取りますか？</p>
-      <div className="mt-2 grid grid-cols-3 gap-2">
+      <div className="mt-3 grid grid-cols-3 gap-2" role="group" aria-label="受け取る人">
         {(
           [
-            ["one", "1人が全部"],
-            ["many", "複数人で分ける"],
-            ["undecided", "まだ決まっていない"],
+            ["one", "1人"],
+            ["many", "複数人"],
+            ["undecided", "未定"],
           ] as const
         ).map(([k, l]) => (
-          <button key={k} type="button" onClick={() => choose(k)} className={`rounded-lg border px-2 py-2 text-sm ${mode === k ? "border-brand bg-brand-soft font-bold text-stone-900" : "border-stone-300 bg-white text-stone-700 hover:bg-stone-50"}`}>
+          <button key={k} type="button" onClick={() => choose(k)} aria-pressed={mode === k} className={`rounded-lg border px-2 py-2 text-sm ${mode === k ? "border-brand bg-brand-soft font-bold text-stone-900" : "border-stone-300 bg-white text-stone-700 hover:bg-stone-50"}`}>
             {l}
           </button>
         ))}
@@ -200,7 +198,7 @@ function AssetChoice({ no, assetId, heirs, evenHeirs }: { no: number; assetId: s
 
       {mode === "many" && (
         <div className="mt-3 space-y-2">
-          <p className="text-xs text-stone-500">それぞれの割合を「1/2」「1/3」のように入れてください。合計が1になるようにします。</p>
+          <p className="text-xs text-stone-500">割合を「1/2」のように入れます（合計1）。</p>
           <ul className="space-y-1.5">
             {heirs.map((h) => (
               <li key={h.id} className="flex items-center justify-between gap-3">
@@ -224,7 +222,7 @@ function AssetChoice({ no, assetId, heirs, evenHeirs }: { no: number; assetId: s
 
       {mode === "undecided" && !data.undivided && (
         <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          決まったら、ここで選び直してください。申告期限までに決まらないときは、上の「分け方がまだ決まっていない」にチェックを入れると、法定相続分で計算します。
+          申告期限までに決まらないときは、上の「分け方がまだ決まっていない」にチェックします。
         </p>
       )}
     </li>
@@ -251,9 +249,9 @@ function CompensationList({ living }: { living: Person[] }) {
 
   return (
     <details open={open} onToggle={(e) => setOpen(e.currentTarget.open)} className="rounded-xl border border-stone-200 bg-white p-4 shadow-sm">
-      <summary className="cursor-pointer font-bold text-stone-800">代償金（財産を多く受け継いだ人が、ほかの人にお金を払う）</summary>
+      <summary className="cursor-pointer font-bold text-stone-800">代償金（多く受け継いだ人が払うお金）</summary>
       <div className="mt-3 space-y-2">
-        <p className="text-xs text-stone-500">払う人の受け取る財産から差し引き、受け取る人の財産に足して計算します。</p>
+        <p className="text-xs text-stone-500">払う人の財産から引き、受け取る人の財産に足して計算します。</p>
         {rows.map((x, i) => (
           <div key={i} className="grid items-end gap-2 rounded-lg border border-stone-200 p-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
             <Field label="払う人">

@@ -126,7 +126,7 @@ export function judgeSmallResidential(
   }
   if (!c.special) return ASK;
   if (c.special !== "no") return { result: "consult", reason: "老人ホームへの入居・二世帯住宅・一部の賃貸などがある場合は、使える範囲の判断が難しいため税理士に確認してください。" };
-  if (acquirer.relation === "spouse") return { result: "ok", reason: "配偶者が取得する自宅の敷地は、ほかの条件なしで特例を使えます。" };
+  if (acquirer.relation === "spouse") return { result: "ok", reason: "配偶者が取得するので使えます。" };
   if (!c.livedTogether) return ASK;
   if (c.livedTogether !== "yes")
     return {

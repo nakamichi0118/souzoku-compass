@@ -17,10 +17,10 @@ export function StepBar({ current }: { current: string }) {
   useEffect(() => centerCurrent(navRef.current), [current]);
   return (
     <div className="border-b border-stone-200 bg-white">
-      <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-2">
-        <span className="hidden shrink-0 text-xs font-bold text-stone-500 sm:inline">相続税申告</span>
+      <div className="mx-auto flex max-w-6xl items-center px-4 py-2">
         <nav ref={navRef} aria-label="進捗" className="min-w-0 flex-1 overflow-x-auto">
-          <ol className="flex min-w-max items-center gap-1">
+          {/* パソコン（lg 以上）では8つとも短い名前を出す。それより狭い画面では、いまのステップだけ名前を出し、ほかは番号だけにして1行に収める */}
+          <ol className="flex min-w-max items-center gap-0.5 lg:gap-1">
             {STEPS.map((s, i) => {
               const state = i === idx ? "current" : done.has(s.slug) ? "done" : "todo";
               return (
@@ -29,7 +29,7 @@ export function StepBar({ current }: { current: string }) {
                     href={`/case/${s.slug}`}
                     aria-current={state === "current" ? "step" : undefined}
                     title={s.title}
-                    className={`flex items-center gap-1.5 rounded-full py-1 text-xs font-medium sm:px-2.5 sm:text-sm ${state === "current" ? "px-2.5" : "px-1"} ${
+                    className={`flex items-center gap-1.5 rounded-full py-1 text-xs font-medium lg:px-2.5 lg:text-sm ${state === "current" ? "px-2.5" : "px-0.5"} ${
                       state === "current"
                         ? "bg-teal-700 text-white"
                         : state === "done"
@@ -44,11 +44,9 @@ export function StepBar({ current }: { current: string }) {
                     >
                       {state === "done" ? "✓" : i + 1}
                     </span>
-                    <span className="hidden sm:inline">{s.title}</span>
-                    {/* スマホでは、いまのステップだけ名前を出し、ほかは番号だけにして7つを1行に収める */}
-                    <span className={state === "current" ? "sm:hidden" : "sr-only sm:hidden"}>{s.short}</span>
+                    <span className={state === "current" ? "whitespace-nowrap" : "sr-only lg:not-sr-only lg:whitespace-nowrap"}>{s.short}</span>
                   </Link>
-                  {i < STEPS.length - 1 && <span className="mx-0.5 hidden h-px w-3 bg-stone-300 sm:block" aria-hidden />}
+                  {i < STEPS.length - 1 && <span className="mx-0.5 hidden h-px w-3 bg-stone-300 lg:block" aria-hidden />}
                 </li>
               );
             })}

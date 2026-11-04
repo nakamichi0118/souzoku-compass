@@ -27,17 +27,13 @@ export default function FirmPage() {
   return (
     <main className="mx-auto max-w-6xl space-y-5 px-4 py-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold text-sky-950">届いた相談</h1>
         <FirmBadge />
-        <span className="text-sm text-stone-600">事務所の画面（相続コンパスからの相談）</span>
       </div>
       {ready && !user ? (
-        <p className="text-sm">
-          事務所のアカウントで
-          <Link href="/login" className="mx-1 font-semibold text-teal-800 underline">
-            ログイン
-          </Link>
-          してください。
-        </p>
+        <Link href="/login" className="inline-block rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800">
+          事務所のアカウントでログイン
+        </Link>
       ) : err ? (
         <p className="text-sm text-red-700">{err}</p>
       ) : items === null ? (
@@ -45,7 +41,7 @@ export default function FirmPage() {
       ) : (
         <>
           <button type="button" onClick={load} className="text-sm font-semibold text-teal-800 underline">
-            新しい相談を読み込む
+            更新
           </button>
           <ConsultInbox items={items} staff onChange={change} empty={<p className="text-sm text-stone-600">まだ相談は届いていません。</p>} />
         </>

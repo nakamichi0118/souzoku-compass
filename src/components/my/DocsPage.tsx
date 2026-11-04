@@ -9,7 +9,7 @@ import { Reader } from "@/components/extract/Reader";
 import { OfficeLookup } from "@/components/plan/OfficeLookup";
 import { AppShell, PageHead } from "@/components/shell/AppShell";
 import { Panel } from "@/components/ui/Panel";
-import { jpDate } from "@/domain/procedures/dates";
+import { jpDate, yearOf } from "@/domain/procedures/dates";
 import { DOCS, type DocCategory } from "@/domain/procedures/documents";
 import { useOverall, useRequireHearing, type DocItem } from "@/lib/overall";
 import { usePlan, type ItemStatus } from "@/lib/planStore";
@@ -20,6 +20,9 @@ import { RowStatus } from "./StatusButtons";
 /** 亡くなった方の住所で請求先が決まる書類 */
 const LOOKUP = new Set(["juminhyoJokyo", "hyokaCert", "nayose", "houteiJoho"]);
 const ORDER: DocCategory[] = ["戸籍・住民票", "預貯金", "保険", "不動産", "株式", "年金・税金", "その他"];
+
+/** 今年なら「3月24日（火）」、違う年なら「2027年1月15日（金）」 */
+const shortDate = (d: string, today: string) => (yearOf(d) === yearOf(today) ? jpDate(d).replace(/^\d+年/, "") : jpDate(d));
 
 /** 書類のカードの id（「今集めるべき書類」から、同じ書類をもう一度押したときに探す） */
 export const docAnchor = (id: string) => `doc-${id}`;
@@ -40,31 +43,47 @@ function DocCard({ item, address, open, onOpen, focus }: { item: DocItem; addres
   };
   const st: ItemStatus = item.done ? "done" : item.na ? "na" : "open";
   return (
-    <li ref={ref} id={docAnchor(item.id)} className={`rounded-xl border bg-white ${focus ? "border-sky-500 ring-2 ring-sky-100" : item.done ? "border-emerald-200" : "border-stone-200"}`}>
+    // そろった書類は、緑ではなくグレーの地で見せる（チェックもグレー）
+    <li ref={ref} id={docAnchor(item.id)} className={`rounded-xl border ${focus ? "border-sky-500 bg-white ring-2 ring-sky-100" : item.done ? "border-stone-200 bg-stone-50" : "border-stone-200 bg-white"}`}>
       <div className="flex items-start gap-3 p-4">
         <span className="-mt-1.5">
-          <RowStatus status={st} onChange={setSt} label={doc.name} />
+          <RowStatus status={st} onChange={setSt} label={doc.name} muted />
         </span>
         <button type="button" onClick={() => onOpen(!open)} className="min-w-0 flex-1 text-left" aria-expanded={open}>
           <p className={`font-bold ${item.done || item.na ? "text-stone-500" : "text-stone-900"}`}>
             {doc.name}
-            {doc.readable && <span className="ml-2 rounded-full bg-teal-100 px-2 py-0.5 text-[11px] font-bold text-teal-800">読み取りできます</span>}
+            {doc.readable && <span className="ml-2 whitespace-nowrap rounded-full bg-teal-100 px-2 py-0.5 text-[11px] font-bold text-teal-800">読み取り可</span>}
           </p>
-          <p className="mt-0.5 text-xs text-stone-500">使う手続き：{item.used.map((t) => t.title).join("／")}</p>
+          {/* 閉じたときは件数だけ（1件なら名前）。一覧は開いたときに出す */}
+          {item.used.length > 0 && <p className="mt-0.5 text-xs text-stone-500">{item.used.length === 1 ? `${item.used[0].title}で使う` : `${item.used.length}件の手続きで使う`}</p>}
         </button>
-        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${item.done ? "bg-emerald-100 text-emerald-800" : item.na ? "bg-stone-200 text-stone-600" : "bg-stone-100 text-stone-600"}`}>{item.done ? "✓ そろった" : item.na ? "不要" : "まだ"}</span>
       </div>
       {open && (
         <div className="space-y-3 border-t border-stone-100 px-4 py-4 text-sm leading-relaxed text-stone-700 sm:pl-12">
           {item.done && doc.readable && (
             <div className="flex items-start gap-2">
               <CompassAvatar size={36} />
-              <Bubble>そろいましたね！書類をアップロードすると、ボクが金額を読み取って財産に登録します。</Bubble>
+              <Bubble>そろいましたね！アップロードすると金額を読み取ります。</Bubble>
             </div>
           )}
           {doc.readable && <Reader docId={item.id} onRegistered={() => setStatus(key, "done")} />}
           <p>{doc.purpose}</p>
-          <dl className="grid gap-x-4 gap-y-1 sm:grid-cols-[6rem_1fr]">
+          <dl className="grid gap-x-4 gap-y-1 sm:grid-cols-[7rem_1fr]">
+            {item.used.length > 0 && (
+              <>
+                <dt className="font-semibold text-stone-500">使う手続き</dt>
+                <dd>
+                  {item.used.map((t, i) => (
+                    <span key={t.id}>
+                      {i > 0 && "／"}
+                      <Link href={`/my/tasks?id=${t.id}`} className="text-sky-800 underline hover:text-sky-950">
+                        {t.title}
+                      </Link>
+                    </span>
+                  ))}
+                </dd>
+              </>
+            )}
             <dt className="font-semibold text-stone-500">どこに請求</dt>
             <dd>{doc.where}</dd>
             <dt className="font-semibold text-stone-500">請求の方法</dt>
@@ -75,7 +94,8 @@ function DocCard({ item, address, open, onOpen, focus }: { item: DocItem; addres
                 <dd>{doc.need.join("、")}</dd>
               </>
             )}
-            <dt className="font-semibold text-stone-500">手数料</dt>
+            {/* 手数料・請求方法は一般的な目安（自治体や金融機関で異なる） */}
+            <dt className="font-semibold text-stone-500">手数料（目安）</dt>
             <dd>{doc.fee}</dd>
           </dl>
           {doc.tip && <p className="rounded-lg bg-amber-50 px-3 py-2 text-amber-900">{doc.tip}</p>}
@@ -111,6 +131,17 @@ export function DocsPage() {
   // 期限の早い手続きで使う、まだそろっていない書類
   const soon = [...o.docs].filter((d) => !d.done && !d.na).sort((a, b) => (a.used[0]?.date ?? "").localeCompare(b.used[0]?.date ?? "")).slice(0, 4);
   const shown = cat === "すべて" ? cats : [cat];
+  // 聞き取りで「ない」と答えた財産（見つかったら登録してもらう）
+  const notYet = (
+    [
+      ["預貯金（ネット銀行・ゆうちょも）", o.iv.deposits > 0],
+      ["株式・投資信託", o.iv.securities > 0],
+      ["生命保険金", o.iv.insurance > 0],
+      ["土地・建物（自宅以外も）", o.iv.homeValue + o.iv.otherRealEstate > 0],
+    ] as const
+  )
+    .filter(([, has]) => !has)
+    .map(([label]) => label);
 
   return (
     <AppShell wide>
@@ -118,7 +149,7 @@ export function DocsPage() {
         title="資料集め"
         say={
           <>
-            あなたの手続きで必要な書類は <strong>{o.docs.length}種類</strong>、そろったのは {o.doneDocs}種類です。残高証明書などはアップロードすると、ボクが読み取ります！
+            <strong>{o.docs.length}種類</strong>中、{o.doneDocs}種類そろいました。
           </>
         }
       />
@@ -132,7 +163,7 @@ export function DocsPage() {
               <button type="button" onClick={() => setCat(cat === k ? "すべて" : k)} className={`w-full rounded-xl border p-3 text-center ${cat === k ? "border-sky-500 bg-sky-50" : "border-sky-100 bg-white hover:bg-sky-50/50"}`}>
                 <CatIcon k={k} className="mx-auto h-6 w-6" />
                 <p className="text-sm font-semibold text-stone-800">{k}</p>
-                <p className={`text-xs tabular-nums ${n === live.length ? "font-bold text-emerald-700" : "text-stone-500"}`}>{n === live.length ? "✓ そろった" : `${n}/${live.length}`}</p>
+                <p className={`text-xs tabular-nums text-stone-500 ${n === live.length ? "font-bold" : ""}`}>{n === live.length ? "✓ そろった" : `${n}/${live.length}`}</p>
               </button>
             </li>
           );
@@ -140,29 +171,16 @@ export function DocsPage() {
       </ul>
 
       <details className="mb-5 rounded-xl border border-teal-200 bg-white p-4">
-        <summary className="cursor-pointer font-bold text-teal-900">どの書類でもアップロードして読み取る（葬儀の領収書・税金の通知書・贈与の契約書など）</summary>
+        <summary className="cursor-pointer font-bold text-teal-900">ほかの書類も読み取る（葬儀の領収書など）</summary>
         <div className="mt-3">
+          <p className="mb-2 text-sm text-stone-600">税金の通知書・贈与の契約書なども読み取れます。</p>
           <Reader />
         </div>
       </details>
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="space-y-6">
-          {shown.map((k) => (
-            <section key={k}>
-              <h2 className="mb-2 flex items-center gap-2 font-bold text-sky-950">
-                <CatIcon k={k} className="h-5 w-5" /> {k}
-              </h2>
-              <ul className="space-y-2">
-                {(o.byCategory.get(k) ?? []).map((d) => (
-                  <DocCard key={d.id} item={d} address={o.iv.address} open={!!opened[d.id]} onOpen={(v) => setOpened((x) => ({ ...x, [d.id]: v }))} focus={focus === d.id} />
-                ))}
-              </ul>
-            </section>
-          ))}
-          <p className="text-xs text-stone-500">手数料・請求方法は一般的な目安です。自治体や金融機関によって異なります。</p>
-        </div>
-        <div className="space-y-5">
+      {/* スマホでは「今集めるべき書類」を書類の一覧より上に出す。パソコンでは右の列の上（2行目を伸ばして、右の枠どうしの間を空けない） */}
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem] lg:grid-rows-[auto_1fr]">
+        <div className="lg:col-start-2 lg:row-start-1">
           <Panel title="今集めるべき書類">
             {soon.length === 0 ? (
               <p className="text-sm text-emerald-700">すべてそろいました！</p>
@@ -182,43 +200,41 @@ export function DocsPage() {
                       className="block w-full rounded-lg px-2 py-1 text-left hover:bg-stone-50"
                     >
                       <span className="block font-semibold text-stone-800">{DOCS[d.id].name}</span>
-                      <span className="text-xs text-stone-500">
-                        {d.used[0] ? `「${d.used[0].title}」（${jpDate(d.used[0].date)}）で使います` : ""}
-                      </span>
+                      <span className="text-xs text-stone-500">{d.used[0] ? `${shortDate(d.used[0].date, o.now)}・${d.used[0].title}` : ""}</span>
                     </button>
                   </li>
                 ))}
               </ul>
             )}
           </Panel>
-          <Panel title="ほかに財産はありませんか？">
-            <p className="text-sm text-stone-600">聞き取りで答えなかった財産が見つかったら、登録してください。必要な手続きと書類がここに自動で追加されます。</p>
-            <ul className="mt-2 space-y-1 text-sm">
-              {[
-                ["預貯金（ネット銀行・ゆうちょも）", o.iv.deposits > 0],
-                ["株式・投資信託", o.iv.securities > 0],
-                ["生命保険金", o.iv.insurance > 0],
-                ["土地・建物（自宅以外も）", o.iv.homeValue + o.iv.otherRealEstate > 0],
-              ]
-                .filter(([, has]) => !has)
-                .map(([label]) => (
-                  <li key={String(label)} className="flex items-center justify-between gap-2">
-                    <span className="text-stone-700">{label}</span>
-                    <Link href="/case/assets" className="shrink-0 py-1.5 text-xs font-semibold text-sky-700 hover:underline">
-                      見つかったら登録 ›
-                    </Link>
-                  </li>
+        </div>
+        <div className="space-y-6 lg:col-start-1 lg:row-span-2 lg:row-start-1">
+          {shown.map((k) => (
+            <section key={k}>
+              <h2 className="mb-2 flex items-center gap-2 font-bold text-sky-950">
+                <CatIcon k={k} className="h-5 w-5" /> {k}
+              </h2>
+              <ul className="space-y-2">
+                {(o.byCategory.get(k) ?? []).map((d) => (
+                  <DocCard key={d.id} item={d} address={o.iv.address} open={!!opened[d.id]} onOpen={(v) => setOpened((x) => ({ ...x, [d.id]: v }))} focus={focus === d.id} />
                 ))}
-            </ul>
-            <p className="mt-2 text-xs text-stone-500">見落としやすいもの：郵便物・通帳・スマホのアプリ、市区町村の「名寄帳」で分かる土地、証券保管振替機構への照会で分かる株式。</p>
-          </Panel>
-          <Panel title="コンパスくんのおすすめ">
-            <ul className="list-disc space-y-2 pl-4 text-sm leading-relaxed text-stone-700">
-              <li>戸籍は「広域交付」を使うと、最寄りの役所で亡くなった方の出生から死亡までをまとめて取れます。</li>
-              <li>「法定相続情報一覧図」を法務局で作ると、銀行や登記で戸籍の束の代わりに使えて便利です（無料）。</li>
-              <li>残高証明書は「亡くなった日現在」で、既経過利息も一緒に書いてもらうよう頼みましょう。</li>
-              <li>固定資産評価証明書は、相続登記の登録免許税の計算にも使います。</li>
-            </ul>
+              </ul>
+            </section>
+          ))}
+        </div>
+        <div className="lg:col-start-2 lg:row-start-2">
+          <Panel title="ほかに財産はありませんか？">
+            <p className="text-sm text-stone-600">見つかったら登録すると、必要な書類がここに増えます。</p>
+            {notYet.length > 0 && (
+              <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-stone-700">
+                {notYet.map((label) => (
+                  <li key={label}>{label}</li>
+                ))}
+              </ul>
+            )}
+            <Link href="/case/assets" className="mt-3 inline-block rounded-lg border border-sky-300 px-3 py-1.5 text-sm font-semibold text-sky-800 hover:bg-sky-50">
+              財産を登録する ›
+            </Link>
           </Panel>
         </div>
       </div>

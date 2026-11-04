@@ -127,7 +127,7 @@ export function PointControls({
   return (
     <div className="space-y-2">
       <p className="text-xs text-stone-600">
-        {what}と地図で同じ場所（交差点の角など）を、{what}→地図の順にクリックします。離れた2か所以上で合わせると正確です。
+        {what}→地図の順に、同じ場所（交差点の角など）をクリック。離れた2か所以上で正確になります。
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <Button onClick={() => setMode(mode === "idle" ? "sheetPoint" : "idle")} disabled={!sheet} variant={mode === "idle" ? "secondary" : "primary"}>

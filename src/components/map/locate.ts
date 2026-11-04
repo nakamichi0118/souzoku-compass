@@ -134,7 +134,7 @@ export async function locateSheet(opts: {
     throw e;
   }
 
-  onStep?.("コンパスくんが、土地が載っている路線価図を探しています", { at: LOADED, until: ANSWERED, expectSec: ASK_SEC });
+  onStep?.("土地が載っている路線価図を探しています", { at: LOADED, until: ANSWERED, expectSec: ASK_SEC });
   const fd = new FormData();
   fd.append("map", map.blob, "map.png");
   fd.append("mapSize", `${map.width},${map.height}`);

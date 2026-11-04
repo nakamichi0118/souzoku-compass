@@ -5,7 +5,7 @@ import type { Task } from "@/domain/procedures/rules";
 import { showBelowHeader, topBelowHeader } from "../scroll";
 import { RowStatus } from "../StatusButtons";
 
-const { keepShown, listScrollFor, MemoBox, TaskRow, UploadPrompt } = await import("../TasksPage");
+const { keepShown, listScrollFor, MemoBox, rowDate, splitLead, TaskRow, tip, UploadPrompt } = await import("../TasksPage");
 
 describe("選んだ項目を見出しのすぐ下に出す（スマホ）", () => {
   it("要素の上の端を、固定した見出しの下から 8px あけたところに出す", () => {
@@ -120,14 +120,86 @@ const task: Task = {
 };
 
 describe("やることリストの行（TaskRow）", () => {
-  it("スマホで手続きの名前が数文字で切れないよう、2行まで出す", () => {
-    const html = renderToStaticMarkup(
-      createElement(TaskRow, { task, status: "open", selected: false, hasMemo: false, now: "2026-11-03", onMark: () => {}, onSelect: () => {} }),
+  const rowHtml = (p: { task?: Task; status?: "open" | "done" | "na"; now?: string; showDept?: boolean } = {}) =>
+    renderToStaticMarkup(
+      createElement(TaskRow, { task: p.task ?? task, status: p.status ?? "open", selected: false, hasMemo: false, now: p.now ?? "2026-11-03", showDept: p.showDept, onMark: () => {}, onSelect: () => {} }),
     );
+  const text = (html: string) => html.replace(/<[^>]+>/g, "");
+
+  it("スマホで手続きの名前が数文字で切れないよう、2行まで出す", () => {
+    const html = rowHtml();
     expect(html).toMatch(/<p class="line-clamp-2 font-semibold[^"]*">遺産分割協議と協議書の作成<\/p>/);
     expect(html).not.toMatch(/class="truncate font-semibold/);
     // カレンダーなどから開いたときに、一覧をこの行まで送るための目印
     expect(html).toMatch(/^<li data-task="division" /);
+  });
+
+  it("2行目は「目安 12月1日（火）」だけ。分類は出さず、今年の日付は年を省く（スマホでも日付が切れない）", () => {
+    const t2 = text(rowHtml());
+    expect(t2).toContain("目安 12月1日（火）");
+    expect(t2).not.toContain("調べる・決める");
+    expect(t2).not.toContain("2026年");
+    // 来年以降の日付は年もつける
+    expect(text(rowHtml({ task: { ...task, date: "2027-01-15", hard: true } }))).toContain("期限 2027年1月15日（金）");
+  });
+
+  it("窓口ごとの表示では、担当課の名前は残す", () => {
+    expect(text(rowHtml({ task: { ...task, dept: "戸籍の窓口" }, showDept: true }))).toContain("戸籍の窓口・目安 12月1日（火）");
+  });
+
+  it("札は期限を過ぎたときの「N日超過」だけ。「未着手」「期限あり」「✓ 完了」は出さない", () => {
+    expect(text(rowHtml())).not.toMatch(/未着手|期限あり|完了$/);
+    const hard = rowHtml({ task: { ...task, hard: true } });
+    expect(text(hard)).not.toContain("期限あり");
+    // 期限のある手続きは、日付をオレンジの太字にして示す
+    expect(hard).toMatch(/<span class="font-semibold text-orange-700">期限 (<!-- -->)?12月1日（火）<\/span>/);
+    expect(text(rowHtml({ status: "done" }))).not.toContain("✓ 完了");
+    const late = rowHtml({ now: "2026-12-04" });
+    expect(late).toMatch(/<span class="shrink-0 rounded-full [^"]*bg-rose-100[^"]*">3日超過<\/span>/);
+    // 済ませた手続きは、過ぎていても札を出さない
+    expect(text(rowHtml({ status: "done", now: "2026-12-04" }))).not.toContain("超過");
+  });
+
+  it("済んだ手続きは緑ではなくグレーで見せる", () => {
+    const html = rowHtml({ status: "done" });
+    expect(html).not.toMatch(/emerald/);
+    expect(html).toContain("accent-stone-500");
+    expect(html).toMatch(/text-stone-400 line-through/);
+  });
+});
+
+describe("一覧の行の日付（rowDate）", () => {
+  it("今年なら月日と曜日だけ、ほかの年は年から", () => {
+    expect(rowDate("2026-11-15", "2026-11-04")).toBe("11月15日（日）");
+    expect(rowDate("2027-01-15", "2026-11-04")).toBe("2027年1月15日（金）");
+    expect(rowDate("2025-12-31", "2026-01-02")).toBe("2025年12月31日（水）");
+  });
+});
+
+describe("詳細の説明文（splitLead）", () => {
+  it("最初の1文だけを見せ、残りは「詳しく」に回す", () => {
+    expect(splitLead("誰が何を受け継ぐかを相続人全員で決め、協議書に署名・実印を押します。期限の2か月前を目安にしています。")).toEqual([
+      "誰が何を受け継ぐかを相続人全員で決め、協議書に署名・実印を押します。",
+      "期限の2か月前を目安にしています。",
+    ]);
+  });
+  it("かっこの中の「。」では切らない。1文だけなら残りは空", () => {
+    expect(splitLead("口座が止まります（引き落としも止まります。）。残高証明書をもらいます。")).toEqual(["口座が止まります（引き落としも止まります。）。", "残高証明書をもらいます。"]);
+    expect(splitLead("亡くなってから満2年の命日に行う法要です。")).toEqual(["亡くなってから満2年の命日に行う法要です。", ""]);
+    expect(splitLead("句点なし")).toEqual(["句点なし", ""]);
+  });
+});
+
+describe("ワンポイント（tip）", () => {
+  it("目安の日がある手続きに「期限はありません」と出さない（日付の欄と食い違うため、決まり文句は出さない）", () => {
+    expect(tip(task)).toBeNull();
+    expect(tip({ ...task, hard: true, category: "税金" })).toBeNull();
+  });
+  it("葬儀・法要では、日付が一般的な目安であることを1文で伝える", () => {
+    const s = tip({ ...task, category: "葬儀・法要" })!;
+    expect(s).toContain("一般的な目安");
+    expect(s.match(/。/g)).toHaveLength(1);
+    expect(s).not.toContain("期限はありません");
   });
 });
 
@@ -150,6 +222,11 @@ describe("メモ欄（MemoBox）", () => {
   it("iPhone で入力したときに画面が拡大されないよう、スマホでは 16px の文字にする", () => {
     const html = renderToStaticMarkup(createElement(MemoBox, { value: "", onSave: () => {} }));
     expect(html).toMatch(/<textarea[^>]*class="[^"]*\btext-base\b[^"]*\bsm:text-sm\b/);
+  });
+
+  it("入力例は短いラベルにする", () => {
+    const html = renderToStaticMarkup(createElement(MemoBox, { value: "", onSave: () => {} }));
+    expect(html).toContain('placeholder="例：担当者・電話番号・郵送した日"');
   });
 });
 

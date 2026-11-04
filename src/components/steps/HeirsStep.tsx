@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Button, Card, Check, Field, Note, Select, TextInput, YenInput, fmt } from "@/components/ui";
 import { type HeirResult, determineHeirs, isSurchargeTarget } from "@/domain/heirs";
 import { toString as fracText } from "@/domain/fraction";
@@ -104,9 +105,9 @@ export function HeirsStep() {
 
   return (
     <div className="space-y-5">
-      <Note tone="info">最初の質問の答えから下書きしています。違っているところは、ここで直したり追加・削除したりできます（相続税の計算には、この画面の内容を使います）。</Note>
+      <Note tone="info">聞き取りの答えから下書きしました。違うところは直してください。</Note>
       <Card title="家族を追加する">
-        <p className="mb-3 text-sm text-stone-600">亡くなった方から見た関係を選んでください。先に亡くなった家族も、その子どもが相続人になる場合があるので追加してください。</p>
+        <p className="mb-3 text-sm text-stone-600">亡くなった方から見た関係を選びます。先に亡くなった家族も追加してください。</p>
         <div className="flex flex-wrap gap-2">
           {RELATIONS.map((r) => (
             <Button key={r.value} variant="secondary" onClick={() => add(r.value)} title={r.hint}>
@@ -149,36 +150,18 @@ export function HeirsStep() {
                 <Field label="フリガナ">
                   <TextInput value={p.kana ?? ""} onChange={(e) => patch(p.id, { kana: e.target.value })} />
                 </Field>
-                <Field label="続柄（書類に書く表記）" hint="例：妻、長男、二女、孫">
-                  <TextInput value={p.relationLabel ?? ""} onChange={(e) => patch(p.id, { relationLabel: e.target.value })} />
+                <Field label="続柄">
+                  <TextInput value={p.relationLabel ?? ""} onChange={(e) => patch(p.id, { relationLabel: e.target.value })} placeholder="例：妻、長男、二女、孫" />
                 </Field>
                 <Field label="生年月日" hint={[wareki(p.birthDate)?.text, age != null && !p.predeceased ? `相続開始時 ${age}歳` : ""].filter(Boolean).join(" / ")}>
                   <TextInput type="date" value={p.birthDate ?? ""} onChange={(e) => patch(p.id, { birthDate: e.target.value })} />
                 </Field>
-                {!p.predeceased && (
-                  <>
-                    <Field label="郵便番号">
-                      <TextInput value={p.zip ?? ""} onChange={(e) => patch(p.id, { zip: e.target.value })} placeholder="100-0001" />
-                    </Field>
-                    <Field label="電話番号">
-                      <TextInput value={p.phone ?? ""} onChange={(e) => patch(p.id, { phone: e.target.value })} placeholder="03-0000-0000" />
-                    </Field>
-                    <div className="sm:col-span-2">
-                      <Field label="住所">
-                        <TextInput value={p.address ?? ""} onChange={(e) => patch(p.id, { address: e.target.value })} />
-                      </Field>
-                    </div>
-                    <Field label="職業">
-                      <TextInput value={p.occupation ?? ""} onChange={(e) => patch(p.id, { occupation: e.target.value })} />
-                    </Field>
-                  </>
-                )}
                 {["grandchild", "greatGrandchild", "nephewNiece"].includes(p.relation) && (
-                  <Field label="代わりに相続する親（被代襲者）" hint="先に亡くなった親を選ぶと代襲相続人になります">
+                  <Field label="代わりに相続する親">
                     <Select
                       value={p.substituteOf ?? ""}
                       onChange={(v) => patch(p.id, { substituteOf: v || undefined })}
-                      options={[{ value: "", label: "代襲相続ではない" }, ...parentsFor(p).map((x) => ({ value: x.id, label: `${x.name || "（未入力）"}（${x.relationLabel ?? relLabel(x.relation)}）` }))]}
+                      options={[{ value: "", label: "代わりに相続する人ではない" }, ...parentsFor(p).map((x) => ({ value: x.id, label: `${x.name || "（未入力）"}（${x.relationLabel ?? relLabel(x.relation)}）` }))]}
                     />
                   </Field>
                 )}
@@ -195,6 +178,7 @@ export function HeirsStep() {
                     />
                   </Field>
                 )}
+                {!p.predeceased && <ContactFields p={p} patch={patch} />}
               </div>
               <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2">
                 {p.relation !== "other" && (
@@ -209,7 +193,7 @@ export function HeirsStep() {
                       <Check
                         checked={!!p.alsoSubstituteHeir}
                         onChange={(v) => patch(p.id, { alsoSubstituteHeir: v || undefined })}
-                        label="先に亡くなった子の代わりに相続する人（代襲相続人）でもある"
+                        label="先に亡くなった子の代わりに相続する人でもある"
                       />
                     )}
                     <Check
@@ -225,7 +209,7 @@ export function HeirsStep() {
               {p.relation === "adoptedChild" && p.grandchildAdopted && p.alsoSubstituteHeir && !p.predeceased && (
                 <div className="mt-3">
                   <Note tone="stop">
-                    養子としての立場と、先に亡くなった子の代わりに相続する立場の両方がある場合（二重の資格）は、相続分や相続税の計算が特殊になるため、相続コンパスでは計算できません。税理士にご相談ください。
+                    養子と、代わりに相続する人の両方にあたる場合は、計算が特殊なため相続コンパスでは計算できません。税理士にご相談ください。
                     <span className="mt-2 block">
                       <ConsultLink topic="二重の資格" />
                     </span>
@@ -242,7 +226,7 @@ export function HeirsStep() {
         <Card title="判定結果">
           <div className="grid gap-5 md:grid-cols-2">
             <div>
-              <h3 className="mb-2 text-sm font-bold text-stone-700">民法上の相続人と法定相続分</h3>
+              <h3 className="mb-2 text-sm font-bold text-stone-700">相続人と取り分</h3>
               <ul className="space-y-1 text-sm">
                 {civil.slots.map((s) => (
                   <li key={s.personIds.join()} className="flex justify-between border-b border-stone-100 py-1">
@@ -254,7 +238,7 @@ export function HeirsStep() {
               </ul>
             </div>
             <div>
-              <h3 className="mb-2 text-sm font-bold text-stone-700">相続税の計算に使う法定相続人</h3>
+              <h3 className="mb-2 text-sm font-bold text-stone-700">税の計算での人数</h3>
               <p className="text-3xl font-bold text-teal-800">
                 {tax.count}
                 <span className="ml-1 text-base font-normal">人</span>
@@ -270,12 +254,44 @@ export function HeirsStep() {
           ))}
           {civil.rank !== tax.rank && (
             <div className="mt-3">
-              <Note tone="warn">相続放棄により、民法上の相続人は第{civil.rank}順位に移りますが、相続税の計算は放棄がなかったものとして行います（相続税法15条2項）。</Note>
+              <Note tone="warn">相続放棄で、相続人は第{civil.rank}順位に移ります。ただし相続税の計算は、放棄がなかったものとして行います。</Note>
             </div>
           )}
         </Card>
       )}
     </div>
+  );
+}
+
+/**
+ * 住所・連絡先（書類に書くためだけの欄）。ふだんは畳み、入れてあれば見出しの横に1行で見せる。
+ * 開けばいままでと同じ4つの欄が出る
+ */
+function ContactFields({ p, patch }: { p: Person; patch: (id: string, p: Partial<Person>) => void }) {
+  const filled = [p.zip ? `〒${p.zip}` : "", p.address ?? "", p.phone ?? ""].filter(Boolean).join(" ");
+  return (
+    <details className="text-sm sm:col-span-3">
+      <summary className="cursor-pointer py-2 font-medium text-teal-800">
+        住所・連絡先（書類用）
+        {filled && <span className="ml-2 font-normal text-stone-600">{filled}</span>}
+      </summary>
+      <div className="grid gap-4 pt-2 sm:grid-cols-3">
+        <Field label="郵便番号">
+          <TextInput value={p.zip ?? ""} onChange={(e) => patch(p.id, { zip: e.target.value })} placeholder="100-0001" />
+        </Field>
+        <Field label="電話番号">
+          <TextInput value={p.phone ?? ""} onChange={(e) => patch(p.id, { phone: e.target.value })} placeholder="03-0000-0000" />
+        </Field>
+        <Field label="職業">
+          <TextInput value={p.occupation ?? ""} onChange={(e) => patch(p.id, { occupation: e.target.value })} />
+        </Field>
+        <div className="sm:col-span-3">
+          <Field label="住所">
+            <TextInput value={p.address ?? ""} onChange={(e) => patch(p.id, { address: e.target.value })} />
+          </Field>
+        </div>
+      </div>
+    </details>
   );
 }
 
@@ -363,27 +379,30 @@ function Deceased({
       </div>
       {after && (
         <Note tone="warn">
-          亡くなった方より<strong>後に</strong>亡くなっています。この場合、{p.name || "この方"}さんも相続人で、その相続分は{p.name || "この方"}さんの相続人が引き継ぎます（数次相続）。申告書の書き方が特殊になるため、税理士への相談をおすすめします。また、{p.name || "この方"}さんの相続では「相次相続控除」が使える場合がありますが、相続コンパスでは計算できません。
+          亡くなった方より<strong>後に</strong>亡くなっているので、{p.name || "この方"}さんも相続人です。その分は{p.name || "この方"}さんの相続人が引き継ぎます。申告書の書き方が特殊で、{p.name || "この方"}さんの相続での相次相続控除も相続コンパスでは計算できないため、税理士にご相談ください。
           <span className="mt-2 block">
             <ConsultLink topic="数次相続" />
           </span>
         </Note>
       )}
-      {same && <Note tone="warn">同じ日に亡くなっていて、どちらが先か分からない場合は、お互いに相続しないものとして扱います（民法32条の2）。税理士や司法書士への確認をおすすめします。</Note>}
+      {same && <Note tone="warn">同じ日に亡くなり、どちらが先か分からないときは、お互いに相続しないものとして扱います。税理士や司法書士に確認してください。</Note>}
       {!after && (
         <>
           {p.relation !== "parent" && p.relation !== "grandparent" && (
             <p className="text-xs text-stone-500">
-              亡くなった方が、この方の相続で10年以内に財産を受け取って相続税を納めていた場合は「相次相続控除」で相続税が少なくなります。「亡くなった方」の画面で選び、前の相続の内容を入れると計算します。
+              亡くなった方がこの方の相続で相続税を納めていたら、
+              <Link href="/case/decedent" className="mx-1 underline">
+                「亡くなった方」の画面
+              </Link>
+              で入れてください。
             </p>
           )}
           <p className="text-sm text-stone-700">
-            亡くなった方より先に亡くなった人は、相続人になりません。
             {p.relation === "spouse"
-              ? "配偶者の場合は、代わりに相続する人はいません。"
+              ? "先に亡くなった配偶者は相続人にならず、代わりに相続する人もいません。"
               : canSubstitute
-                ? `その代わりに、${p.name || "この方"}さんの子ども（${who}）が相続人になります（代襲相続）。`
-                : "父母・祖父母の場合は、代わりに相続する人はいません。"}
+                ? `${p.name || "この方"}さんの分は、子ども（${who}）が代わりに相続します。`
+                : "先に亡くなった父母・祖父母は相続人にならず、代わりに相続する人もいません。"}
           </p>
           {canSubstitute && (
             <div className="space-y-2">
@@ -407,8 +426,8 @@ function Deceased({
                   </Button>
                 </div>
               )}
-              {p.hasChildren === false && kids.length === 0 && <p className="text-xs text-stone-500">子どもがいなければ、この方の分はほかの相続人で分けます。</p>}
-              {p.relation === "sibling" && <p className="text-xs text-stone-500">兄弟姉妹の代襲は甥・姪までです（甥・姪の子は相続人になりません）。</p>}
+              {p.hasChildren === false && kids.length === 0 && <p className="text-xs text-stone-500">子どもがいなければ、ほかの相続人で分けます。</p>}
+              {p.relation === "sibling" && <p className="text-xs text-stone-500">兄弟姉妹の場合、代わりに相続するのは甥・姪までです。</p>}
             </div>
           )}
         </>

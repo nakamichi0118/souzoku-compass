@@ -55,7 +55,7 @@ export function OfficeLookup({ kind, dept, address, forProperty }: { kind: Offic
         <Link href="/my/hearing" className="text-sky-800 underline">
           亡くなった方の住所
         </Link>
-        を入れると、具体的な窓口と連絡先を表示します。
+        を入れると、窓口を調べられます。
       </p>
     );
 
@@ -113,7 +113,7 @@ export function OfficeLookup({ kind, dept, address, forProperty }: { kind: Offic
                 出典：{office.url}
               </a>
             )}
-            <p className="text-xs text-stone-500">コンパスくんが公式サイトで調べた内容です。行く前に公式サイトか電話で確認してください。</p>
+            <p className="text-xs text-stone-500">行く前に電話で確認してください。</p>
           </div>
         </div>
       ) : busy ? (
@@ -122,7 +122,7 @@ export function OfficeLookup({ kind, dept, address, forProperty }: { kind: Offic
       ) : (
         <button type="button" onClick={lookup} className="mt-2 inline-flex items-center gap-2 rounded-lg border border-sky-300 bg-white px-3 py-1.5 font-semibold text-sky-800 hover:bg-sky-50">
           <CompassAvatar size={22} />
-          住所・電話番号をコンパスくんに調べてもらう
+          窓口の住所・電話を調べる
         </button>
       )}
       {err && err.key === key && <p className="mt-1 text-rose-700">{err.text}</p>}

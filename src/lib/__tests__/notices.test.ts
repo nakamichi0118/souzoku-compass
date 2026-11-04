@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 // 保存の仕組み（画面用の部品を含む）は読み込まず、並び順だけを確かめる
 vi.mock("@/lib/cloud", () => ({ kvGet: () => null, kvSet: () => {} }));
 
+import { SYSTEM_NOTICES } from "@/data/systemNotices";
 import { compareNotices, personalNotices, type Notice } from "@/lib/notices";
 import type { useOverall } from "@/lib/overall";
 
@@ -35,5 +36,51 @@ describe("お知らせの並び順", () => {
       ],
     } as unknown as ReturnType<typeof useOverall>;
     expect(personalNotices(o).map((x) => x.id)).toEqual(["over:early", "over:late", "soon:soon:2026-11-10"]);
+  });
+});
+
+describe("あなたへのお知らせの文", () => {
+  const base = { loaded: true, heard: true, valid: true, closed: () => false };
+  it("期限を過ぎたものは「期限：日付」と、まず窓口に相談することを短く出す", () => {
+    const o = { ...base, now: "2026-11-03", main: [{ id: "death", title: "死亡届", date: "2026-10-20", hard: true }] } as unknown as ReturnType<typeof useOverall>;
+    const [x] = personalNotices(o);
+    expect(x.title).toBe("「死亡届」の期限を過ぎています");
+    expect(x.body).toBe("期限：2026年10月20日（火）。まずは窓口に相談しましょう。");
+  });
+  it("相続税の申告期限のお知らせは、日付だけを「期限：」で出す（ほかの期限のお知らせと同じ書き方）", () => {
+    const o = { ...base, now: "2026-11-04", main: [{ id: "inheritance-tax", title: "相続税の申告と納付", date: "2027-01-15", hard: true }] } as unknown as ReturnType<typeof useOverall>;
+    const tax = personalNotices(o).find((x) => x.id.startsWith("tax:"))!;
+    expect(tax.title).toBe("相続税の申告期限まであと72日です");
+    expect(tax.body).toBe("期限：2027年1月15日（金）");
+  });
+});
+
+describe("相続コンパスからのお知らせ（SYSTEM_NOTICES）", () => {
+  it("いちばん新しいお知らせは、画面の文字を減らしたこと。本文は1文", () => {
+    const [first] = SYSTEM_NOTICES;
+    expect(first).toMatchObject({ id: "2026-11-04-less-text", date: "2026-11-04", title: "画面の文字を減らし、見やすくしました" });
+    expect(first.body.match(/。/g)).toHaveLength(1);
+  });
+  it("id は重ならず、新しい順に並ぶ", () => {
+    expect(new Set(SYSTEM_NOTICES.map((n) => n.id)).size).toBe(SYSTEM_NOTICES.length);
+    const dates = SYSTEM_NOTICES.map((n) => n.date);
+    expect([...dates].sort().reverse()).toEqual(dates);
+  });
+  it("不具合を直したお知らせは1件にまとめる（区の路線価図の件も入れる）", () => {
+    const fixes = SYSTEM_NOTICES.filter((n) => /不具合/.test(n.title));
+    expect(fixes).toHaveLength(1);
+    expect(fixes[0].title).toBe("細かな不具合を直しました");
+    expect(fixes[0].body).toContain("路線価図");
+    expect(SYSTEM_NOTICES.some((n) => n.id === "2026-11-03-rosenka-ku")).toBe(false);
+  });
+  it("相次相続控除は計算できる（「計算できない」という古い文を残さない）", () => {
+    for (const n of SYSTEM_NOTICES) expect(n.body).not.toMatch(/相次相続控除は[^。]*計算できない/);
+    expect(SYSTEM_NOTICES.some((n) => n.body.includes("相次相続控除") && n.body.includes("計算できます"))).toBe(true);
+  });
+  it("タイトルは短く（25字まで）。申告書の「下書き」と相続登記の期限のお知らせは残す", () => {
+    for (const n of SYSTEM_NOTICES) expect(n.title.length).toBeLessThanOrEqual(25);
+    expect(SYSTEM_NOTICES.some((n) => n.body.includes("「下書き」"))).toBe(true);
+    expect(SYSTEM_NOTICES.some((n) => n.body.includes("2027年3月31日"))).toBe(true);
+    expect(SYSTEM_NOTICES.some((n) => n.body.includes("次の平日"))).toBe(true);
   });
 });

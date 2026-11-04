@@ -8,20 +8,22 @@ import { OfficeLookup } from "@/components/plan/OfficeLookup";
 import { AppHeader } from "@/components/shell/AppShell";
 import { Card, Field, Note, TextInput, YenInput } from "@/components/ui";
 import { jpDate, nextOpenDay, yearsDeadline } from "@/domain/procedures/dates";
+import { areaOf } from "@/domain/procedures/offices";
 import { buildRegistrations } from "@/domain/registration";
 import type { Asset, RegistryInfo } from "@/domain/types";
 import { useCase } from "@/lib/store";
 import { saveBlob } from "@/lib/download";
 
-const DOCS = [
-  ["登記事項証明書（登記簿謄本）", "申請書の「不動産の表示」を写すため。法務局・オンラインで取得"],
-  ["亡くなった方の出生から死亡までの戸籍謄本", "登記原因証明情報（法定相続情報一覧図の写しでも可）"],
-  ["相続人全員の戸籍謄本", "登記原因証明情報"],
-  ["亡くなった方の住民票の除票（または戸籍の附票）", "登記簿上の住所と同じ人であることの証明"],
-  ["遺産分割協議書と相続人全員の印鑑証明書", "登記原因証明情報（誰が取得するかの証明）"],
-  ["不動産を取得する人の住民票", "住所証明情報"],
-  ["固定資産評価証明書（申請する年度のもの）", "課税価格・登録免許税の計算"],
-  ["収入印紙（登録免許税の額）", "申請書に貼る（郵便局・法務局の印紙売りさばき所で購入）"],
+/** そろえる書類（名前と、要るときだけ短い補足） */
+const DOCS: [string, string?][] = [
+  ["登記事項証明書（登記簿謄本）", "法務局・オンラインで取れます"],
+  ["亡くなった方の出生から死亡までの戸籍謄本", "法定相続情報一覧図の写しでも可"],
+  ["相続人全員の戸籍謄本"],
+  ["亡くなった方の住民票の除票（または戸籍の附票）"],
+  ["遺産分割協議書と相続人全員の印鑑証明書"],
+  ["不動産を取得する人の住民票"],
+  ["固定資産評価証明書（申請する年度のもの）"],
+  ["収入印紙（登録免許税の額）", "郵便局・法務局で買えます"],
 ];
 
 type RegAsset = Extract<Asset, { kind: "land" | "building" | "condo" }>;
@@ -36,10 +38,10 @@ function RegistryForm({ a, onChange }: { a: RegAsset; onChange: (r: RegistryInfo
   );
   return (
     <div className="grid gap-3 sm:grid-cols-2">
-      <Field label={a.kind === "condo" ? "建物（専有部分）の固定資産評価額" : "固定資産評価額"} hint="固定資産評価証明書または課税明細書の「価格（評価額）」">
+      <Field label={a.kind === "condo" ? "建物（専有部分）の固定資産評価額" : "固定資産評価額"} hint="評価証明書・課税明細書の「価格」欄">
         <YenInput value={r.assessedValue ?? (a.kind === "building" ? a.fixedAssetValue : a.kind === "condo" ? a.buildingFixedAssetValue : undefined)} onChange={(v) => set("assessedValue", v)} />
       </Field>
-      {a.kind === "land" && txt("lotNumber", "地番", "例：2番3", "住所（住居表示）とは違うことがあります。登記事項証明書で確認")}
+      {a.kind === "land" && txt("lotNumber", "地番", "例：2番3", "住所とは違うことがあります（登記事項証明書で確認）")}
       {a.kind !== "land" && txt("houseNumber", "家屋番号", "例：2番3")}
       {a.kind !== "land" && txt("buildingType", "種類", "例：居宅")}
       {a.kind !== "land" && txt("structure", "構造", "例：木造スレートぶき2階建")}
@@ -65,6 +67,13 @@ export function RegistrationPage() {
   const apps = buildRegistrations(data);
   const deadline = data.decedent.deathDate ? jpDate(nextOpenDay(yearsDeadline(data.decedent.deathDate, 3))) : "";
   const unallocated = props.filter((p) => !data.allocations.some((a) => a.assetId === p.id && a.shares.length));
+  // 提出先の法務局：同じ地域（番地より前が同じ）の不動産は、窓口も同じなので1つの枠にまとめる
+  const byArea = new Map<string, RegAsset[]>();
+  for (const p of props.filter((x) => x.location.trim())) {
+    const k = areaOf(p.location.trim());
+    byArea.set(k, [...(byArea.get(k) ?? []), p]);
+  }
+  const offices = [...byArea.values()];
 
   async function download() {
     setBusy(true);
@@ -91,13 +100,18 @@ export function RegistrationPage() {
         <div className="flex items-start gap-3">
           <CompassAvatar size={52} />
           <Bubble className="flex-1">
-            相続で不動産を受け継いだら、法務局で名義を変える「相続登記」をします。2024年4月から義務になり、期限は
-            <strong>{deadline || "相続を知った日から3年"}</strong>
-            です。遺産分割で決めた内容から、申請書と登録免許税をここで作れますよ。
+            不動産の名義を変える手続きです（義務）。期限は<strong>{deadline || "相続を知った日から3年"}</strong>。申請書と登録免許税をここで作れます。
           </Bubble>
         </div>
 
-        {props.length === 0 && <Note tone="info">不動産が登録されていません。相続税申告の「財産」で土地・建物・マンションを登録してください。</Note>}
+        {props.length === 0 && (
+          <Note tone="info">
+            まだ不動産がありません。
+            <Link href="/case/assets" className="ml-2 font-semibold underline">
+              財産を登録する ›
+            </Link>
+          </Note>
+        )}
         {unallocated.length > 0 && (
           <Note tone="warn">
             取得する人が決まっていない不動産があります（{unallocated.map((p) => p.label).join("、")}）。
@@ -110,12 +124,12 @@ export function RegistrationPage() {
 
         {props.length > 0 && (
           <Card title="提出先の法務局">
-            <p className="mb-3 text-sm text-stone-600">相続登記は、不動産のある場所を受け持つ法務局に申請します（亡くなった方の住所の法務局とは限りません）。郵送でも申請できます。</p>
+            <p className="mb-3 text-sm text-stone-600">不動産のある場所の法務局に出します（亡くなった方の住所とは限りません。同じ市でも分かれることがあります）。</p>
             <div className="space-y-3">
-              {[...new Set(props.map((p) => p.location.trim()).filter(Boolean))].map((loc) => (
-                <div key={loc} className="rounded-lg border border-stone-200 p-3">
-                  <p className="mb-2 text-sm font-medium text-stone-700">{loc}</p>
-                  <OfficeLookup kind="legalAffairs" dept="不動産登記" address={loc} />
+              {offices.map((group) => (
+                <div key={group[0].id} className="rounded-lg border border-stone-200 p-3">
+                  <p className="mb-2 text-sm font-medium text-stone-700">{group.map((p) => p.label || p.location).join("・")}</p>
+                  <OfficeLookup kind="legalAffairs" dept="不動産登記" address={group[0].location.trim()} />
                 </div>
               ))}
             </div>
@@ -123,7 +137,7 @@ export function RegistrationPage() {
         )}
 
         <Card title="1. 登記簿の内容を入れる">
-          <p className="mb-4 text-sm text-stone-600">登記事項証明書（登記簿謄本）と固定資産評価証明書を見ながら入力します。</p>
+          <p className="mb-4 text-sm text-stone-600">登記事項証明書と固定資産評価証明書を見て入れます。</p>
           <div className="space-y-6">
             {props.map((a) => (
               <div key={a.id}>
@@ -150,14 +164,14 @@ export function RegistrationPage() {
                   取得する人：{app.applicants.map((a) => `${a.name}${a.share ? `（持分${a.share}）` : ""}`).join("、")}
                 </p>
                 <p className="text-sm text-stone-600">不動産：{app.properties.map((p) => p.label).join("、")}</p>
-                <p className="text-sm text-stone-600">提出先：{app.area}を受け持つ法務局（上の「提出先の法務局」で確かめてください）</p>
+                <p className="text-sm text-stone-600">提出先：{app.area}の法務局</p>
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   <div className="rounded-lg bg-stone-50 p-3">
-                    <p className="text-xs text-stone-500">課税価格（固定資産評価額の合計・1,000円未満切捨て）</p>
+                    <p className="text-xs text-stone-500">課税価格（評価額の合計）</p>
                     <p className="text-xl font-bold tabular-nums">{app.taxBase.toLocaleString("ja-JP")}円</p>
                   </div>
                   <div className="rounded-lg bg-sky-50 p-3">
-                    <p className="text-xs text-stone-500">登録免許税（課税価格 × 0.4%・100円未満切捨て）</p>
+                    <p className="text-xs text-stone-500">登録免許税（課税価格×0.4%）</p>
                     <p className="text-xl font-bold tabular-nums text-sky-900">{app.tax.toLocaleString("ja-JP")}円</p>
                   </div>
                 </div>
@@ -170,21 +184,19 @@ export function RegistrationPage() {
             <button type="button" onClick={download} disabled={busy || apps.length === 0} className="rounded-lg bg-sky-700 px-5 py-2.5 font-semibold text-white hover:bg-sky-800 disabled:bg-stone-300">
               {busy ? "作成中…" : "登記申請書（PDF）をダウンロード"}
             </button>
-            <span className="text-xs text-stone-500">
-              取得する人の組み合わせと、不動産のある市区町村ごとに1通ずつ作ります。市町村の合併などで、同じ市の中でも受け持つ法務局が地域によって分かれていることがあるので、提出先は必ず確かめてください。申請日と法務局名は提出時に書き入れてください。
-            </span>
+            <span className="text-xs text-stone-500">取得する人・市区町村ごとに1通ずつ作ります。申請日と法務局名は、出すときに書き入れます。</span>
           </div>
           {err && <p className="mt-2 text-sm text-rose-700">{err}</p>}
         </Card>
 
         <Card title="3. そろえる書類">
           <ul className="space-y-2 text-sm">
-            {DOCS.map(([n, why]) => (
+            {DOCS.map(([n, note]) => (
               <li key={n} className="flex gap-2">
-                <FileText className="h-4 w-4 text-brand" aria-hidden />
+                <FileText className="mt-0.5 h-4 w-4 shrink-0 text-brand" aria-hidden />
                 <span>
                   <strong>{n}</strong>
-                  <span className="block text-stone-600">{why}</span>
+                  {note && <span className="text-stone-600">（{note}）</span>}
                 </span>
               </li>
             ))}
@@ -193,14 +205,18 @@ export function RegistrationPage() {
 
         <Card title="4. 法務局に出す">
           <ol className="list-decimal space-y-2 pl-5 text-sm leading-relaxed text-stone-700">
-            <li>申請書に申請人が押印し、登録免許税の額の収入印紙を別の台紙に貼って一緒に綴じます。</li>
-            <li>不動産のある場所を管轄する法務局に、窓口・郵送（書留）・オンライン（登記・供託オンライン申請システム）のいずれかで出します。</li>
-            <li>書類に不備があると法務局から電話があるので、申請書の電話番号は日中つながる番号にします。</li>
-            <li>1〜2週間ほどで登記が完了し、「登記識別情報通知」（昔の権利証にあたるもの）を受け取ります。大切に保管してください。</li>
+            <li>申請書に押印し、収入印紙を台紙に貼って一緒に綴じます。</li>
+            <li>窓口・郵送（書留）・オンラインで出します。</li>
+            <li>申請書の電話番号は、日中つながる番号にします（不備の連絡が来ます）。</li>
+            <li>1〜2週間で完了し、「登記識別情報通知」（昔の権利証にあたるもの）を受け取ります。大切に保管します。</li>
           </ol>
-          <p className="mt-3 text-xs text-stone-500">
-            根拠：不動産登記法76条の2（相続登記の申請義務）、登録免許税法別表第一（相続による所有権移転 1000分の4）、租税特別措置法84条の2の3（少額の土地の免税）。数次相続・共有物の一部・農地や山林・遺言による遺贈などは、司法書士への相談をおすすめします。
-          </p>
+          <p className="mt-3 text-sm text-stone-700">数次相続・共有物の一部・農地や山林・遺言による遺贈などは、司法書士への相談をおすすめします。</p>
+          <details className="mt-1 text-xs text-stone-600">
+            <summary className="cursor-pointer py-2 font-medium text-teal-800">根拠（法律）</summary>
+            <p className="leading-relaxed">
+              不動産登記法76条の2（相続登記の申請義務。2024年4月から）、登録免許税法別表第一（相続による所有権移転 1000分の4）、租税特別措置法84条の2の3（少額の土地の免税）。課税価格は1,000円未満、登録免許税は100円未満を切り捨てます。オンラインは「登記・供託オンライン申請システム」から出します。
+            </p>
+          </details>
         </Card>
       </main>
     </div>

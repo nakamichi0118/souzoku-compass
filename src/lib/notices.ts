@@ -30,7 +30,7 @@ export function personalNotices(o: ReturnType<typeof useOverall>): Notice[] {
     if (o.closed(t.id)) continue;
     const left = daysBetween(o.now, t.date);
     if (left < 0 && t.hard)
-      out.push({ id: `over:${t.id}`, kind: "personal", level: "danger", date: t.date, title: `「${t.title}」の期限を過ぎています`, body: `期限は${jpDate(t.date)}でした。まずは窓口に相談しましょう。`, href: `/my/tasks?id=${t.id}` });
+      out.push({ id: `over:${t.id}`, kind: "personal", level: "danger", date: t.date, title: `「${t.title}」の期限を過ぎています`, body: `期限：${jpDate(t.date)}。まずは窓口に相談しましょう。`, href: `/my/tasks?id=${t.id}` });
     else if (left >= 0 && left <= (t.hard ? 14 : 7))
       out.push({
         id: `soon:${t.id}:${t.date}`,
@@ -46,7 +46,7 @@ export function personalNotices(o: ReturnType<typeof useOverall>): Notice[] {
   if (tax && !o.closed(tax.id)) {
     const left = daysBetween(o.now, tax.date);
     if (left > 14 && left <= 90)
-      out.push({ id: `tax:${tax.date}:${Math.floor(left / 30)}`, kind: "personal", level: "warn", date: tax.date, title: `相続税の申告期限まであと${left}日です`, body: `期限は${jpDate(tax.date)}です。申告書づくりの進み具合を確認しましょう。`, href: "/case/assets" });
+      out.push({ id: `tax:${tax.date}:${Math.floor(left / 30)}`, kind: "personal", level: "warn", date: tax.date, title: `相続税の申告期限まであと${left}日です`, body: `期限：${jpDate(tax.date)}`, href: "/case/assets" });
   }
   return out.sort(compareNotices);
 }

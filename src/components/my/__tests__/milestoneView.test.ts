@@ -107,20 +107,23 @@ describe("カレンダーの「手続きごと」", () => {
     const past = live.filter((t) => t.date < "2026-11-03" && t.id !== "shonanoka").map((t) => t.id);
     const v = vertical(render({ done: past }));
     const details = v.match(/<details>[\s\S]*?<\/details>/g)!;
-    // 今日より前の死亡届（葬儀）と相続放棄（4月15日〜6月15日の13件）の2か所
+    // 今日より前の死亡届（葬儀）と、すべて済んだ年金・健康保険・相続放棄の区切り（区切り3件＋4月15日〜6月15日の13件）の2か所
     expect(details).toHaveLength(2);
     expect(details[0]).toContain("済んだ手続き（1件）");
     expect(details[0]).toContain("通夜・葬儀・火葬");
-    expect(details[1]).toContain("済んだ手続き（13件）");
+    expect(details[1]).toContain("済んだ手続き（16件）");
     expect(details[1]).toContain("四十九日法要・納骨");
+    // すべて済んだ区切りは、区切りの行ごとたたむ（開けば、区切りとその下の手続きをいつもどおり出す）
+    expect(details[1]).toContain("年金の停止");
+    expect(details[1]).toContain('href="/my/tasks?id=renounce"');
+    expect(v.replace(details[1], "")).not.toContain("相続放棄・限定承認");
     expect(v).not.toMatch(/<details[^>]*open/);
     // 済んでいない初七日は、たたまずに出す
     expect(v.indexOf("初七日法要")).toBeLessThan(v.indexOf("済んだ手続き（1件）"));
     expect(details.join("")).not.toContain("初七日法要");
-    // たたんだ手続きしかないまとまり（相続放棄の下）には「この期限までにすること」の見出しを出さない
+    // たたんだ区切りの下の手続きには「この期限までにすること」の見出しを出さない
     expect(v.match(/この期限までにすること/g)).toHaveLength(3); // 死亡届・相続税・相続登記
-    const renounce = v.slice(v.indexOf("相続放棄・限定承認"), v.indexOf("今日 2026年11月3日"));
-    expect(renounce).not.toContain("までにすること");
+    expect(details[1]).not.toContain("までにすること");
     // 今日のあとの区切りの下の手続きは、済んでいても（遺産分割協議の前の財産の評価）たたまない
     const ahead = v.slice(v.indexOf("今日 2026年11月3日"));
     expect(ahead).not.toContain("<details>");
@@ -181,7 +184,27 @@ describe("カレンダーから「完了」「不要」を付ける", () => {
     const past = live.filter((t) => t.date < "2026-11-03" && t.id !== "shonanoka" && t.id !== "funeral").map((t) => t.id);
     const v = render({ done: [...past, "na:funeral"] });
     expect(v).toContain("済んだ・不要にした手続き（1件）");
-    expect(v).toContain("済んだ手続き（13件）");
+    expect(v).toContain("済んだ手続き（16件）");
+    // 不要にした区切りが入るまとまりは、見出しにも「不要」を出す
+    const na = render({ done: [...past.filter((id) => id !== "pension-stop"), "na:pension-stop", "funeral", "shonanoka"] });
+    expect(na).toContain("済んだ・不要にした手続き（19件）");
+  });
+
+  it("今日より前がすべて済んでいれば、亡くなった日のすぐ下に「済んだ手続き（19件）」の1行だけ出し、そのすぐ下に今日の線", () => {
+    const past = live.filter((t) => t.date < "2026-11-03").map((t) => t.id);
+    const v = render({ done: past });
+    const details = v.match(/<details>[\s\S]*?<\/details>/g)!;
+    expect(details).toHaveLength(1);
+    expect(details[0]).toContain("済んだ手続き（19件）");
+    expect(details[0]).toContain("死亡届");
+    expect(details[0]).toContain("通夜・葬儀・火葬");
+    const [death, fold, today, next] = order(v, ["亡くなった日", "済んだ手続き（19件）", "今日 2026年11月3日", "遺産分割協議"]);
+    expect(death).toBeLessThan(fold);
+    expect(fold).toBeLessThan(today);
+    expect(today).toBeLessThan(next);
+    expect(v.slice(0, v.indexOf("<details>"))).not.toContain("死亡届");
+    // この画面で付け外ししたら、たたまない（開いたときに済んでいたものだけたたむ）ので、チェックはそのまま押せる
+    expect(details[0].match(/<input type="checkbox"[^>]*checked=""/g)).toHaveLength(19);
   });
 });
 

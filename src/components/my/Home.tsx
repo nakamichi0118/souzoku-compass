@@ -3,16 +3,14 @@
 import Link from "next/link";
 import { useCallback } from "react";
 import { AskCompass, useAsk } from "@/components/compass/AskCompass";
-import { Bubble, CompassAvatar } from "@/components/compass/CompassKun";
 import { MonthCalendar } from "@/components/plan/MonthCalendar";
 import { AppShell, PageHead } from "@/components/shell/AppShell";
 import { Panel } from "@/components/ui/Panel";
 import { jpDate } from "@/domain/procedures/dates";
 import { useOverall } from "@/lib/overall";
-import { daysLeftLabel, taskStatus } from "@/lib/taskStatus";
+import { daysLeftLabel, lateBadge } from "@/lib/taskStatus";
 import { CatIcon } from "./icons";
 import { MilestoneFlow } from "./MilestoneView";
-import { STEPS } from "@/lib/steps";
 
 const man = (n: number) => `約${Math.round(n / 10_000).toLocaleString("ja-JP")}万円`;
 
@@ -29,19 +27,15 @@ export function Home() {
   if (!o.heard || !o.valid || !o.est)
     return (
       <AppShell>
-        <PageHead title={`ようこそ、${o.account?.name ?? ""}さん`} say="マイページができました！まずは、亡くなった方とご家族のことを教えてください。" />
-        <div className="rounded-2xl border-2 border-sky-300 bg-white p-8 text-center shadow-sm">
-          <p className="text-lg font-bold text-sky-950">最初に、状況を教えてください（約3分）</p>
-          <p className="mt-2 text-stone-600">答えにあわせて、あなたに必要な手続き・集める書類・期限をこのマイページに並べます。</p>
-          <Link href="/my/hearing" className="mt-5 inline-block rounded-full bg-sky-700 px-8 py-3 font-bold text-white hover:bg-sky-800">
-            質問に答える ›
-          </Link>
-        </div>
+        <PageHead title={`ようこそ、${o.account?.name ?? ""}さん`} say="まずは状況を教えてください（約3分）。" />
+        <Link href="/my/hearing" className="inline-block rounded-full bg-sky-700 px-8 py-3 font-bold text-white hover:bg-sky-800">
+          質問に答える ›
+        </Link>
       </AppShell>
     );
 
-  // ホームには、まだ済んでいない手続きを期限の近い順に（全体はやることリストで）
-  const upcoming = o.main.filter((t) => !o.closed(t.id) && t.id !== o.next?.id).slice(0, 6);
+  // ホームには、まだ済んでいない手続きを期限の近い順に3件だけ（全体はやることリストで）
+  const upcoming = o.main.filter((t) => !o.closed(t.id) && t.id !== o.next?.id).slice(0, 3);
   const nextStep = o.steps.find((s) => !s.done);
   const verdict = o.verdict ?? o.est.verdict;
   const taxNeeded = verdict === "likely" || verdict === "relief";
@@ -52,7 +46,7 @@ export function Home() {
     <AppShell wide>
       <PageHead
         title={`ようこそ、${o.account?.name ?? ""}さん`}
-        say={o.next ? "今日はここから始めましょう。終わったら、やることリストでチェックを付けてくださいね。" : "すべての手続きが終わりました。おつかれさまでした！"}
+        say={o.next ? "今日はここから始めましょう。" : "すべての手続きが終わりました、おつかれさまでした。"}
       />
       {o.next && (
         <section className="mb-5 flex flex-wrap items-center gap-4 rounded-2xl border-2 border-brand/40 bg-brand-soft p-5">
@@ -84,17 +78,19 @@ export function Home() {
       {/* grid-cols-1：スマホで、長い手続きの名前に合わせて列が広がり、横にはみ出さないように */}
       <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
-          <Panel title="このあとの手続き" more={{ href: "/my/tasks", label: "すべてのタスクを見る" }}>
-            <p className="-mt-2 mb-3 text-sm text-stone-500">期限の近いものから進めましょう。</p>
-            <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <Panel title="このあとの手続き" more={{ href: "/my/tasks", label: "すべて見る" }}>
+            <ul className="grid gap-3 md:grid-cols-3">
               {upcoming.map((t) => {
-                const st = taskStatus(t, o.statusOf(t.id), o.now);
+                // 札は期限を過ぎたときの「3日超過」だけ。期限があるかは日付の色で分かる
+                const late = lateBadge(t, o.statusOf(t.id), o.now);
                 return (
                   <li key={t.id}>
                     <Link href={`/my/tasks?id=${t.id}`} className="flex h-full flex-col rounded-xl border border-stone-200 bg-white p-3 hover:border-sky-400">
-                      <span className={`self-start rounded-full px-2 py-0.5 text-[11px] font-bold ${st.cls}`}>{st.label}</span>
-                      <span className="mt-2 line-clamp-2 text-sm font-bold text-stone-900">{t.title}</span>
-                      <span className="mt-auto pt-2 text-xs text-stone-500">{t.hard ? "期限" : "目安"} {jpDate(t.date)}（{daysLeftLabel(o.now, t.date)}）</span>
+                      {late && <span className={`mb-2 self-start rounded-full px-2 py-0.5 text-[11px] font-bold ${late.cls}`}>{late.label}</span>}
+                      <span className="line-clamp-2 text-sm font-bold text-stone-900">{t.title}</span>
+                      <span className={`mt-auto pt-2 text-xs ${t.hard ? "font-semibold text-orange-700" : "text-stone-500"}`}>
+                        {t.hard ? "期限" : "目安"} {jpDate(t.date)}（{daysLeftLabel(o.now, t.date)}）
+                      </span>
                     </Link>
                   </li>
                 );
@@ -102,7 +98,7 @@ export function Home() {
             </ul>
           </Panel>
 
-          <Panel title="資料集めの進み具合" more={{ href: "/my/docs" }}>
+          <Panel title="資料集め" more={{ href: "/my/docs" }}>
             <ul className="grid grid-cols-2 gap-3 sm:grid-cols-5">
               {cats.map(([k, all]) => {
                 const items = all.filter((d) => !d.na);
@@ -125,7 +121,8 @@ export function Home() {
           </Panel>
 
           {o.filing && (
-            <Panel title={`相続税申告の進捗（${STEPS.length}ステップ）`} more={{ href: `/case/${nextStep?.slug ?? "documents"}`, label: "申告書づくりへ" }}>
+            // 次のステップがあるときは、下の「次へ」と同じ先なので右上のリンクは出さない
+            <Panel title="相続税申告の進み具合" more={nextStep ? undefined : { href: "/case/documents", label: "申告書づくりへ" }}>
               <ol className="flex items-start justify-between">
                 {o.steps.map((s, i) => (
                   <li key={s.slug} className="flex flex-1 flex-col items-center text-center">
@@ -140,10 +137,9 @@ export function Home() {
                   </li>
                 ))}
               </ol>
+              {/* 吹き出しは出さず、ボタンだけ（スマホで吹き出しが押しつぶされて1文字ずつ折れないように） */}
               {nextStep && (
-                <div className="mt-4 flex flex-wrap items-center gap-3">
-                  <CompassAvatar size={40} />
-                  <Bubble className="min-w-0 flex-1">続いて「{nextStep.title}」へ進みましょう。</Bubble>
+                <div className="mt-4 flex justify-end">
                   <Link href={`/case/${nextStep.slug}`} className="rounded-full bg-sky-700 px-5 py-2 text-sm font-bold text-white hover:bg-sky-800">
                     次へ（{nextStep.title}） ›
                   </Link>
@@ -152,7 +148,8 @@ export function Home() {
             </Panel>
           )}
 
-          <AskCompass state={ask} placeholder="例：この手続きは何をするの？" lead="困ったときは、なんでも聞いてくださいね。" />
+          {/* 吹き出しは答えが出てから出す（見出しと質問ボタンで、何ができるかは分かる） */}
+          <AskCompass state={ask} placeholder="例：この手続きは何をするの？" lead={null} />
         </div>
 
         <div className="space-y-5">
@@ -186,7 +183,7 @@ export function Home() {
                 </>
               )}
             </dl>
-            <p className="mt-2 text-xs text-stone-500">{o.precise ? "財産を評価した計算結果です。" : "聞き取りの金額による目安です。財産を評価すると正確になります。"}</p>
+            <p className="mt-2 text-xs text-stone-500">{o.precise ? "財産を評価した結果です。" : "聞き取りからの目安です。"}</p>
           </Panel>
 
           <Panel title="スケジュール" more={{ href: "/my/calendar", label: "すべて見る" }}>

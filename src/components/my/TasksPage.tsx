@@ -8,7 +8,7 @@ import { AskCompass, useAsk } from "@/components/compass/AskCompass";
 import { OfficeLookup } from "@/components/plan/OfficeLookup";
 import { AppShell, PageHead } from "@/components/shell/AppShell";
 import { googleEventUrl, icsStamp, toICS } from "@/domain/procedures/calendar";
-import { daysBetween, jpDate } from "@/domain/procedures/dates";
+import { daysBetween, jpDate, yearOf } from "@/domain/procedures/dates";
 import { DOCS } from "@/domain/procedures/documents";
 import { OFFICE_LABEL, cityOf } from "@/domain/procedures/offices";
 import type { Category, Task } from "@/domain/procedures/rules";
@@ -17,7 +17,7 @@ import type { Asset } from "@/domain/types";
 import { saveBlob } from "@/lib/download";
 import { useOverall, useRequireHearing } from "@/lib/overall";
 import type { ItemStatus } from "@/lib/planStore";
-import { daysLeftLabel, taskStatus } from "@/lib/taskStatus";
+import { daysLeftLabel, lateBadge } from "@/lib/taskStatus";
 import { isWide, showBelowHeader } from "./scroll";
 import { AUTO_DONE_NOTE, DetailStatus, RowStatus } from "./StatusButtons";
 import { docsToUpload, UploadPrompt } from "./UploadPrompt";
@@ -36,12 +36,32 @@ const CATS: (Category | "すべて")[] = ["すべて", "届出", "葬儀・法�
 type StatusFilter = "open" | "done" | "all";
 type View = "date" | "office";
 
-/** ワンポイント：手続きの性質にあわせた一言 */
-function tip(t: Task) {
-  if (t.category === "葬儀・法要") return "日付は一般的な目安です。無理に予定を詰めず、ご家族の気持ちと体調を優先してください。";
-  if (t.hard) return "期限がある手続きです。書類がそろわなくても、まず窓口に相談すると次にやることが分かります。";
-  return "期限はありませんが、ほかの手続きでこの書類や結果を使うことがあるので、落ち着いたら進めましょう。";
+/**
+ * ワンポイント：その手続きならではの一言があるときだけ出す（いまは葬儀・法要の日付が一般的な目安であること）。
+ * どの手続きにも同じ決まり文句を出すと、目安の日がある手続きに「期限はありません」と出るなど、日付の欄と食い違うため
+ */
+export function tip(t: Task): string | null {
+  if (t.category === "葬儀・法要") return "日付は一般的な目安なので、ご家族の気持ちと体調を優先してください。";
+  return null;
 }
+
+/** 説明文を、最初の1文とそのあとに分ける（かっこの中の「。」では切らない）。あとの部分は「詳しく」に畳む */
+export function splitLead(s: string): [string, string] {
+  let depth = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === "（" || c === "「" || c === "(") depth++;
+    else if (c === "）" || c === "」" || c === ")") depth = Math.max(0, depth - 1);
+    else if (c === "。" && depth === 0) return [s.slice(0, i + 1), s.slice(i + 1).trim()];
+  }
+  return [s, ""];
+}
+
+/** 一覧の行の日付。今年の日付は年を省く（「11月15日（日）」）。来年以降は年もつける */
+export const rowDate = (date: string, now: string) => (yearOf(date) === yearOf(now) ? jpDate(date).replace(/^\d+年/, "") : jpDate(date));
+
+/** 済んだ・不要にした手続きをたたんだ1行の名前 */
+const foldLabel = (xs: Task[], statusOf: (id: string) => ItemStatus) => `${xs.some((x) => statusOf(x.id) === "na") ? "済んだ・不要にした手続き" : "済んだ手続き"}（${xs.length}件）`;
 
 /** 窓口ごとに見るときのまとまり */
 const officeGroup = (t: Task) => (t.office ? OFFICE_LABEL[t.office] : t.category === "葬儀・法要" ? "葬儀社・お寺など" : "銀行・保険会社・勤務先など");
@@ -72,9 +92,11 @@ export function showInList(list: HTMLElement | null, id: string, tries = 3) {
   if (!list || typeof window === "undefined") return;
   requestAnimationFrame(() => {
     const row = list.querySelector<HTMLElement>(`[data-task="${CSS.escape(id)}"]`);
-    // 一覧に出したばかり（必要に応じてやる手続きを表示にした直後など）で、まだ描かれていなければ次の描画で探す
-    if (!row) return void (tries > 1 && showInList(list, id, tries - 1));
-    const head = row.parentElement?.closest("li")?.querySelector<HTMLElement>(":scope > p");
+    // 一覧に出したばかり（必要に応じてやる手続きを表示にした直後や、済んだ手続きのたたみを開いた直後など）で、
+    // まだ描かれていなければ次の描画で探す
+    if (!row || row.closest("details:not([open])")) return void (tries > 1 && showInList(list, id, tries - 1));
+    // 窓口の見出しは、窓口のまとまり（data-group）のすぐ下の p（済んだ手続きのたたみの中の行でも同じ見出し）
+    const head = row.closest("[data-group]")?.querySelector<HTMLElement>(":scope > p");
     list.scrollTop = listScrollFor(list.scrollTop, row.getBoundingClientRect().top, list.getBoundingClientRect().top, head?.offsetHeight ?? 0);
     // パソコンでは一覧の下の端が画面の外に出ることがあるので、いちばん下の行のときは画面も送って行を見せる
     // （スマホは詳細の先頭まで画面を送るので、ここでは送らない）
@@ -109,19 +131,22 @@ export function TaskRow({
   onSelect: (id: string) => void;
 }) {
   const closed = status !== "open";
-  const badge = taskStatus(task, status, now);
+  // 札は期限を過ぎたときの「3日超過」だけ。済んだかどうかはチェックと取り消し線、期限があるかは日付の色で分かる
+  const badge = lateBadge(task, status, now);
   return (
     <li data-task={task.id} className={`flex items-center gap-3 rounded-xl border bg-white p-3 ${selected ? "border-sky-500 ring-2 ring-sky-100" : "border-stone-200"}`}>
-      <RowStatus status={status} onChange={(v) => onMark(task.id, v)} label={task.title} locked={locked} />
+      <RowStatus status={status} onChange={(v) => onMark(task.id, v)} label={task.title} locked={locked} muted />
       <button type="button" onClick={() => onSelect(task.id)} className="min-w-0 flex-1 text-left">
         <p className={`line-clamp-2 font-semibold ${closed ? "text-stone-400 line-through" : "text-stone-900"}`}>{task.title}</p>
         <p className="truncate text-xs text-stone-500">
-          {showDept && task.dept ? `${task.dept}・` : `${task.category}・`}
-          {task.hard ? "期限" : "目安"} {jpDate(task.date)}
+          {showDept && task.dept ? `${task.dept}・` : ""}
+          <span className={task.hard && !closed ? "font-semibold text-orange-700" : ""}>
+            {task.hard ? "期限" : "目安"} {rowDate(task.date, now)}
+          </span>
           {hasMemo ? "・メモあり" : ""}
         </p>
       </button>
-      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${badge.cls}`}>{badge.label}</span>
+      {badge && <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${badge.cls}`}>{badge.label}</span>}
     </li>
   );
 }
@@ -135,6 +160,8 @@ export function TasksPage() {
   const [optional, setOptional] = useState(false);
   const [copied, setCopied] = useState(false);
   const [view, setView] = useState<View>("date");
+  /** 開いている「済んだ手続き（N件）」のたたみ（期限の順は "date"、窓口ごとは窓口の名前） */
+  const [unfolded, setUnfolded] = useState<string[]>([]);
   const listRef = useRef<HTMLUListElement>(null);
 
   const { closed } = o;
@@ -177,12 +204,16 @@ export function TasksPage() {
   // ホーム・カレンダー・お知らせから手続きを選んで開いたときも、詳細の先頭を出し、一覧もその手続きの行まで送る
   // （「必要に応じてやる手続き」を開いたときは、一覧にも出す）
   const urlOptional = !!o.tasks.find((x) => x.id === urlId)?.optional;
+  // 済んだ手続きを開いたときは、その手続きの行が見えるよう、たたみも開く
+  const urlTask = o.tasks.find((x) => x.id === urlId);
+  const urlFold = urlTask && closed(urlTask.id) ? officeGroup(urlTask) : null;
   useEffect(() => {
     if (!ready || !urlId || shownFor.current === urlId) return;
     if (urlOptional) setOptional(true);
+    if (urlFold) setUnfolded((xs) => [...new Set([...xs, "date", urlFold])]);
     showDetail(urlId, false);
     showInList(listRef.current, urlId);
-  }, [ready, urlId, urlOptional, showDetail]);
+  }, [ready, urlId, urlOptional, urlFold, showDetail]);
   // パソコンでは詳細だけが動くので、別の手続きに替わったら詳細を先頭から見せる
   useEffect(() => {
     if (articleRef.current) articleRef.current.scrollTop = 0;
@@ -225,6 +256,11 @@ export function TasksPage() {
   const isDone = st !== "open";
   const nextStep = o.steps.find((s) => !s.done);
   const { pref, city } = cityOf(o.iv.address);
+  // 「完了」だけを選んだときはたたまずに並べる。それ以外は、済んだ・不要にした手続きを1行にたたむ
+  const foldDone = status !== "done";
+  const [lead, more] = t ? splitLead(t.what) : ["", ""];
+  const extraBring = t ? t.bring.filter((b) => !t.docs.some((id) => DOCS[id]?.name === b)) : [];
+  const oneTip = t ? tip(t) : null;
 
   const row = (x: Task, showDept?: boolean) => (
     <TaskRow
@@ -241,9 +277,35 @@ export function TasksPage() {
     />
   );
 
+  /** 済んだ・不要にした手続きを「済んだ手続き（N件）」の1行にたたむ。押すと開く */
+  const rows = (xs: Task[], key: string, showDept?: boolean) => {
+    const done = foldDone ? xs.filter((x) => closed(x.id)) : [];
+    const shown = foldDone ? xs.filter((x) => !closed(x.id)) : xs;
+    const isOpen = unfolded.includes(key);
+    return (
+      <>
+        {shown.map((x) => row(x, showDept))}
+        {done.length > 0 && (
+          <li>
+            <details
+              open={isOpen}
+              onToggle={(e) => {
+                const v = e.currentTarget.open;
+                if (v !== isOpen) setUnfolded((ks) => (v ? [...ks, key] : ks.filter((k) => k !== key)));
+              }}
+            >
+              <summary className="cursor-pointer rounded-lg px-2 py-2.5 text-sm text-stone-600 hover:bg-white">{foldLabel(done, o.statusOf)}</summary>
+              <ul className="mt-1 space-y-2">{done.map((x) => row(x, showDept))}</ul>
+            </details>
+          </li>
+        )}
+      </>
+    );
+  };
+
   return (
     <AppShell wide>
-      <PageHead title="やることリスト" say="まだの手続きを期限の近い順に上から並べています。「窓口ごと」にすると、役所でまとめてできる手続きが分かります。" />
+      <PageHead title="やることリスト" say="「窓口ごと」なら、役所でまとめて済む手続きが分かります。" />
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {CATS.map((c) => (
           <button key={c} type="button" onClick={() => setCat(c)} className={`rounded-full px-3 py-1 text-sm ${cat === c ? "bg-sky-700 font-semibold text-white" : "bg-white text-stone-700 ring-1 ring-stone-200 hover:bg-sky-50"}`}>
@@ -285,15 +347,15 @@ export function TasksPage() {
           <ul ref={listRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 max-lg:max-h-[60vh]">
             {list.length === 0 && <li className="rounded-xl bg-white p-6 text-center text-sm text-stone-500">該当する手続きはありません。</li>}
             {view === "date"
-              ? list.map((x) => row(x))
+              ? rows(list, "date")
               : groups.map(([g, xs]) => (
-                  <li key={g}>
+                  <li key={g} data-group>
                     <p className="sticky top-0 z-10 flex items-center justify-between bg-sky-50 px-1 py-1.5 text-sm font-bold text-sky-950">
                       <span className="flex items-center gap-1.5"><Building2 className="h-4 w-4 text-brand" aria-hidden />{g}</span>
                       <span className="text-xs font-normal text-stone-500">あと{xs.filter((x) => !closed(x.id)).length}件</span>
                     </p>
                     <ul className="space-y-2">
-                      {xs.map((x) => row(x, true))}
+                      {rows(xs, g, true)}
                     </ul>
                   </li>
                 ))}
@@ -310,7 +372,7 @@ export function TasksPage() {
               <DetailStatus status={st} onChange={(v) => mark(t.id, v)} locked={lockedNote(t.id)} />
             </div>
 
-            <div className={`rounded-xl px-4 py-3 ${isDone ? "bg-emerald-50" : t.hard ? "bg-orange-50" : "bg-sky-50"}`}>
+            <div className={`rounded-xl px-4 py-3 ${isDone ? "bg-stone-50 text-stone-500" : t.hard ? "bg-orange-50" : "bg-sky-50"}`}>
               <p className="text-sm font-bold">
                 {t.hard ? "期限" : "目安"}：{jpDate(t.date)}
                 {!isDone && <span className={`ml-2 ${left < 0 ? "text-rose-700" : left <= 7 ? "text-orange-700" : "text-stone-600"}`}>{daysLeftLabel(o.now, t.date)}</span>}
@@ -318,7 +380,20 @@ export function TasksPage() {
               {t.limit && <p className="mt-1 text-sm text-rose-800">注意：{t.limit.text}（{jpDate(t.limit.date)}まで）</p>}
             </div>
 
-            <p className="leading-relaxed text-stone-800">{t.what}</p>
+            <div>
+              <p className="leading-relaxed text-stone-800">{lead}</p>
+              {/* 説明の続き・窓口の決まり・法律の根拠は「詳しく」に畳む（開けばいままでと同じ内容が読める） */}
+              {(more || (t.office && t.where) || t.law) && (
+                <details key={t.id} className="mt-1 text-sm text-stone-600">
+                  <summary className="cursor-pointer py-2 font-medium text-teal-800">詳しく</summary>
+                  <div className="space-y-1.5 leading-relaxed">
+                    {more && <p>{more}</p>}
+                    {t.office && t.where && <p>窓口の決まり：{t.where}</p>}
+                    {t.law && <p className="text-xs text-stone-500">根拠：{t.law}</p>}
+                  </div>
+                </details>
+              )}
+            </div>
 
             {t.id === "inheritance-tax" && o.filing && (
               <div className="rounded-xl border border-sky-100 p-4">
@@ -326,7 +401,7 @@ export function TasksPage() {
                 <ol className="mt-2 flex flex-wrap gap-1.5">
                   {o.steps.map((s, i) => (
                     <li key={s.slug}>
-                      <Link href={`/case/${s.slug}`} className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs ${s.done ? "bg-emerald-100 text-emerald-800" : s === nextStep ? "bg-sky-700 font-bold text-white" : "bg-stone-100 text-stone-600"}`}>
+                      <Link href={`/case/${s.slug}`} className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs ${s.done ? "bg-stone-100 text-stone-400" : s === nextStep ? "bg-sky-700 font-bold text-white" : "bg-white text-stone-700 ring-1 ring-stone-200"}`}>
                         {s.done ? "✓" : i + 1} {s.title}
                       </Link>
                     </li>
@@ -340,7 +415,6 @@ export function TasksPage() {
               {t.office ? (
                 <div className="space-y-2">
                   <OfficeLookup key={`${t.id}|${t.office}`} kind={t.office} dept={t.dept} address={t.office === "legalAffairs" ? (realEstateLocation(o.case.assets) ?? o.iv.address) : o.iv.address} />
-                  <p className="text-xs text-stone-500">窓口の決まり：{t.where}</p>
                   {city && (
                     <a
                       href={`https://www.google.com/maps/search/${encodeURIComponent(`${pref}${city} ${OFFICE_LABEL[t.office]}`)}`}
@@ -349,9 +423,31 @@ export function TasksPage() {
                       className="inline-block text-sm text-sky-800 underline"
                     >
                       <MapPin className="mr-1 inline h-4 w-4 text-brand" aria-hidden />
-                      地図で見る（Googleマップ）
+                      地図で見る
                     </a>
                   )}
+                  {/* 窓口に電話するときの文例。開くとコピーできる */}
+                  <details key={t.id} className="text-sm text-stone-600">
+                    <summary className="cursor-pointer py-2 font-medium text-teal-800">
+                      <Phone className="mr-1 inline h-4 w-4 text-brand" aria-hidden />
+                      電話で聞くときの文例
+                    </summary>
+                    <div className="rounded-xl bg-stone-50 p-3">
+                      <p className="leading-relaxed text-stone-800">「{script(t, o.iv.myRelation, o.iv.decedentName)}」</p>
+                      <button
+                        type="button"
+                        className="-mb-2 -ml-2 px-2 py-2 text-xs text-sky-700 hover:underline"
+                        onClick={() => {
+                          navigator.clipboard?.writeText(script(t, o.iv.myRelation, o.iv.decedentName)).then(() => {
+                            setCopied(true);
+                            setTimeout(() => setCopied(false), 1500);
+                          });
+                        }}
+                      >
+                        {copied ? "コピーしました" : "コピー"}
+                      </button>
+                    </div>
+                  </details>
                 </div>
               ) : (
                 <p className="text-sm text-stone-700">{t.where}</p>
@@ -370,7 +466,7 @@ export function TasksPage() {
                       const ok = ds !== "open";
                       return (
                         <li key={id} className="flex items-center gap-2 text-sm">
-                          <RowStatus status={ds} onChange={(v) => o.setStatus(k, v)} label={DOCS[id].name} />
+                          <RowStatus status={ds} onChange={(v) => o.setStatus(k, v)} label={DOCS[id].name} muted />
                           <span className={ok ? "text-stone-400 line-through" : "text-stone-800"}>{DOCS[id].name}</span>
                           <Link href={`/my/docs?id=${id}`} className="ml-auto shrink-0 py-2 text-xs text-sky-700 hover:underline">
                             {DOCS[id].readable ? "取り方・読み取り" : "取り方"} ›
@@ -379,28 +475,8 @@ export function TasksPage() {
                       );
                     })}
                 </ul>
-                {t.bring.length > 0 && <p className="mt-2 text-xs text-stone-500">ほかに持っていくもの：{t.bring.join("、")}</p>}
-              </section>
-            )}
-
-            {t.office && (
-              <section className="rounded-xl bg-stone-50 p-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="flex items-center gap-1.5 font-bold text-stone-700"><Phone className="h-4 w-4 text-brand" aria-hidden />連絡するときの伝え方</h3>
-                  <button
-                    type="button"
-                    className="-my-2 -mr-2 px-2 py-2 text-xs text-sky-700 hover:underline"
-                    onClick={() => {
-                      navigator.clipboard?.writeText(script(t, o.iv.myRelation, o.iv.decedentName)).then(() => {
-                        setCopied(true);
-                        setTimeout(() => setCopied(false), 1500);
-                      });
-                    }}
-                  >
-                    {copied ? "コピーしました" : "コピー"}
-                  </button>
-                </div>
-                <p className="mt-2 text-sm leading-relaxed text-stone-800">「{script(t, o.iv.myRelation, o.iv.decedentName)}」</p>
+                {/* 「必要な書類」と同じものは出さない */}
+                {extraBring.length > 0 && <p className="mt-2 text-xs text-stone-500">ほかに持っていくもの：{extraBring.join("、")}</p>}
               </section>
             )}
 
@@ -409,15 +485,16 @@ export function TasksPage() {
               <MemoBox key={t.id} value={o.memos[t.id] ?? ""} onSave={(v) => o.setMemo(t.id, v)} />
             </section>
 
-            <div className="flex items-start gap-3 rounded-xl bg-amber-50 p-3">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/brand/compass-kun-main.png" alt="" className="h-12 w-auto" />
-              <p className="text-sm text-amber-950">
-                <span className="font-bold">ワンポイント：</span>
-                {tip(t)}
-                {t.law ? `（根拠：${t.law}）` : ""}
-              </p>
-            </div>
+            {oneTip && (
+              <div className="flex items-start gap-3 rounded-xl bg-amber-50 p-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/brand/compass-kun-main.png" alt="" className="h-12 w-auto" />
+                <p className="text-sm text-amber-950">
+                  <span className="font-bold">ワンポイント：</span>
+                  {oneTip}
+                </p>
+              </div>
+            )}
 
             <div className="flex flex-wrap gap-2">
               {t.link && t.id !== "inheritance-tax" && (
@@ -492,7 +569,7 @@ export function MemoBox({ value, onSave }: { value: string; onSave: (v: string) 
           setTyping(true);
         }}
         rows={3}
-        placeholder="例：みほん銀行 相続センター 0120-000-000、担当 見本さん。○日に書類を郵送済み。"
+        placeholder="例：担当者・電話番号・郵送した日"
         className="w-full rounded-lg border border-stone-300 p-2 text-base focus:border-sky-500 focus:outline-none sm:text-sm"
       />
       <p className="h-4 text-xs text-emerald-700">{saved ? "保存しました" : ""}</p>

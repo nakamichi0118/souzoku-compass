@@ -41,10 +41,10 @@ function Row({ label, value, sub, strong }: { label: React.ReactNode; value: num
 /** 申告がいるか：相続税がかかる・特例を使う、または相続時精算課税で納めた贈与税を返してもらう（還付は申告しないと受けられない。相続税法33条の2） */
 export const filingNeeded = (r: Pick<TaxResult, "needsFiling" | "totalRefund">) => r.needsFiling || r.totalRefund > 0;
 
-/** 家族全体の税額の下に出す、申告がいるかどうかの一言 */
+/** 家族全体の税額の下に出す、申告がいるかどうかの一言（納める税額があるときは、すぐ後の期限だけで分かるので出さない） */
 export function filingMessage(r: Pick<TaxResult, "needsFiling" | "totalRefund" | "totalPayable" | "totalTax">): string {
   if (!filingNeeded(r)) return "相続税はかからず、申告も原則いりません。";
-  if (r.totalPayable > 0) return "それぞれが自分の分を、申告期限までに納めます。";
+  if (r.totalPayable > 0) return "";
   if (r.totalRefund > 0) return `${r.totalTax > 0 ? "納める税金は0円です" : "相続税はかかりません"}が、相続時精算課税で納めた贈与税を返してもらうには、申告が必要です。`;
   return "特例を使うので納める税金は0円ですが、申告は必要です。";
 }
@@ -87,7 +87,7 @@ export function TaxStep() {
     <div className="space-y-5">
       {provisional && (
         <Note tone="warn">
-          <p className="font-semibold">まだ確定していない入力があるため、下の税額は暫定です。</p>
+          <p className="font-semibold">下の税額は暫定です。</p>
           <ul className="mt-1 list-disc pl-5">
             {pendingAssets.length > 0 && (
               <li>
@@ -128,7 +128,7 @@ export function TaxStep() {
           ) : (
             filingNeeded(r) &&
             deadline && (
-              <span className="ml-1 font-semibold">
+              <span className={`font-semibold ${filingMessage(r) ? "ml-1" : ""}`}>
                 申告{r.totalPayable > 0 ? "・納税" : ""}の期限：{jpDate(deadline)}
               </span>
             )
@@ -140,11 +140,7 @@ export function TaxStep() {
             <span className="ml-1 text-xs text-stone-500">（相続時精算課税で納めた贈与税のうち、相続税から引ききれない分）</span>
           </p>
         )}
-        {r.undivided && (
-          <p className="mt-1 text-xs text-stone-600">
-            分け方が決まっていない財産は、法定相続分で受け継いだものとして計算しています。申告書と一緒に「申告期限後3年以内の分割見込書」を出してください。
-          </p>
-        )}
+        {r.undivided && <p className="mt-1 text-xs text-stone-600">分け方が決まっていない財産は、法定相続分で計算しています。</p>}
 
         {payers.length > 0 && r.totalTax > 0 && (
           <ul className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -177,15 +173,8 @@ export function TaxStep() {
                     <div className="h-full bg-teal-600" style={{ width: `${before ? (paid / before) * 100 : 0}%` }} />
                     <div className="h-full bg-emerald-200" style={{ width: `${before ? (minus / before) * 100 : 0}%` }} />
                   </div>
-                  <p className="mt-2 text-xs leading-relaxed text-stone-500">
-                    受け取った財産 {man(p.taxable)}・税額の割り当て {fmt(before)}円
-                    {credits.length > 0 && (
-                      <>
-                        <br />
-                        {credits.join("・")}
-                      </>
-                    )}
-                  </p>
+                  {/* 課税価格と税額の割り当て（算出税額）は、下の「詳しい計算」の第1表に出す */}
+                  {credits.length > 0 && <p className="mt-2 text-xs leading-relaxed text-stone-500">{credits.join("・")}</p>}
                 </li>
               );
             })}
@@ -203,7 +192,7 @@ export function TaxStep() {
       <Card title="どうしてこの金額になるの？">
         <ol className="space-y-5">
           <li>
-            <p className="text-sm font-bold text-stone-800">1. 財産の合計から、基礎控除を差し引きます</p>
+            <p className="text-sm font-bold text-stone-800">1. 財産から基礎控除を引く</p>
             <div className="mt-2 flex h-9 overflow-hidden rounded-lg text-xs font-semibold text-white">
               <div className="grid place-items-center bg-stone-400 px-2" style={{ width: `${r.totalTaxable ? (basicPart / r.totalTaxable) * 100 : 100}%` }}>
                 基礎控除 {man(r.basicDeduction)}
@@ -215,21 +204,20 @@ export function TaxStep() {
               )}
             </div>
             <p className="mt-1 text-xs text-stone-500">
-              財産の合計（課税価格の合計）{man(r.totalTaxable)}。基礎控除は 3,000万円＋600万円×法定相続人{r.legalHeirCount}人 です。
+              財産の合計 {man(r.totalTaxable)}／基礎控除＝3,000万円＋600万円×法定相続人{r.legalHeirCount}人
             </p>
           </li>
           {r.taxableEstate > 0 && (
             <li>
-              <p className="text-sm font-bold text-stone-800">2. 法律で決まった割合で分けたとして、家族全体の税額を出します</p>
+              <p className="text-sm font-bold text-stone-800">2. 法律の割合で分けたとして、全体の税額を出す</p>
               <p className="mt-1 text-sm text-stone-700">
                 相続税の総額：<span className="font-bold tabular-nums">{fmt(r.totalTax)}円</span>
               </p>
-              <p className="text-xs text-stone-500">実際の分け方に関係なく、法定相続分で分けたとして税率をかけた合計です（相続税法16条）。</p>
             </li>
           )}
           {r.totalTax > 0 && (
             <li>
-              <p className="text-sm font-bold text-stone-800">3. 実際に受け取った割合で、総額を一人ひとりに割り当てます</p>
+              <p className="text-sm font-bold text-stone-800">3. 受け取った割合で、一人ずつに分ける</p>
               <div className="mt-2 flex h-9 overflow-hidden rounded-lg text-xs font-semibold text-white">
                 {payers.map((p, i) => (
                   <div
@@ -243,14 +231,14 @@ export function TaxStep() {
                   </div>
                 ))}
               </div>
-              <p className="mt-1 text-xs text-stone-500">そこから、配偶者の税額軽減や未成年者控除などを差し引いた額が、それぞれの納める税額です。</p>
+              <p className="mt-1 text-xs text-stone-500">ここから控除を引いた額が、各人の納める税額です。</p>
             </li>
           )}
         </ol>
       </Card>
 
       <details className="group rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
-        <summary className="cursor-pointer text-lg font-bold text-stone-800">詳しい計算（申告書の第1表・第2表）</summary>
+        <summary className="cursor-pointer text-lg font-bold text-stone-800">詳しい計算（申告書の第1表・第2表{r.spouse ? "・第5表" : ""}）</summary>
         <div className="mt-4 space-y-6">
           <section>
             <h3 className="mb-2 font-bold text-stone-700">相続税の総額（第2表）</h3>
@@ -341,28 +329,30 @@ export function TaxStep() {
               </details>
             )}
           </section>
+
+          {r.spouse && (
+            <section>
+              <h3 className="mb-2 font-bold text-stone-700">配偶者の税額軽減（第5表）</h3>
+              <Row label="課税価格の合計額" value={r.spouse.totalTaxable} />
+              <Row label="配偶者の法定相続分相当額" value={r.spouse.legalShareAmount} sub="1億6千万円に満たない場合は1億6千万円" />
+              <Row label="配偶者の課税価格" value={r.spouse.spouseTaxable} />
+              <Row label="軽減の基となる金額" value={r.spouse.creditBase} sub="相続税の総額 × 上の2つのいずれか少ない方 ÷ 課税価格の合計額" />
+              <Row label="配偶者の税額軽減額" value={r.spouse.credit} strong />
+            </section>
+          )}
         </div>
       </details>
 
-      {r.spouse && (
-        <Card title="配偶者の税額軽減（第5表）">
-          <Row label="課税価格の合計額" value={r.spouse.totalTaxable} />
-          <Row label="配偶者の法定相続分相当額" value={r.spouse.legalShareAmount} sub="1億6千万円に満たない場合は1億6千万円" />
-          <Row label="配偶者の課税価格" value={r.spouse.spouseTaxable} />
-          <Row label="軽減の基となる金額" value={r.spouse.creditBase} sub="相続税の総額 × 上の2つのいずれか少ない方 ÷ 課税価格の合計額" />
-          <Row label="配偶者の税額軽減額" value={r.spouse.credit} strong />
-        </Card>
-      )}
-
-      <Card title="コンパスくんの説明" actions={<Button onClick={() => explainer.ask(EXPLAIN_QUESTION)} disabled={busy}>{busy ? "作成中…" : "この結果を説明してもらう"}</Button>}>
-        {busy ? (
-          <p className="text-sm text-stone-500">説明を作っています…</p>
-        ) : explain ? (
-          <div className="text-sm text-stone-800"><Markdown text={explain} /></div>
-        ) : (
-          <p className="text-sm text-stone-500">「この結果を説明してもらう」を押すと、コンパスくんが計算結果をやさしく説明します。</p>
+      <div className="space-y-3">
+        <Button variant="secondary" onClick={() => explainer.ask(EXPLAIN_QUESTION)} disabled={busy}>
+          {busy ? "説明を作っています…" : "コンパスくんに説明してもらう"}
+        </Button>
+        {!busy && explain && (
+          <Card>
+            <div className="text-sm text-stone-800"><Markdown text={explain} /></div>
+          </Card>
         )}
-      </Card>
+      </div>
 
       {r.warnings.map((w, i) => (
         <Note key={`${i}:${w}`} tone="warn">

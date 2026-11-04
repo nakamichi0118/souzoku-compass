@@ -33,6 +33,18 @@ export function FirmBadge({ size = "md" }: { size?: "sm" | "md" }) {
   );
 }
 
+/** デモ（ログインしていない）ときの一言と、登録への入り口 */
+export function ConsultDemoNotice() {
+  return (
+    <p className="rounded-lg bg-white p-3 text-sm text-stone-700">
+      デモでは相談を送れません。
+      <Link href="/signup" className="ml-1 font-semibold text-teal-800 underline">
+        登録する
+      </Link>
+    </p>
+  );
+}
+
 const field = "w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-base sm:text-sm";
 
 /** 相談のフォーム。名前・都道府県・連絡先・相談内容は、入力済みの内容から自動で入れておく */
@@ -53,9 +65,9 @@ export function ConsultForm({ onSent }: { onSent?: () => void }) {
   if (sent)
     return (
       <div className="rounded-lg bg-white p-3 text-sm text-stone-800">
-        <p className="font-semibold text-teal-800">相談を送りました。</p>
+        <p className="font-semibold text-teal-800">送りました。</p>
         <p className="mt-1">
-          {CONSULT_FIRM.name}からの返事や打ち合わせの案内は、
+          返事は
           <Link href="/my/consult" className="font-semibold text-teal-800 underline">
             税理士への相談
           </Link>
@@ -63,15 +75,7 @@ export function ConsultForm({ onSent }: { onSent?: () => void }) {
         </p>
       </div>
     );
-  if (mode !== "cloud" || !user)
-    return (
-      <p className="rounded-lg bg-white p-3 text-sm text-stone-700">
-        相談を送るには、利用者登録をしてログインしてください（デモでは送れません）。
-        <Link href="/signup" className="ml-1 font-semibold text-teal-800 underline">
-          登録する
-        </Link>
-      </p>
-    );
+  if (mode !== "cloud" || !user) return <ConsultDemoNotice />;
 
   const send = async () => {
     setBusy(true);
@@ -91,13 +95,14 @@ export function ConsultForm({ onSent }: { onSent?: () => void }) {
   const ok = f.name.trim() && f.prefecture && f.contact.trim() && f.content.trim();
   return (
     <div className="space-y-3 rounded-lg bg-white p-3 text-sm">
+      <p className="text-xs text-stone-500">すべて必須です</p>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block">
-          <span className="text-xs font-semibold text-stone-600">お名前（必須）</span>
+          <span className="text-xs font-semibold text-stone-600">お名前</span>
           <input value={f.name} onChange={set("name")} maxLength={50} className={field} />
         </label>
         <label className="block">
-          <span className="text-xs font-semibold text-stone-600">都道府県（必須）</span>
+          <span className="text-xs font-semibold text-stone-600">都道府県</span>
           <select value={f.prefecture} onChange={set("prefecture")} className={field}>
             <option value="">選んでください</option>
             {PREFECTURES.map((p) => (
@@ -108,11 +113,11 @@ export function ConsultForm({ onSent }: { onSent?: () => void }) {
           </select>
         </label>
         <label className="block sm:col-span-2">
-          <span className="text-xs font-semibold text-stone-600">連絡先（必須・電話番号かメールアドレス）</span>
+          <span className="text-xs font-semibold text-stone-600">連絡先（電話かメール）</span>
           <input value={f.contact} onChange={set("contact")} maxLength={100} className={field} />
         </label>
         <label className="block sm:col-span-2">
-          <span className="text-xs font-semibold text-stone-600">相談内容（必須・入力内容から自動で入れています）</span>
+          <span className="text-xs font-semibold text-stone-600">相談内容（自動で入れています）</span>
           <textarea value={f.content} onChange={set("content")} maxLength={4000} rows={8} className={field} />
         </label>
       </div>

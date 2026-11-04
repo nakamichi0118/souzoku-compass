@@ -18,6 +18,8 @@ const { DebtsStep, newDebt, withDebtAmount } = await import("../DebtsStep");
 const { HeirsStep, priorCreditKinds, removePerson } = await import("../HeirsStep");
 const { TaxStep, filingMessage, filingNeeded, refundOnlyFiling, SUPPORTER_TIP, ROUNDING_TIP } = await import("../TaxStep");
 const { DocumentsStep, handFilledBlanks, divisionDocUnavailable } = await import("../DocumentsStep");
+const { shortFormName } = await import("../FilingGuide");
+const { ReviewStep } = await import("../ReviewStep");
 const { AssetsStep } = await import("../AssetsStep");
 const { addedAnchor } = await import("../useShowAdded");
 
@@ -32,6 +34,33 @@ const clone = () => structuredClone(demoCase);
 beforeEach(() => {
   ctx.data = demoCase;
   ctx.result = null;
+});
+
+describe("申告前の確認：画面の文字", () => {
+  it("回答数と残りの件数を1行で出し、「分からない」のときは下書きになると言う", () => {
+    const c = clone();
+    c.review = {};
+    const html = render(ReviewStep, c);
+    expect(html).toContain("0/13 回答");
+    expect(html).toContain("・残り13件");
+    expect(html).not.toContain("Tips：この確認について");
+    c.review = { answers: { nominee: "unsure" } };
+    expect(render(ReviewStep, c)).toContain("「分からない」のままだと、申告書に「下書き」と入ります。");
+  });
+});
+
+describe("遺産の分け方：財産ごとの選び方", () => {
+  it("財産ごとの問いかけはくり返さず、選ぶボタンは短いラベルにする", () => {
+    const html = render(DivisionStep, clone());
+    expect(html).not.toContain("誰が受け取りますか");
+    for (const l of [">1人<", ">複数人<", ">未定<"]) expect(html).toContain(l);
+    // 計算のメッセージが指す「分け方がまだ決まっていない」のチェックは、その名前のまま
+    expect(html).toContain("分け方がまだ決まっていない");
+    expect(html).not.toContain("決まっていない財産は法定相続分で計算します");
+    const c = clone();
+    c.undivided = true;
+    expect(render(DivisionStep, c)).toContain("決まっていない財産は法定相続分で計算します");
+  });
 });
 
 describe("遺産の分け方：「すべて法定相続分どおりに分けると決めた」（ui-7）", () => {
@@ -118,7 +147,7 @@ describe("債務・葬式費用：分け方が決まっていないとき（ui-8
   it("未分割のときだけ、空欄なら法定相続分で計算すると出し、負担額が合わないとは言わない", () => {
     const c = clone();
     c.debts = [{ id: "d", kind: "debt", label: "借入金", amount: 1_000_000, bearers: [] }];
-    const line = "負担する人が決まっていなければ、入っている人を×で外して空欄にしてください（法定相続分で計算します）。";
+    const line = "負担する人が決まっていなければ、×で外して空欄にしてください（法定相続分で計算します）。";
     const divided = render(DebtsStep, c);
     expect(divided).not.toContain(line);
     expect(divided).toContain("一致していません");
@@ -241,7 +270,8 @@ describe("税額の確認：申告がいるか（tax-6）", () => {
     const none = { needsFiling: false, totalRefund: 0, totalPayable: 0, totalTax: 0 };
     expect(filingNeeded(none)).toBe(false);
     expect(filingMessage(none)).toBe("相続税はかからず、申告も原則いりません。");
-    expect(filingMessage({ ...none, needsFiling: true, totalTax: 3_000_000, totalPayable: 1_000_000 })).toContain("申告期限までに納めます");
+    // 納める税額があるときは、すぐ後の「申告・納税の期限：…」だけで分かるので、一言は出さない
+    expect(filingMessage({ ...none, needsFiling: true, totalTax: 3_000_000, totalPayable: 1_000_000 })).toBe("");
   });
 
   it("基礎控除以下で還付だけを受ける申告は、10か月の期限ではなく、5年以内に出せると言う（ui-4）", () => {
@@ -288,20 +318,39 @@ describe("税額の確認：申告がいるか（tax-6）", () => {
     const html = render(TaxStep, clone());
     expect(html).toContain("家族全体で納める相続税");
     expect(html).toContain("申告・納税の期限：");
+    expect(html).not.toContain("それぞれが自分の分を");
+  });
+
+  it("一人ずつのカードには納める税額と控除だけを出し、課税価格・算出税額と第5表は「詳しい計算」の中に出す", () => {
+    const c = clone();
+    const r = calculate(c);
+    const html = render(TaxStep, c);
+    // 前の画面の「受け取る財産」（取得財産の価額）と違う数字を、同じような名前で出さない
+    expect(html).not.toContain("受け取った財産");
+    const hanako = r.persons.find((p) => p.person.id === "hanako")!;
+    expect(html).toContain(`配偶者の税額軽減 −${hanako.spouseCredit.toLocaleString("ja-JP")}円`);
+    const details = html.indexOf("詳しい計算（申告書の第1表・第2表・第5表）");
+    expect(details).toBeGreaterThan(-1);
+    expect(html.indexOf("配偶者の税額軽減（第5表）")).toBeGreaterThan(details);
+    expect(html.indexOf(`${hanako.taxable.toLocaleString("ja-JP")}円`)).toBeGreaterThan(details);
+    expect(html).toContain("コンパスくんに説明してもらう");
   });
 });
 
 describe("書類の作成（forms-8・forms-10）", () => {
   it("分け方が決まっていれば、第11表の分割の日を手で書く欄に入れる。全部未分割なら入れない", () => {
-    const blank = "第11表の分割の日（遺産分割協議がまとまった日）";
+    const blank = "第11表の分割の日（協議がまとまった日）";
     expect(handFilledBlanks(calculate(demoCase))).toContain(blank);
     const c = clone();
     c.undivided = true;
     c.allocations = [];
     for (const a of c.assets) if (a.kind === "land") a.smallResidential = undefined;
     expect(handFilledBlanks(calculate(c))).not.toContain(blank);
-    expect(handFilledBlanks(null)).toEqual(["マイナンバー（個人番号）欄"]);
-    expect(render(DocumentsStep, clone())).toContain(blank);
+    expect(handFilledBlanks(null)).toEqual(["マイナンバー"]);
+    // 手書きする欄は、手順2「残りを書き込む」の1か所だけに出す
+    const html = render(DocumentsStep, clone());
+    expect(html).toContain(blank);
+    expect(html.split("手書きする欄：").length).toBe(2);
   });
 
   it("マンションの敷地権の割合が分からなければ、第11表の付表1の備考を手で書く欄に入れる（forms-3）", () => {
@@ -339,6 +388,26 @@ describe("書類の作成（forms-8・forms-10）", () => {
     expect(divisionDocUnavailable({ ...clone(), persons: [] })).toContain("相続人");
     const ok = render(DocumentsStep, clone());
     expect(ok).not.toMatch(/<button[^>]*disabled=""[^>]*>遺産分割協議書PDFをダウンロード<\/button>/);
+  });
+
+  it("ダウンロード前の同意2点は文面を変えず、税理士の確認の代わりにならないことを1か所で言う", () => {
+    const html = render(DocumentsStep, clone());
+    expect(html).toContain("利用規約に同意します");
+    expect(html).toContain("相続コンパスは申告書を作るための道具であり、申告内容の確認と最終的な責任は自分にあることを理解しました");
+    expect(html.split("相続コンパスは税理士による確認の代わりにはなりません。").length).toBe(2);
+    // 未確認のまま作ると「下書き」と入ることは残す
+    expect(html).toContain("「下書き」と入ります");
+  });
+
+  it("別に用意する表は短い名前で出し、正式名はたたんだ中に1回だけ出す", () => {
+    expect(shortFormName("第14表（純資産価額に加算される暦年課税分の贈与財産価額などの明細書）")).toBe("第14表");
+    expect(shortFormName("第11・11の2表の付表1（別表1）（小規模宅地等についての課税価格の計算明細）")).toBe("第11・11の2表の付表1（別表1）");
+    expect(shortFormName("申告期限後3年以内の分割見込書")).toBe("申告期限後3年以内の分割見込書");
+    const html = render(DocumentsStep, clone());
+    const full = "第14表（純資産価額に加算される暦年課税分の贈与財産価額などの明細書）";
+    expect(html.split(full).length).toBe(2);
+    expect(html.indexOf(full)).toBeGreaterThan(html.indexOf("表の正式名と様式"));
+    expect(html).toContain("上の「別に用意する表」（第8の8表・第14表）を加えます。");
   });
 });
 

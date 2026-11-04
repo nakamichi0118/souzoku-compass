@@ -229,20 +229,20 @@ export function buildFilingPages(c: Case, r: TaxResult): PageFill[] {
 export function formsNotGenerated(c: Case, r: TaxResult): { form: string; reason: string }[] {
   const out: { form: string; reason: string }[] = [];
   if (r.persons.some((p) => p.surcharge > 0))
-    out.push({ form: "第4表（相続税額の加算金額の計算書）", reason: "相続税が2割増しになる人（孫や兄弟姉妹など）がいます" });
-  if (r.persons.some((p) => p.giftTaxCredit > 0)) out.push({ form: "第4表の2（暦年課税分の贈与税額控除額の計算書）", reason: "贈与税額控除を使っています" });
+    out.push({ form: "第4表（相続税額の加算金額の計算書）", reason: "相続税が2割増しになる人（孫・兄弟姉妹など）がいるため" });
+  if (r.persons.some((p) => p.giftTaxCredit > 0)) out.push({ form: "第4表の2（暦年課税分の贈与税額控除額の計算書）", reason: "贈与税額控除を使うため" });
   if (r.persons.some((p) => p.otherCredits > 0)) {
     const used = [
       r.persons.some((p) => p.minorCredit > 0 || p.transfersIn.some((t) => t.kind === "minor")) && "未成年者控除",
       r.persons.some((p) => p.disabilityCredit > 0 || p.transfersIn.some((t) => t.kind === "disability")) && "障害者控除",
       r.persons.some((p) => p.successiveCredit > 0) && "相次相続控除",
     ].filter(Boolean);
-    out.push({ form: "第8の8表（税額控除額及び納付税額の計算書）", reason: `${used.length ? used.join("・") : "未成年者控除・障害者控除"}を使っています` });
+    out.push({ form: "第8の8表（税額控除額及び納付税額の計算書）", reason: `${used.length ? used.join("・") : "未成年者控除・障害者控除"}を使うため` });
   }
   if (r.persons.some((p) => p.settlementGifts > 0 || p.settlementCredit > 0))
     out.push({
       form: "第11の2表（相続時精算課税適用財産の明細書・相続時精算課税分の贈与税額控除額の計算書）",
-      reason: "相続時精算課税で受けた贈与を足しています",
+      reason: "相続時精算課税の贈与があるため",
     });
   // 小規模宅地等の特例を使う土地（マンションの敷地を含む）を2人以上で取得したとき、
   // または貸家建付地・貸している部屋の敷地で賃貸割合が1でないときは、付表1に別表1を添える
@@ -257,16 +257,16 @@ export function formsNotGenerated(c: Case, r: TaxResult): { form: string; reason
   if (shared || r.assets.some((l) => smallLines(l).length > 0 && partlyRented(l)))
     out.push({
       form: "第11・11の2表の付表1（別表1）（小規模宅地等についての課税価格の計算明細）",
-      reason: shared ? "小規模宅地等の特例を使う土地を2人以上で分けて取得しています" : "小規模宅地等の特例を使う貸している土地に、空いている部屋があります（賃貸割合が1ではありません）",
+      reason: shared ? "特例の土地を2人以上で分けたため" : "特例を使う貸している土地に空き部屋があるため",
     });
   if (r.persons.some((p) => p.gifts > 0))
-    out.push({ form: "第14表（純資産価額に加算される暦年課税分の贈与財産価額などの明細書）", reason: "亡くなる前3年以内に受けた贈与を足しています" });
+    out.push({ form: "第14表（純資産価額に加算される暦年課税分の贈与財産価額などの明細書）", reason: "3年以内の贈与があるため" });
   if (r.totalRefund > 0)
-    out.push({ form: "第1表の付表2（還付される税額の受取場所）", reason: "相続時精算課税で納めた贈与税を返してもらう人がいます" });
+    out.push({ form: "第1表の付表2（還付される税額の受取場所）", reason: "精算課税の贈与税が戻る人がいるため" });
   if (r.undivided)
     out.push({
       form: "申告期限後3年以内の分割見込書",
-      reason: "分け方が決まっていない財産があります（あとで分けたときに配偶者の税額軽減や小規模宅地等の特例を使うために出します）",
+      reason: "分け方が決まっていない財産があるため",
     });
   return out;
 }

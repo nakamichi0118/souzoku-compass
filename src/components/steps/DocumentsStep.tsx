@@ -12,7 +12,7 @@ import { divisionStatus, siteRightRatio } from "@/forms/schedule11";
 import { useCase } from "@/lib/store";
 import { markCompleted } from "@/lib/progress";
 import { usePlan } from "@/lib/planStore";
-import { FilingGuide } from "./FilingGuide";
+import { FilingGuide, shortFormName } from "./FilingGuide";
 import { saveBlob } from "@/lib/download";
 import Link from "next/link";
 import { draftReason, reviewSummary } from "@/domain/review/topics";
@@ -30,11 +30,11 @@ async function download(url: string, body: unknown, filename: string) {
 /** 相続コンパスで聞いていないため、申告書で空欄にしている欄（印刷後に手で書く） */
 export function handFilledBlanks(result: TaxResult | null): string[] {
   return [
-    "マイナンバー（個人番号）欄",
+    "マイナンバー",
     ...(result?.persons.some((p) => p.successiveCredit > 0) ? ["第7表の前の相続で亡くなった方の氏名・続柄・申告書を出した税務署"] : []),
     ...(result?.assets.some((l) => smallLines(l).some((x) => x.detail.kind === "business")) ? ["第11・11の2表の付表1の事業内容（お店や工場などの事業の種類）"] : []),
     // 全部または一部の分け方が決まっているときは、第11表に分割の日を書く
-    ...(result && divisionStatus(result) !== "3" ? ["第11表の分割の日（遺産分割協議がまとまった日）"] : []),
+    ...(result && divisionStatus(result) !== "3" ? ["第11表の分割の日（協議がまとまった日）"] : []),
     // マンションの敷地利用権の備考には敷地権の割合を書く。登記申請の画面で割合を入れていなければ空欄になる
     ...(result?.assets.some((l) => l.asset.kind === "condo" && !/分の/.test(siteRightRatio(l.asset.registry?.siteRight)))
       ? ["第11表の付表1の備考（マンションの敷地権の割合。登記事項証明書の『敷地権の割合』、例：10000分の169）"]
@@ -59,6 +59,8 @@ export function DocumentsStep() {
   const plan = usePlan();
   const missing = result ? formsNotGenerated(data, result) : [];
   const blanks = handFilledBlanks(result);
+  // 「申告が終わるまで」の案内（申告がいるときだけ出る）
+  const guide = !!result?.needsFiling;
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -101,28 +103,40 @@ export function DocumentsStep() {
         <Note tone="stop">自動では書類を完成できない事項があります。「税額の確認」で内容を確認し、税理士にご相談ください。</Note>
       ) : null}
       <Card title="相続税の申告書（国税庁 令和8年分様式）">
-        <p className="mb-3 text-sm text-stone-600">
-          国税庁が公開している令和8年分の正式様式に、計算結果を記入したPDFを作ります。自動で作るのは第1表・第1表（続）・第2表・第5表・第6表・第7表・第9表・第10表・第11表と付表1〜4・第11・11の2表の付表1（小規模宅地等）・第13表・第15表です（使う表だけが入ります）。
-        </p>
+        <p className="text-sm text-stone-600">国税庁の正式様式に、計算結果を記入したPDFを作ります。</p>
+        <details className="mb-3 text-xs text-stone-600">
+          <summary className="cursor-pointer py-2 font-medium text-teal-800">作る表を見る</summary>
+          <p className="leading-relaxed">
+            令和8年分の様式の、第1表・第1表（続）・第2表・第5表・第6表・第7表・第9表・第10表・第11表と付表1〜4・第11・11の2表の付表1（小規模宅地等）・第13表・第15表です（使う表だけが入ります）。
+          </p>
+        </details>
         {missing.length > 0 && (
           <div className="mb-3 rounded-lg border border-orange-300 bg-orange-50 p-3 text-sm text-orange-950">
-            <p className="font-bold">このPDFだけでは申告書一式になりません。次の表は自動で作らないため、別に用意してください。</p>
+            <p className="font-bold">次の表は自動で作れないので、別に用意してください。</p>
             <ul className="mt-1 list-disc space-y-0.5 pl-5">
               {missing.map((m, i) => (
                 <li key={`${i}-${m.form}`}>
-                  {m.form}（{m.reason}）
+                  {shortFormName(m.form)}（{m.reason}）
                 </li>
               ))}
             </ul>
-            <p className="mt-1 text-xs">様式は国税庁のホームページ「相続税の申告書等の様式一覧（令和8年分用）」にあります。</p>
+            <details className="mt-1 text-xs">
+              <summary className="cursor-pointer py-2 font-medium text-teal-800">表の正式名と様式</summary>
+              <ul className="list-disc space-y-0.5 pl-5">
+                {missing.map((m, i) => (
+                  <li key={`${i}-${m.form}`}>{m.form}</li>
+                ))}
+              </ul>
+              <p className="mt-1">様式は国税庁のホームページ「相続税の申告書等の様式一覧（令和8年分用）」にあります。</p>
+            </details>
           </div>
         )}
         {draft && (
           <div className="mb-3">
             <Note tone="warn">
-              {draft}（残り {review.open.length} 件）。このまま作ると、申告書の各ページに「下書き」と入ります。
+              申告前の確認が残り{review.open.length}件です。このまま作ると、各ページに「下書き」と入ります。
               <Link href="/case/review" className="ml-2 font-semibold underline">
-                申告前の確認へ ›
+                確認する ›
               </Link>
             </Note>
           </div>
@@ -141,16 +155,12 @@ export function DocumentsStep() {
         <Button onClick={() => run("tax", "/api/forms", "相続税申告書_令和8年分.pdf")} disabled={busy !== null || !agreed}>
           {busy === "tax" ? "作成中…" : "申告書PDFをダウンロード"}
         </Button>
-        <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-stone-600">
-          <li>{blanks.join("、")}は空欄です。印刷後に記入してください。</li>
-          {result?.assets.some((l) => l.reduction > 0) && <li>小規模宅地等の特例を受けるときは、遺産分割協議書の写し・取得者の住民票などの添付書類も必要です。</li>}
-          <li>提出前に、内容を必ず確認してください。相続コンパスは税理士による確認の代わりにはなりません。</li>
-        </ul>
+        {/* 手書きする欄と添付書類は、下の「申告が終わるまで」の手順2・3に出す（その案内が出ないときだけここに出す） */}
+        {!guide && <p className="mt-3 text-sm text-stone-600">手書きする欄：{blanks.join("、")}</p>}
+        <p className="mt-3 text-sm text-stone-600">相続コンパスは税理士による確認の代わりにはなりません。</p>
       </Card>
       <Card title="遺産分割協議書">
-        <p className="mb-3 text-sm text-stone-600">
-          「遺産の分け方」で決めた内容から、遺産分割協議書の文案を作ります。日付・本籍を記入し、相続人全員が署名して実印を押してください（印鑑証明書を添付します）。
-        </p>
+        <p className="mb-3 text-sm text-stone-600">「遺産の分け方」の内容で文案を作ります。日付・本籍を書き、相続人全員が署名して実印を押します（印鑑証明書を添付）。</p>
         {division.warnings.map((w, i) => (
           <div key={`${i}-${w}`} className="mb-2">
             <Note tone="warn">{w}</Note>
@@ -162,7 +172,7 @@ export function DocumentsStep() {
         {noDivisionDoc && <p className="mt-2 text-xs text-stone-600">{noDivisionDoc}</p>}
       </Card>
       {err && <Note tone="stop">{err}</Note>}
-      <FilingGuide missing={missing} />
+      <FilingGuide missing={missing} blanks={blanks} />
     </div>
   );
 }

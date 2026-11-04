@@ -160,7 +160,7 @@ export function buildDivisionDoc(c: Case): DivisionDoc {
   });
   for (const s of signers.filter((x) => x.minor)) {
     warnings.push(
-      `${s.name}さんは未成年のため、法定代理人（親権者）が代わりに署名します。親権者も相続人である場合は、家庭裁判所で特別代理人を選任する必要があります。`,
+      `${s.name}さんは未成年なので、親権者が代わりに署名します。親権者も相続人なら、家庭裁判所で特別代理人を選んでもらいます。`,
     );
   }
   const missing = heirs.filter((h) => !take.has(h.id) && !bear.has(h.id) && !compensationTo.has(h.id));
