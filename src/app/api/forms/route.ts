@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { draftReason } from "@/domain/review/topics";
 import { calculate } from "@/domain/tax/engine";
 import { buildFilingPages } from "@/forms/filing";
 import { renderForms } from "@/forms/render";
@@ -15,7 +16,11 @@ export async function POST(req: Request) {
     if (r.blockers.length > 0) {
       return NextResponse.json({ error: "自動では作成できない事項があります。", blockers: r.blockers }, { status: 422 });
     }
-    const pdf = await renderForms(buildFilingPages(c, r));
+    const consent = c.review?.consent;
+    if (!consent?.terms || !consent.responsibility) {
+      return NextResponse.json({ error: "利用規約への同意と、申告内容の責任についての確認にチェックを入れてください。" }, { status: 400 });
+    }
+    const pdf = await renderForms(buildFilingPages(c, r), { draft: draftReason(c.review) });
     return new NextResponse(Buffer.from(pdf), {
       headers: {
         "content-type": "application/pdf",

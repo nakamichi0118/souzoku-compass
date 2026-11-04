@@ -118,6 +118,7 @@ export default function Home() {
 
       <footer className="mx-auto max-w-6xl px-4 py-8 text-xs leading-relaxed text-stone-500">
         デモはすべて架空のダミーデータです。申告書様式の出典：国税庁「相続税の申告書等の様式一覧（令和8年分用）」を加工して作成。手続きの内容は一般的な案内で、自治体や窓口によって異なる場合があります。
+        <Link href="/terms" className="ml-2 underline">利用規約</Link>
         <Link href="/privacy" className="ml-2 underline">プライバシーポリシー</Link>
       </footer>
     </>

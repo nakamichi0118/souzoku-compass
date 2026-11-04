@@ -3,6 +3,7 @@ export const STEPS = [
   { slug: "heirs", title: "相続人", short: "相続人" },
   { slug: "assets", title: "財産", short: "財産" },
   { slug: "debts", title: "債務・葬式費用", short: "債務" },
+  { slug: "review", title: "申告前の確認", short: "確認" },
   { slug: "division", title: "遺産の分け方", short: "分割" },
   { slug: "tax", title: "税額の確認", short: "税額" },
   { slug: "documents", title: "書類の作成", short: "書類" },

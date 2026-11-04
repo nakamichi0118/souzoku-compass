@@ -9,6 +9,7 @@ import { HeirsStep } from "./steps/HeirsStep";
 import { AssetsStep } from "./steps/AssetsStep";
 import { DebtsStep } from "./steps/DebtsStep";
 import { DivisionStep } from "./steps/DivisionStep";
+import { ReviewStep } from "./steps/ReviewStep";
 import { TaxStep } from "./steps/TaxStep";
 import { DocumentsStep } from "./steps/DocumentsStep";
 import { STEPS, stepIndex } from "@/lib/steps";
@@ -20,6 +21,7 @@ const COMPONENTS: Record<string, React.ComponentType> = {
   heirs: HeirsStep,
   assets: AssetsStep,
   debts: DebtsStep,
+  review: ReviewStep,
   division: DivisionStep,
   tax: TaxStep,
   documents: DocumentsStep,

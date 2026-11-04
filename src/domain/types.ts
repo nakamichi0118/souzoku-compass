@@ -2,6 +2,7 @@
  * 相続コンパスのドメインモデル。
  * 金額はすべて円単位の整数、日付は ISO 8601 (YYYY-MM-DD) 文字列。
  */
+import type { ReviewState } from "./review/topics";
 
 import type { District } from "./valuation/depth";
 import type { RoadInput } from "./valuation/roads";
@@ -409,6 +410,8 @@ export interface Case {
   compensation?: Compensation[];
   /** 申告書の提出先税務署・提出日 */
   filing?: { taxOffice: string; submitDate?: ISODate };
-  /** 相続税申告の7ステップのうち「次へ」で完了にしたもの（進捗表示用。計算には使わない） */
+  /** 相続税申告のステップのうち「次へ」で完了にしたもの（進捗表示用。計算には使わない） */
   progress?: { completed: string[] };
+  /** 申告前の確認（財産の入れ漏れ・お金の動き・特殊事情。計算には使わない） */
+  review?: ReviewState;
 }

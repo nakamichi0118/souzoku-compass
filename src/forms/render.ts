@@ -76,7 +76,12 @@ function drawField(page: ReturnType<PDFDocument["addPage"]>, font: PDFFont, box:
   }
 }
 
-export async function renderForms(fills: PageFill[]): Promise<Uint8Array> {
+/** 下書きのしるし（申告前の確認が終わっていないとき、各ページの上の余白に入れる） */
+export interface RenderOptions {
+  draft?: string | null;
+}
+
+export async function renderForms(fills: PageFill[], opts: RenderOptions = {}): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   doc.registerFontkit(fontkit);
   doc.setTitle("相続税の申告書（令和8年分用）");
@@ -99,6 +104,13 @@ export async function renderForms(fills: PageFill[]): Promise<Uint8Array> {
       const box = def.fields[id];
       if (!box) throw new Error(`unknown field ${fill.page}.${id}`);
       drawField(page, font, box, String(v));
+    }
+    if (opts.draft) {
+      const text = `下書き：${opts.draft}（提出前に確認してください）`;
+      const size = 9;
+      const w = font.widthOfTextAtSize(text, size);
+      page.drawRectangle({ x: (A4.w - w) / 2 - 6, y: A4.h - 16, width: w + 12, height: 13, color: rgb(1, 0.93, 0.9), borderColor: rgb(0.8, 0.15, 0.1), borderWidth: 0.6 });
+      page.drawText(text, { x: (A4.w - w) / 2, y: A4.h - 13, size, font, color: rgb(0.75, 0.1, 0.05) });
     }
   }
   return doc.save();
