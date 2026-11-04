@@ -58,7 +58,7 @@ export function removePerson(c: Case, id: string): Case {
               acquirerId: undefined,
               // 特例を使う面積はその人のための入力なので残さない
               selectedSqm: undefined,
-              check: check ? { ownHome: check.ownHome, special: check.special, business: check.business, recent: check.recent } : undefined,
+              check: check ? { ownHome: check.ownHome, special: check.special, business: check.business, familyHome: check.familyHome, recent: check.recent } : undefined,
             },
           };
         }

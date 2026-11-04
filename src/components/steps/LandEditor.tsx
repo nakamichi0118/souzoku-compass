@@ -74,7 +74,16 @@ export function resetSmallOnKindChange(a: LandAsset | CondoAsset, p: Partial<Lan
 }
 
 /** 取得する人を変えたときに残す答え（土地と亡くなった方についての答え）。同居・続けるか・持ち続けるか・税理士への確認は引き継がない */
-const keepForNewAcquirer = (c: SmallResidentialCheck): SmallResidentialCheck => ({ ownHome: c.ownHome, special: c.special, business: c.business, recent: c.recent });
+const keepForNewAcquirer = (c: SmallResidentialCheck): SmallResidentialCheck => ({
+  ownHome: c.ownHome,
+  special: c.special,
+  business: c.business,
+  familyHome: c.familyHome,
+  recent: c.recent,
+});
+
+/** 土地についての答え（最初の人の欄で答え、一緒に取得する人にも使う）。ほかは人ごとの答え */
+const LOT_KEYS: readonly (keyof SmallResidentialCheck)[] = ["ownHome", "special", "business", "familyHome", "recent"];
 
 /** 一緒に受け継いだ人の答えを消す（人と面積は残す） */
 const withoutAnswers = (o: SmallLandAcquirer): SmallLandAcquirer => ({ acquirerId: o.acquirerId, ...(o.selectedSqm != null ? { selectedSqm: o.selectedSqm } : {}) });
@@ -86,7 +95,7 @@ const personAnswers = (c: SmallResidentialCheck = {}): SmallResidentialCheck =>
   ) as SmallResidentialCheck;
 
 /**
- * 2人目以降の取得者の判定に使う答え。土地についての答え（自宅か・事情・事業に使っていたか・3年以内か）は最初の人の答え、
+ * 2人目以降の取得者の判定に使う答え。土地についての答え（自宅か・事情・事業に使っていたか・家族が住んでいたか・3年以内か）は最初の人の答え、
  * 人ごとの答え（同居・続けるか・持ち続けるか・税理士への確認）はその人の答え（特例は取得した人ごとに判定する。措置法69条の4第3項）
  */
 export const otherAcquirerCheck = (lot: SmallResidentialCheck = {}, own: SmallResidentialCheck = {}): SmallResidentialCheck => ({
@@ -101,14 +110,33 @@ export function firstAcquirerChange(sr: SmallLandRelief, acquirerId: string): Pa
 }
 
 /**
- * 最初の人の答えを変えたときの、一緒に受け継いだ人の答え。自宅か・事業に使っていたかが変わると聞くことが変わるので答えを消し、
- * 事情・3年以内かが変わると判定が変わるので、税理士への確認だけ外す
+ * 最初の人の答えを変えたときの、一緒に受け継いだ人の答え。自宅か・事業に使っていたか・家族が住んでいたかが変わると
+ * 聞くことが変わるので答えを消し、事情・3年以内かが変わると判定が変わるので、税理士への確認だけ外す
  */
 export function othersAfterLotAnswer(others: SmallLandAcquirer[] | undefined, key: keyof SmallResidentialCheck, before: SmallResidentialCheck, v: Answer): SmallLandAcquirer[] | undefined {
   if (!others?.length || before[key] === v) return others;
-  if (key === "ownHome" || key === "business") return others.map(withoutAnswers);
+  if (key === "ownHome" || key === "business" || key === "familyHome") return others.map(withoutAnswers);
   if (key === "special" || key === "recent") return others.map((o) => (o.check?.confirmedByAdvisor ? { ...o, check: { ...o.check, confirmedByAdvisor: false } } : o));
   return others;
+}
+
+/**
+ * 最初の人の欄で答えたときの変更。自宅の敷地か・事業に使っていたか・家族が住んでいたかを答え直したら、
+ * 特例の種類や聞くことが変わるので、その先の答えは引き継がない（一緒に取得する人の答えも消す）。どの答えでも税理士への確認は外す
+ */
+export function answerFirstAcquirer(sr: SmallLandRelief, key: keyof SmallResidentialCheck, v: Answer): Pick<SmallLandRelief, "check" | "others"> {
+  const check = sr.check ?? {};
+  const base: SmallResidentialCheck =
+    v === check[key]
+      ? check
+      : key === "ownHome"
+        ? {}
+        : key === "business"
+          ? { ownHome: check.ownHome }
+          : key === "familyHome"
+            ? { ownHome: check.ownHome, business: check.business }
+            : check;
+  return { check: { ...base, [key]: v, confirmedByAdvisor: false }, others: othersAfterLotAnswer(sr.others, key, check, v) };
 }
 
 /** 一緒に取得する人を1人増やす（人はこれから選ぶ） */
@@ -128,10 +156,10 @@ export const setOtherAcquirerPerson = (sr: SmallLandRelief, i: number, acquirerI
 
 /**
  * 一緒に取得する人の答え。人ごとの答えはその人の check に入れ（税理士への確認は外す）、
- * 3年以内に始めたか（土地についての答え）は最初の人の check に入れる
+ * 3年以内に始めたかなど土地についての答えは最初の人の check に入れる
  */
 export function answerOtherAcquirer(sr: SmallLandRelief, i: number, key: keyof SmallResidentialCheck, v: Answer): SmallLandRelief {
-  if (key === "ownHome" || key === "special" || key === "business" || key === "recent") {
+  if (LOT_KEYS.includes(key)) {
     const lot = sr.check ?? {};
     return { ...sr, check: { ...lot, [key]: v }, others: othersAfterLotAnswer(sr.others, key, lot, v) };
   }
@@ -176,6 +204,10 @@ const Q = {
   keepHome: { key: "keep", q: "申告期限まで、この家に住み続け、土地を持ち続けますか？" } as Question,
   businessContinues: (who: string): Question => ({ key: "continues", q: `${who}は、申告期限までにその事業を引き継ぎ、続けますか？` }),
   businessRecent: { key: "recent", q: "亡くなる前3年以内に始めた事業ですか？" } as Question,
+  // 生計を一にしていた親族が無料で住んでいた土地（措置法69条の4第3項2号）。place は「土地」か「部屋」
+  familyHome: (place: string): Question => ({ key: "familyHome", q: `亡くなった方と同じ家計の家族（生計を一にしていた親族）が、無料で住んでいた${place}ですか？` }),
+  // その親族本人が取得し、申告期限まで住み続け・持ち続けるか（3項2号ハ）
+  familyKeep: (who: string): Question => ({ key: "keep", q: `${who}はその家族本人で、申告期限まで住み続け、持ち続けますか？` }),
 };
 
 /** 最初の取得者の答えで、3年以内に始めたかをすでに聞いているか（聞いていなければ、一緒に取得する人の欄で聞く） */
@@ -197,7 +229,10 @@ export function otherAcquirerQuestions(
   if (!person || person.relation === "other") return [];
   const who = person.name ? `${person.name}さん` : "取得する人";
   if (kind === "residence") {
-    if (lot.ownHome !== "yes" || lot.special !== "no" || person.relation === "spouse") return [];
+    if (person.relation === "spouse") return [];
+    // 家族が無料で住んでいた土地：その家族本人が住み続け・持ち続けるか
+    if (lot.ownHome === "no") return lot.business === "no" && lot.familyHome === "yes" ? [Q.familyKeep(who)] : [];
+    if (lot.ownHome !== "yes" || lot.special !== "no") return [];
     return [Q.livedTogether(who), ...(own.livedTogether === "yes" ? [Q.keepHome] : [])];
   }
   const out: Question[] = [kind === "rental" ? Q.rentalContinues(who) : Q.businessContinues(who)];
@@ -212,8 +247,8 @@ export function recentAskedAt(kind: SmallLandKind, lot: SmallResidentialCheck, o
   return (others ?? []).findIndex((o) => o.acquirerId && o.check?.continues === "yes" && o.check?.keep === "yes");
 }
 
-/** 土地についての答えで、誰が取得しても特例を使えないと決まっているか（自宅でも事業用でもない） */
-const lotRuledOut = (kind: SmallLandKind, c: SmallResidentialCheck) => kind !== "rental" && c.ownHome === "no" && c.business === "no";
+/** 土地についての答えで、誰が取得しても特例を使えないと決まっているか（自宅でも、事業用でも、家族が住んでいた土地でもない） */
+const lotRuledOut = (kind: SmallLandKind, c: SmallResidentialCheck) => kind !== "rental" && c.ownHome === "no" && c.business === "no" && c.familyHome === "no";
 
 function Ask({ q, hint, value, onChange }: { q: string; hint?: string; value: Answer | undefined; onChange: (v: Answer) => void }) {
   return (
@@ -276,14 +311,12 @@ export function SmallResidential({
     const jj = judgeSmallResidential(c, living.find((p) => p.id === n.acquirerId), k, opts);
     patch({ smallResidential: { ...n, check: c, applies: shouldApply(jj, c) } });
   };
-  const answer = (k: keyof SmallResidentialCheck, v: Answer) => {
-    // 自宅の敷地か・事業に使っていたかを答え直したら、特例の種類や聞くことが変わるので、その先の答えは引き継がない
-    const base: SmallResidentialCheck = k === "ownHome" && v !== check.ownHome ? {} : k === "business" && v !== check.business ? { ownHome: check.ownHome } : check;
-    set({ check: { ...base, [k]: v, confirmedByAdvisor: false }, others: othersAfterLotAnswer(sr.others, k, check, v) });
-  };
+  // 自宅の敷地か・事業に使っていたか・家族が住んでいたかを答え直したら、特例の種類や聞くことが変わるので、その先の答えは引き継がない
+  const answer = (k: keyof SmallResidentialCheck, v: Answer) => set(answerFirstAcquirer(sr, k, v));
   const ask = ({ key, q, hint }: Question) => <Ask q={q} hint={hint} value={check[key] as Answer | undefined} onChange={(v) => answer(key, v)} />;
   const isSpouse = acquirer?.relation === "spouse";
   const what = a.kind === "condo" ? "この部屋" : "この土地";
+  const place = a.kind === "condo" ? "部屋" : "土地";
   // 条件は満たしていても、分け方のために特例を使わないときは「使えます」を緑で見せない
   const tone = j.result === "ok" ? (gap ? "info" : "ok") : j.result === "consult" ? "warn" : j.result === "no" ? "info" : null;
   // 一緒に受け継いだ人・面積の一部の入力は、取得する人を選び、土地として特例を使える見込みがあるときだけ出す。
@@ -320,6 +353,13 @@ export function SmallResidential({
             </>
           )}
           {check.ownHome === "no" && ask({ key: "business", q: "亡くなった方が、お店や工場など自分の事業（人に貸す事業は除く）に使っていた土地ですか？" })}
+          {check.ownHome === "no" && check.business === "no" && (
+            // 生計を一にしていた親族が無料で住んでいた土地（特定居住用宅地等）：配偶者でなければ、その家族本人が住み続け・持ち続けるか
+            <>
+              {ask(Q.familyHome(place))}
+              {check.familyHome === "yes" && acquirer && !isSpouse && ask(Q.familyKeep("取得する人"))}
+            </>
+          )}
           {kind === "business" && (
             // 特定事業用宅地等：事業を引き継いで続けるか → 持ち続けるか → 3年以内に始めた事業か
             <>

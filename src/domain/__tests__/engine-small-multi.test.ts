@@ -209,7 +209,7 @@ describe("面積を選んで、貸している土地にも限度面積を残す�
     expect((h.small!.selectedArea * 200) / 330 + a.small!.selectedArea).toBeLessThanOrEqual(200);
     const w = r.warnings.find((x) => x.includes("人に貸していた土地と合わせて200㎡まで"));
     expect(w).toContain("「自宅」に165㎡");
-    expect(w).toContain("「アパート」は残り100㎡分");
+    expect(w).toContain("「アパート」に100㎡");
   });
 
   it("面積を選ばなければ、これまでどおり自宅に330㎡全部を使い、アパートには使わない", () => {
@@ -223,7 +223,7 @@ describe("面積を選んで、貸している土地にも限度面積を残す�
 
 describe("アパートの敷地を2人で受け継ぎ、2人とも貸付を続ける", () => {
   // 300㎡ 自用地 6,000万円 → 貸家建付地 4,920万円。長男・長女 1/2 ずつ：③150㎡ ④2,460万円ずつ。
-  // 貸付事業用は合計200㎡まで → 2人の分を合わせて200㎡（同じ価額なので、入力順に長男150㎡・長女は残り50㎡）
+  // 貸付事業用は合計200㎡まで → 2人の分を合わせて200㎡（同じ価額なので、入力順に長男150㎡・長女50㎡）
   const lot = rental("アパート", 300, 60_000_000, "c1", RENT_ON, [{ acquirerId: "c2", check: { continues: "yes", keep: "yes" } }]);
   const allocations = [all("アパート", ["c1", 1, 2], ["c2", 1, 2])];
 
@@ -239,7 +239,7 @@ describe("アパートの敷地を2人で受け継ぎ、2人とも貸付を続�
     expect(amountOf(r, "アパート", "c2")).toBe(20_500_000);
     const w = r.warnings.find((x) => x.includes("200㎡まで"))!;
     expect(w).toContain("「アパート」（長男さんの分）に150㎡");
-    expect(w).toContain("「アパート」（長女さんの分）は残り50㎡分");
+    expect(w).toContain("「アパート」（長女さんの分）に50㎡");
     expect(w).toContain("どの土地（どの人の分）に割り当てるか");
   });
 
@@ -277,8 +277,9 @@ describe("限度面積を超えるときは、どの人の分に割り当てる�
     expect(r.assets[0].reduction).toBe(48_000_000 + 31_200_000);
     expect(of(r, "s").payable).toBe(0);
     const w = r.warnings.find((x) => x.includes("330㎡"))!;
-    expect(w).toContain("家族全体で納める相続税がいちばん少なくなるように");
-    expect(w).toContain("「自宅」（長男さんの分）に200㎡、「自宅」（妻さんの分）は残り130㎡分");
+    expect(w).toContain("家族全体で納める相続税が少なくなる割り当てを計算で探し");
+    expect(w).not.toContain("いちばん少なく");
+    expect(w).toContain("「自宅」（長男さんの分）に200㎡、「自宅」（妻さんの分）に130㎡");
   });
 
   it("妻の分を先にするより、納める相続税が少ない", () => {
@@ -406,7 +407,11 @@ describe("課税価格が同じでも、端数のために納める税額が100�
   it("子3人が1/3ずつ：総額930万円を按分割合 0.3333333334・0.3333333333・0.3333333333 で分ける", () => {
     // 預金1.2億円 − 基礎控除4,800万 ＝ 7,200万 → 2,400万ずつ × 15% − 50万 ＝ 310万 × 3 ＝ 930万。
     // 長男 930万 × 0.3333333334 ＝ 3,100,000.0（切捨て 3,100,000）、ほかの2人は 3,099,999 → 100円未満切捨てで 3,099,900
-    const r = calculate(mk([c1, c2, c3], [dep("預金", 120_000_000)], [all("預金", ["c1", 1, 3], ["c2", 1, 3], ["c3", 1, 3])]));
+    // （按分割合の端数は、生年月日の順で先の人＝いちばん年上の長男に寄せる）
+    const born = (p: Person, d: string): Person => ({ ...p, birthDate: d });
+    const r = calculate(
+      mk([born(c1, "1970-01-01"), born(c2, "1972-01-01"), born(c3, "1975-01-01")], [dep("預金", 120_000_000)], [all("預金", ["c1", 1, 3], ["c2", 1, 3], ["c3", 1, 3])]),
+    );
     expect(r.totalTax).toBe(9_300_000);
     expect(r.persons.map((p) => p.payable)).toEqual([3_100_000, 3_099_900, 3_099_900]);
     const w = r.warnings.find((x) => x.includes("課税価格が同じですが"))!;

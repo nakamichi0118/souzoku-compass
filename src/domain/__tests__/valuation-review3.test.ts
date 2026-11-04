@@ -133,12 +133,12 @@ describe("valuation-2：倍率方式の宅地は、形がいびつでも 固定�
 
 describe("ui-3：自宅でも事業用でもないときの説明は、土地とマンションの部屋で変える", () => {
   const child: Person = { id: "c", name: "長男", relation: "child" };
-  const no = { ownHome: "no", business: "no" } as const;
+  const no = { ownHome: "no", business: "no", familyHome: "no" } as const;
   it("マンションの部屋は「家賃をもらって人に貸している」のチェックへ案内し、土地だけの入力は書かない", () => {
     const j = judgeSmallResidential(no, child, "residence", { assetKind: "condo" });
     expect(j.result).toBe("no");
     expect(j.reason).toBe(
-      "自宅でも、事業に使っていた部屋でもないため、特例は使えません。家賃をもらって人に貸している部屋は、「家賃をもらって人に貸している」にチェックを入れてください。家族が無料で住んでいた部屋は、使える場合があるので税理士にご相談ください。",
+      "自宅でも、事業に使っていた部屋でもないため、特例は使えません。家賃をもらって人に貸している部屋は、「家賃をもらって人に貸している」にチェックを入れてください。",
     );
     expect(j.reason).not.toContain("土地の使い方");
     expect(j.reason).not.toContain("人の土地を借りて");
@@ -147,7 +147,8 @@ describe("ui-3：自宅でも事業用でもないときの説明は、土地と
     expect(judgeSmallResidential(no, child).reason).toBe(NOT_HOME_OR_BUSINESS_REASON.land);
     expect(judgeSmallResidential(no, child, "residence", { assetKind: "land" }).reason).toBe(NOT_HOME_OR_BUSINESS_REASON.land);
     expect(NOT_HOME_OR_BUSINESS_REASON.land).toContain("「土地の使い方」");
-    expect(NOT_HOME_OR_BUSINESS_REASON.land).toContain("家族が無料で住んでいた");
+    // 家族が無料で住んでいた土地は、先に別の質問で聞いている
+    expect(NOT_HOME_OR_BUSINESS_REASON.land).not.toContain("家族が無料で住んでいた");
     expect(NOT_HOME_OR_BUSINESS_REASON.land).toContain("月極駐車場");
     // 前の文（約200字）より短くする
     expect(NOT_HOME_OR_BUSINESS_REASON.land.length).toBeLessThan(160);

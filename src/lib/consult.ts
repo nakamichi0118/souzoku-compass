@@ -10,7 +10,7 @@ const yen = (n: number) => `${n.toLocaleString("ja-JP")}円`;
  * 小規模宅地等の特例で税理士に確かめたいこと。1つの土地を何人かで受け継いで特例を使うときは、2人目以降の人も
  * 本人の答え（土地についての答えは1人目の答え）で判定し、人の名前を添える。理由が同じ人はまとめて1行にする
  */
-function smallLandConsult(lotName: string, sr: SmallLandRelief, kind: SmallLandKind, living: Person[]): string[] {
+function smallLandConsult(lotName: string, sr: SmallLandRelief, kind: SmallLandKind, living: Person[], assetKind: "land" | "condo"): string[] {
   const who: { id?: string; check: SmallResidentialCheck }[] = [];
   const seen = new Set<string>();
   if (sr.check) who.push({ id: sr.acquirerId, check: sr.check });
@@ -24,7 +24,7 @@ function smallLandConsult(lotName: string, sr: SmallLandRelief, kind: SmallLandK
   const byReason = new Map<string, string[]>();
   for (const w of who) {
     const person = living.find((p) => p.id === w.id);
-    const j = judgeSmallResidential(w.check, person, kind);
+    const j = judgeSmallResidential(w.check, person, kind, { assetKind });
     if (j.result !== "consult") continue;
     byReason.set(j.reason, [...(byReason.get(j.reason) ?? []), person?.name ? `${person.name}さん` : "取得する人"]);
   }
@@ -43,7 +43,7 @@ export function consultPoints(c: Case, r: TaxResult | null): string[] {
       );
     }
     if ((a.kind === "land" || a.kind === "condo") && a.smallResidential) {
-      out.push(...smallLandConsult(a.label || a.location, a.smallResidential, smallLandKind(a), living));
+      out.push(...smallLandConsult(a.label || a.location, a.smallResidential, smallLandKind(a), living, a.kind));
     }
     if (a.kind === "unlistedStock") out.push(`非上場株式「${a.label}」の評価をお願いしたい。`);
     if (a.foreign) out.push(`国外の財産「${a.label}」がある。`);

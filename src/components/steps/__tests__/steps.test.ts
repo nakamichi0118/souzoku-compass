@@ -497,6 +497,16 @@ describe("家族を削除したとき、小規模宅地等の特例の取得者�
     expect(sr.others?.map((o) => o.acquirerId)).toEqual(["ichiro", "sakura"]);
   });
 
+  it("最初の取得者を削除しても、家族が無料で住んでいた土地かの答え（土地についての答え）は残す", () => {
+    const c = withOthers();
+    c.assets = c.assets.map((a) =>
+      a.id === "home-land" && a.kind === "land"
+        ? { ...a, smallResidential: { ...a.smallResidential!, check: { ownHome: "no", business: "no", familyHome: "yes", keep: "yes", confirmedByAdvisor: true } } }
+        : a,
+    );
+    expect(srOf(removePerson(c, "hanako"))!.check).toEqual({ ownHome: "no", business: "no", familyHome: "yes" });
+  });
+
   it("特例に関係のない人を削除しても、特例の入力は変えない", () => {
     const c = withOthers();
     const before = srOf(c);

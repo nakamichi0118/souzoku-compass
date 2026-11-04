@@ -256,7 +256,7 @@ export interface SmallLandRelief {
   /**
    * この土地を一緒に受け継ぎ、特例を使うほかの人（共有で取得したとき）。
    * check からは人ごとの答え（livedTogether・keep・continues・confirmedByAdvisor）だけを使い、
-   * 土地についての答え（ownHome・special・business・recent）は最初の人の check を使う
+   * 土地についての答え（ownHome・special・business・familyHome・recent）は最初の人の check を使う
    */
   others?: SmallLandAcquirer[];
 }

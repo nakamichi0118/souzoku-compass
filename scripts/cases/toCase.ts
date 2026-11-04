@@ -145,8 +145,8 @@ function qualifyingCheck(kind: SmallLandKind, acquirer: Member | undefined, u: S
   return { ownHome: "yes", special: "no", ...own };
 }
 
-/** 青空駐車場の答え：自宅の敷地でも、自分の事業に使っていた土地でもない（特例は使えないと判定される） */
-const PARKING_CHECK: SmallResidentialCheck = { ownHome: "no", business: "no" };
+/** 青空駐車場の答え：自宅の敷地でも、自分の事業に使っていた土地でも、家族が無料で住んでいた土地でもない（特例は使えないと判定される） */
+const PARKING_CHECK: SmallResidentialCheck = { ownHome: "no", business: "no", familyHome: "no" };
 
 /**
  * 小規模宅地等の入力。画面と同じく、答えと取得者から「適用する」を決める。

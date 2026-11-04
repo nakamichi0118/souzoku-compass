@@ -1370,14 +1370,18 @@ export function expected(s: Scenario): Expected {
       const shares = pool.map((q) => {
         const g = Math.floor((excess * rem.get(q.id)!) / sum);
         given += g;
-        return { q, g };
+        // 切り捨てた端数（按分の余り）
+        return { q, g, cut: (excess * rem.get(q.id)!) % sum };
       });
+      // 切捨てで残った1円ずつは、按分の端数が大きい人から（最大剰余。同じなら一覧の順）
       let left = excess - given;
-      for (const x of shares) {
+      for (const x of [...shares].sort((a, b) => b.cut - a.cut)) {
         if (left > 0 && rem.get(x.q.id)! - x.g > 0) {
           x.g += 1;
           left--;
         }
+      }
+      for (const x of shares) {
         x.q[field] += x.g;
         rem.set(x.q.id, rem.get(x.q.id)! - x.g);
       }
@@ -1479,11 +1483,13 @@ export function expected(s: Scenario): Expected {
     return { persons, total, totalTaxable, net, reduction, taxParts: tt, transferred };
   };
 
-  // 小規模宅地等の選び方：家族は納める税額の合計が一番少なくなる組合せを選ぶ
-  const chosen = chooseSmallLand(cands, (sel) => {
+  // 小規模宅地等の選び方：家族は納める税額の合計が一番少なくなる組合せを選ぶ。並べ方ごとに前から使う選び方を比べたあと、
+  // 同じ種類の候補のあいだで面積を分け直す選び方も調べる（限度面積はどの人の分にどれだけ使ってもよい。措法69条の4第1項）
+  const smallScore = (sel: SmallSel[]) => {
     const r = evaluate(sel);
     return { net: r.net, reduction: r.reduction };
-  });
+  };
+  const chosen = splitSmallLand(cands, chooseSmallLand(cands, smallScore), smallScore);
   const base = evaluate([]);
   const fin = evaluate(chosen);
   for (const x of chosen)
@@ -1548,6 +1554,132 @@ export function expected(s: Scenario): Expected {
   };
 }
 
+/** 候補 c に面積 area を選んだときの減額。小規模宅地等の価額 = 持分の価額 × 選んだ面積 / 持分の面積（円未満切捨て）、減額 = その × 割合（円未満切捨て） */
+function smallSelOf(c: SmallCand, area: Q): SmallSel {
+  const part = qcmp(area, c.shareArea) === 0 ? c.shareValue : yenFloor(c.shareValue, qdiv(area, c.shareArea));
+  return { cand: c, area, reduction: yenFloor(part, SMALL_RATE[c.kind]) };
+}
+
+/** 2つの候補のあいだで分け直す面積の刻み（0.01㎡）がこの数以下なら、全部の刻みを調べる */
+const SMALL_SCAN_ALL = 4000;
+/** 刻みが多いときに、はじめに調べる粗い刻みの点の数 */
+const SMALL_SCAN_COARSE = 400;
+/** 1件で分け直しを調べる回数の上限（候補が多いときに時間がかかりすぎないように） */
+const SMALL_SCAN_BUDGET = 40000;
+
+/**
+ * 限度面積の分け直し。限度面積は、宅地等を取得した人全員の同意で、どの宅地（1つの宅地を何人かで取得したときは、どの人の持分）に
+ * どれだけ使うかを選べる（措法69条の4第1項、付表1の同意欄）。並べ方ごとに前から使う選び方（chooseSmallLand）だけでは、
+ * 贈与税額控除など、その人の算出税額までしか引けない控除を引ききれない人がいるとき、何人かに分けた方が家族全体の税額が
+ * 少なくなる選び方を見落とす。そこで、同じ種類の2つの候補 p・q の面積の合計 S を保ったまま（同じ種類なので限度面積の換算は
+ * 変わらない）、q の面積 y を 0.01㎡ 刻みで動かす（p は S − y。どちらも0以上・その人の上限 cap 以下で、0.01㎡の倍数か上限ちょうど）。
+ * 刻みの数が SMALL_SCAN_ALL 以下なら全部を、多ければ SMALL_SCAN_COARSE 点ほどの粗い刻みを調べてから、よかった2点の前後を
+ * 0.01㎡ 刻みで全部調べる。net（納付税額の合計−還付）が下がるときだけ分け直し、下がらなくなるまで繰り返す。
+ * 同じ組の中では net が小さい点、同じなら減額の大きい点、それも同じなら今の面積に近い点をとる
+ */
+function splitSmallLand(cands: SmallCand[], start: SmallSel[], score: (sel: SmallSel[]) => { net: number; reduction: number }): SmallSel[] {
+  const area = new Map<SmallCand, Q>(cands.map((c) => [c, start.find((x) => x.cand === c)?.area ?? ZERO]));
+  const pairs: [SmallCand, SmallCand, boolean][] = [];
+  cands.forEach((p, i) => cands.slice(i + 1).forEach((q) => p.kind === q.kind && pairs.push([p, q, false])));
+  // 種類の違う2つ（貸付事業用の候補があるときだけ。そのときの限度面積は換算した合計で決まる）：q の面積 y を動かし、
+  // p には、ほかをそのままにして限度面積の残りで使えるだけ使う（自宅の一部＋アパートの大部分のような組合せ）
+  // 全部の候補を上限まで使っても限度面積に収まるときは、分け直す必要がない（減らすと減額が減るだけ）ので調べない
+  const capOf = (k: SmallLandKind) => cands.filter((c) => c.kind === k).reduce((x, c) => qadd(x, c.cap), ZERO);
+  const capAll = qadd(qadd(qmul(capOf("residence"), Qn(200, 330)), qmul(capOf("business"), Qn(200, 400))), capOf("rental"));
+  if (cands.some((c) => c.kind === "rental") && qcmp(capAll, Qn(200)) > 0) cands.forEach((p) => cands.forEach((q) => p.kind !== q.kind && pairs.push([p, q, true])));
+  if (!pairs.length) return start;
+  const selsOf = (m: Map<SmallCand, Q>) => cands.filter((c) => qcmp(m.get(c)!, ZERO) > 0).map((c) => smallSelOf(c, m.get(c)!));
+  /** その候補に選べる面積か（0以上・上限以下で、0.01㎡の倍数か上限ちょうど） */
+  const ok = (c: SmallCand, x: Q) => qcmp(x, ZERO) >= 0 && qcmp(x, c.cap) <= 0 && (100n % x.d === 0n || qcmp(x, c.cap) === 0);
+  /** ほかの候補の面積が m のとき、候補 c に使えるいちばん大きい面積（限度面積の残りまでで 0.01㎡未満切捨て。上限 cap まで） */
+  const roomFor = (c: SmallCand, m: Map<SmallCand, Q>): Q => {
+    let A = ZERO;
+    let B = ZERO;
+    let C = ZERO;
+    for (const d of cands) {
+      if (d === c) continue;
+      if (d.kind === "residence") A = qadd(A, m.get(d)!);
+      else if (d.kind === "business") B = qadd(B, m.get(d)!);
+      else C = qadd(C, m.get(d)!);
+    }
+    const used = qadd(qadd(qmul(A, Qn(200, 330)), qmul(B, Qn(200, 400))), C);
+    let max: Q;
+    if (c.kind === "rental") max = qsub(Qn(200), used);
+    else {
+      max = qsub(Qn(SMALL_LIMIT[c.kind]), c.kind === "residence" ? A : B);
+      if (qcmp(C, ZERO) > 0) max = qmin(max, qmul(qsub(Qn(200), used), Qn(SMALL_LIMIT[c.kind], 200)));
+    }
+    if (qcmp(max, ZERO) <= 0) return ZERO;
+    return qcmp(c.cap, max) <= 0 ? c.cap : Qn(qfloor(qmul(max, Qn(100))), 100);
+  };
+  let cur = score(selsOf(area));
+  let budget = SMALL_SCAN_BUDGET;
+  for (let improved = true; improved && budget > 0; ) {
+    improved = false;
+    for (const [p, q, cross] of pairs) {
+      const S = qadd(area.get(p)!, area.get(q)!);
+      const yLo = cross ? ZERO : qcmp(qsub(S, p.cap), ZERO) > 0 ? qsub(S, p.cap) : ZERO;
+      // 種類が違うときは、p を0にしたときに q に使える面積まで
+      const yHi = cross ? roomFor(q, new Map(area).set(p, ZERO)) : qmin(q.cap, S);
+      if (qcmp(yLo, yHi) >= 0) continue;
+      const y0 = area.get(q)!;
+      let best = { y: y0, net: cur.net, reduction: cur.reduction };
+      const dist = (y: Q) => Math.abs(qnum(qsub(y, y0)));
+      const tried = new Set<string>();
+      /** q を y にしたときの p の面積 */
+      const xOf = (y: Q): Q => {
+        if (!cross) return qsub(S, y);
+        const m = new Map(area);
+        m.set(q, y);
+        return roomFor(p, m);
+      };
+      const tryY = (y: Q) => {
+        const key = qstr(y);
+        if (tried.has(key) || budget <= 0) return;
+        tried.add(key);
+        if (!ok(q, y) || qcmp(y, y0) === 0) return;
+        const x = xOf(y);
+        if (!ok(p, x)) return;
+        budget--;
+        const m = new Map(area);
+        m.set(p, x);
+        m.set(q, y);
+        const sc = score(selsOf(m));
+        if (sc.net < best.net || (sc.net === best.net && (sc.reduction > best.reduction || (sc.reduction === best.reduction && dist(y) < dist(best.y)))))
+          best = { y, net: sc.net, reduction: sc.reduction };
+      };
+      const hLo = qceil(qmul(yLo, Qn(100)));
+      const hHi = qfloor(qmul(yHi, Qn(100)));
+      tryY(yLo);
+      tryY(yHi);
+      const n = Number(hHi - hLo);
+      if (n <= SMALL_SCAN_ALL) {
+        for (let h = hLo; h <= hHi; h++) tryY(Qn(h, 100));
+      } else {
+        const step = BigInt(Math.ceil(n / SMALL_SCAN_COARSE));
+        const coarse: { h: bigint; net: number; reduction: number }[] = [];
+        for (let h = hLo; h <= hHi; h += step) {
+          tryY(Qn(h, 100));
+          const sc = qcmp(best.y, Qn(h, 100)) === 0 ? best : undefined;
+          if (sc) coarse.push({ h, net: sc.net, reduction: sc.reduction });
+        }
+        // 粗い刻みでよかった点（いちばんよい点と、その前に見つけた点）の前後 step を全部
+        for (const c of coarse.slice(-2)) for (let h = c.h - step; h <= c.h + step; h++) if (h >= hLo && h <= hHi) tryY(Qn(h, 100));
+        // 今の面積の前後 step も全部（今の点のすぐ近くに下がる点があることがある）
+        const h0 = qfloor(qmul(y0, Qn(100)));
+        for (let h = h0 - step; h <= h0 + step; h++) if (h >= hLo && h <= hHi) tryY(Qn(h, 100));
+      }
+      if (best.net < cur.net) {
+        area.set(p, xOf(best.y));
+        area.set(q, best.y);
+        cur = { net: best.net, reduction: best.reduction };
+        improved = true;
+      }
+    }
+  }
+  return selsOf(area);
+}
+
 /**
  * 小規模宅地等の面積の選び方を全部試す（候補の並べ方ごとに、前から限度いっぱいまで使う）。
  * 限度面積（措法69条の4第2項）：
@@ -1581,10 +1713,7 @@ function chooseSmallLand(cands: SmallCand[], score: (sel: SmallSel[]) => { net: 
       if (qcmp(c.cap, max) <= 0) area = c.cap;
       else area = Qn(qfloor(qmul(max, Qn(100))), 100); // 0.01㎡未満切捨て
       if (qcmp(area, ZERO) <= 0) continue;
-      // 小規模宅地等の価額 = 持分の価額 × 選んだ面積 / 持分の面積（円未満切捨て）、減額 = その × 割合（円未満切捨て）
-      const part = qcmp(area, c.shareArea) === 0 ? c.shareValue : yenFloor(c.shareValue, qdiv(area, c.shareArea));
-      const reduction = yenFloor(part, SMALL_RATE[c.kind]);
-      sels.push({ cand: c, area, reduction });
+      sels.push(smallSelOf(c, area));
       if (c.kind === "residence") A = qadd(A, area);
       else if (c.kind === "business") B = qadd(B, area);
       else C = qadd(C, area);

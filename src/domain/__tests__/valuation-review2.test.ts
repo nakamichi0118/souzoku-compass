@@ -327,13 +327,14 @@ describe("貸付事業用の対象になる、貸している部分の評価額�
 describe("小規模宅地等の案内：貸付事業用は家賃・地代をもらっているときだけ、借りた土地のアパートは新しい選択肢へ", () => {
   const child: Person = { id: "c", name: "長男", relation: "child" };
   it("自宅でも事業用でもない土地の案内は、借りた土地のアパートも「土地の使い方」の貸している使い方へ案内する", () => {
-    const j = judgeSmallResidential({ ownHome: "no", business: "no" }, child);
+    const j = judgeSmallResidential({ ownHome: "no", business: "no", familyHome: "no" }, child);
     expect(j.result).toBe("no");
     expect(j.reason).toContain("人の土地を借りて建てたアパート・貸家");
     expect(j.reason).toContain("「土地の使い方」で貸している使い方を選んで");
     expect(j.reason).not.toContain("「貸している」を選んで");
     expect(j.reason).toContain("家賃・地代をもらって");
-    expect(j.reason).toContain("家族が無料で住んでいた");
+    // 家族が無料で住んでいた土地は、先に別の質問で聞いている
+    expect(j.reason).not.toContain("家族が無料で住んでいた");
   });
   it("貸付事業用が使えるときの説明に、相場どおりの家賃・地代が要ることを書く", () => {
     const j = judgeSmallResidential({ continues: "yes", keep: "yes", recent: "no" }, child, "rental");

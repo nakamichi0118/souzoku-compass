@@ -428,7 +428,7 @@ describe("小規模宅地等の330㎡の割り当て順", () => {
     expect(b.small?.selectedArea).toBe(200);
     expect(a.small?.selectedArea).toBe(130);
     expect(a.reduction).toBe(Math.floor((Math.floor((50_000_000 * 130) / 330) * 8) / 10));
-    expect(r.warnings.some((w) => w.includes("「A」は残り130㎡分"))).toBe(true);
+    expect(r.warnings.some((w) => w.includes("「B」に200㎡、「A」に130㎡"))).toBe(true);
   });
 
   it("税額が0円の配偶者の宅地より、相続税を納める子の宅地を先に選び、家族全体の相続税を少なくする", () => {
@@ -449,7 +449,8 @@ describe("小規模宅地等の330㎡の割り当て順", () => {
     expect(r.totalPayable).toBe(8_202_500);
     expect(r.persons.find((p) => p.person.id === "s")?.payable).toBe(0);
     const w = r.warnings.find((x) => x.includes("330㎡"));
-    expect(w).toContain("「B」に250㎡、「A」は残り80㎡分");
+    expect(w).toContain("家族全体で納める相続税が少なくなる割り当てを計算で探し");
+    expect(w).toContain("「B」に250㎡、「A」に80㎡");
     expect(w).toContain("税理士");
     expect(r.blockers).toEqual([]);
   });
@@ -484,7 +485,7 @@ describe("小規模宅地等の330㎡の割り当て順", () => {
     expect(r.assets.map((l) => l.small?.selectedArea)).toEqual([30, 60, 60, 60, 60, 60, undefined, undefined]);
     const w = r.warnings.find((x) => x.includes("330㎡"))!;
     expect(w).toContain("1㎡あたりの価額が高い土地から順に");
-    expect(w).toContain("「A」は残り30㎡分");
+    expect(w).toContain("「A」に30㎡");
     expect(w).toContain("「G」・「H」には適用していません");
   });
 });

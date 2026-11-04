@@ -825,20 +825,63 @@ describe("小規模宅地等：共有で何人も使う・使う面積を選ぶ�
   });
 
   it("自宅400㎡を配偶者と同居の子が半分ずつ：330㎡までを子の持分（200㎡）から割り当て、配偶者は残り130㎡", () => {
-    const h = lot("h", 400, 100_000, { smallLand: { kind: "residence", acquirer: "s", others: [{ acquirer: "a" }] } });
+    const run = (sSqm?: number, aSqm?: number) =>
+      expected(
+        scen(
+          [mem("s", "spouse"), mem("a", "child")],
+          [lot("h", 400, 100_000, { smallLand: { kind: "residence", acquirer: "s", selectedSqm: sSqm, others: [{ acquirer: "a", selectedSqm: aSqm }] } }), cash("d", 100_000_000), cash("e", 30_000_000)],
+          {
+            h: [
+              ["s", 1, 2],
+              ["a", 1, 2],
+            ],
+            d: [["a", 1, 1]],
+            e: [["s", 1, 1]],
+          },
+        ),
+      );
+    // 子 200㎡・配偶者 130㎡（面積を入れて決めたとき）。子：2,000万 − 200㎡×10万×80%（1,600万） + 1億。配偶者：2,000万 − 130㎡×10万×80%（1,040万） + 3,000万
+    const fixed = run(130, 200);
+    expect(tp(fixed, "a")).toBe(104_000_000);
+    expect(tp(fixed, "s")).toBe(39_600_000);
+    // 面積を入れなければ、限度面積を2人のあいだで0.01㎡刻みで分け直して比べる（措法69条の4第1項：どの人の持分にどれだけ使うかは同意で選べる）。
+    // 子 199.99㎡（減額 15,999,200）・配偶者 130.01㎡（10,400,800）にすると、課税価格は 104,000,800 → 104,000,000、39,599,200 → 39,599,000
+    // （1,000円未満切捨て）で合計が1,000円下がり、法定相続分 50,799,500 → 50,799,000 で総額が 16,480,000 → 16,479,400。
+    // 子の納付は 11,935,300 → 11,935,000（配偶者は税額軽減で0円）
+    const free = run();
+    expect(tp(free, "a")).toBe(104_000_000);
+    expect(tp(free, "s")).toBe(39_599_000);
+    expect(pay(fixed, "a")).toBe(11_935_300);
+    expect(pay(free, "a")).toBe(11_935_000);
+    expect(pay(free, "s")).toBe(0);
+    expect(notesOf(free)).toMatch(/（residence、a）199\.99㎡/);
+  });
+
+  it("限度面積を分け直す：2人とも贈与税額控除を引ききれないときは、330㎡を2人に分ける", () => {
+    // 自宅 660㎡（1㎡ 136,363.6…円 → 9,000万円）を同居の子2人が1/2ずつ。2人とも贈与 1,000万円（贈与税177万円）を加算する。
+    // 1人に330㎡を寄せると、その人は算出税額（約97.6万）より控除が多く引ききれず、合計 1,054,300円。
+    // 165㎡ずつなら課税価格 3,700万ずつ・算出税額 190万ずつ − 177万 → 13万ずつ、合計 260,000円（切捨てでさらに少し下がる）
+    const h = lot("h", 660, 0, { valuation: { kind: "multiplier", fixedAssetValue: 90_000_000, rate: 1 }, smallLand: { kind: "residence", acquirer: "a", others: [{ acquirer: "b" }] } });
+    const gifts = ["a", "b"].map((to) => ({ to, date: "2025-01-15", amount: 10_000_000, giftTaxPaid: 1_770_000 }));
     const e = expected(
-      scen([mem("s", "spouse"), mem("a", "child")], [h, cash("d", 100_000_000), cash("e", 30_000_000)], {
-        h: [
-          ["s", 1, 2],
-          ["a", 1, 2],
-        ],
-        d: [["a", 1, 1]],
-        e: [["s", 1, 1]],
-      }),
+      scen(
+        [mem("a", "child"), mem("b", "child")],
+        [h],
+        {
+          h: [
+            ["a", 1, 2],
+            ["b", 1, 2],
+          ],
+        },
+        { gifts },
+      ),
     );
-    // 子：2,000万 − 200㎡×10万×80%（1,600万） + 1億。配偶者：2,000万 − 130㎡×10万×80%（1,040万） + 3,000万
-    expect(tp(e, "a")).toBe(104_000_000);
-    expect(tp(e, "s")).toBe(39_600_000);
+    const total = e.persons.reduce((x, p) => x + p.payable, 0);
+    expect(total).toBeLessThanOrEqual(260_000);
+    expect(total).toBeGreaterThan(250_000);
+    const areas = [...notesOf(e).matchAll(/（residence、[ab]）([\d.]+)㎡/g)].map((m) => Number(m[1]));
+    expect(areas).toHaveLength(2);
+    expect(Math.round(areas[0] * 100 + areas[1] * 100)).toBe(33_000);
   });
 
   it("配偶者と別居の子（持ち家あり）が共有：子の持分には使えず、配偶者の持分200㎡だけ", () => {
@@ -912,21 +955,62 @@ describe("小規模宅地等：共有で何人も使う・使う面積を選ぶ�
     expect(tp(e, "a")).toBe(floorK(30_000_000 + 34_000_000 - 13_200_000 - 8_500_000));
   });
 
+  it("種類の違う候補のあいだでも分け直す：配偶者の自宅の一部と子のアパートの大部分を組み合わせる", () => {
+    // 自宅 330㎡ 2億円（配偶者）・アパートの敷地 200㎡ 2億×(1−0.5×0.3)＝1.7億円（子）。
+    // 自宅だけ（330㎡）・アパートだけ（200㎡）より、自宅 82.5㎡（減額 4,000万）＋アパート 150㎡（減額 6,375万）の方が少ない
+    // （82.5×200/330 ＋ 150 ＝ 200㎡。配偶者は税額軽減で0円なので、子の減額を増やしつつ配偶者の課税価格も下げる）
+    const run = (hs?: number, ps?: number) => {
+      const h = lot("h", 330, 0, { valuation: { kind: "multiplier", fixedAssetValue: 200_000_000, rate: 1 }, smallLand: { kind: "residence", acquirer: "sp", ...(hs ? { selectedSqm: hs } : {}) } });
+      const p = lot("p", 200, 1_000_000, { use: "rentedHouse", smallLand: { kind: "rental", acquirer: "a", ...(ps ? { selectedSqm: ps } : {}) } });
+      return expected(scen([mem("sp", "spouse", "1948-01-01"), mem("a", "child")], [h, p], { h: [["sp", 1, 1]], p: [["a", 1, 1]] }));
+    };
+    const total = (e: ReturnType<typeof expected>) => e.persons.reduce((x, q) => x + q.payable, 0);
+    const e = run();
+    expect(notesOf(e)).toMatch(/（residence、sp）82\.50㎡/);
+    expect(notesOf(e)).toMatch(/（rental、a）150\.00㎡/);
+    expect(total(e)).toBe(total(run(82.5, 150)));
+    expect(total(e)).toBeLessThan(total(run(330, 0.01)));
+    expect(total(e)).toBeLessThan(total(run(0.01, 200)));
+  });
+
+  it("限度面積を超えないときは分け直さない（減らすと減額が減るだけ）", () => {
+    const h = lot("h", 100, 100_000, { smallLand: { kind: "residence", acquirer: "a" } });
+    const p = lot("p", 50, 200_000, { use: "rentedHouse", smallLand: { kind: "rental", acquirer: "a" } });
+    const e = expected(scen([mem("a", "child")], [h, p], { h: [["a", 1, 1]], p: [["a", 1, 1]] }));
+    // 100×200/330 ＋ 50 ＝ 110.6㎡ ≦ 200㎡：両方とも全部に使う（自宅 800万・アパート 50㎡×17万×50%＝425万の減額）
+    expect(tp(e, "a")).toBe(floorK(10_000_000 + 8_500_000 - 8_000_000 - 4_250_000));
+  });
+
   it("アパートの敷地を配偶者と子が共有し、2人とも貸付を続ける：200㎡を子の120㎡（入れた150㎡は持分まで）、配偶者の80㎡に", () => {
-    const p = lot("p", 240, 200_000, { use: "rentedHouse", smallLand: { kind: "rental", acquirer: "s", others: [{ acquirer: "a", selectedSqm: 150 }] } });
-    const e = expected(
-      scen([mem("s", "spouse"), mem("a", "child")], [p, cash("d", 100_000_000), cash("e", 30_000_000)], {
-        p: [
-          ["s", 1, 2],
-          ["a", 1, 2],
-        ],
-        d: [["a", 1, 1]],
-        e: [["s", 1, 1]],
-      }),
-    );
-    // 4,800万×0.85 = 4,080万、各 2,040万（1㎡17万）
-    expect(tp(e, "a")).toBe(20_400_000 - 10_200_000 + 100_000_000);
-    expect(tp(e, "s")).toBe(20_400_000 - 6_800_000 + 30_000_000);
+    const run = (sSqm?: number) =>
+      expected(
+        scen(
+          [mem("s", "spouse"), mem("a", "child")],
+          [lot("p", 240, 200_000, { use: "rentedHouse", smallLand: { kind: "rental", acquirer: "s", selectedSqm: sSqm, others: [{ acquirer: "a", selectedSqm: 150 }] } }), cash("d", 100_000_000), cash("e", 30_000_000)],
+          {
+            p: [
+              ["s", 1, 2],
+              ["a", 1, 2],
+            ],
+            d: [["a", 1, 1]],
+            e: [["s", 1, 1]],
+          },
+        ),
+      );
+    // 4,800万×0.85 = 4,080万、各 2,040万（1㎡17万。貸付事業用の減額は1㎡8.5万）。配偶者の面積を80㎡と入れたとき
+    const fixed = run(80);
+    expect(tp(fixed, "a")).toBe(20_400_000 - 10_200_000 + 100_000_000);
+    expect(tp(fixed, "s")).toBe(20_400_000 - 6_800_000 + 30_000_000);
+    // 入れなければ0.01㎡刻みで分け直して比べる。子 119.99㎡（減額 10,199,150）・配偶者 80.01㎡（6,800,850）にすると、課税価格は
+    // 子 110,200,850 → 110,200,000、配偶者 43,599,150 → 43,599,000（1,000円未満切捨て）で合計が1,000円下がり、
+    // 法定相続分 55,900,000 → 55,899,000 で総額が 19,540,000 → 19,539,400。子の納付は 14,000,700 → 14,000,300
+    const free = run();
+    expect(tp(free, "a")).toBe(110_200_000);
+    expect(tp(free, "s")).toBe(43_599_000);
+    expect(pay(fixed, "a")).toBe(14_000_700);
+    expect(pay(free, "a")).toBe(14_000_300);
+    expect(pay(free, "s")).toBe(0);
+    expect(notesOf(free)).toMatch(/（rental、s）80\.01㎡ 減額 6,800,850/);
   });
 
   it("共有の貸付事業用で、1人は申告期限までに貸付をやめる：やめる人の持分には使えない", () => {

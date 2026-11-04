@@ -229,11 +229,17 @@ export interface TaxResult {
   needsFiling: boolean;
 }
 
-/** YYYY-MM-DD の実在する日付か */
+/**
+ * YYYY-MM-DD の実在する日付か（グレゴリオ暦。Date を作らずに数字で確かめる。限度面積の割り当てを探すときに何百回も呼ぶため）
+ */
 export function isValidISODate(s: string | undefined): s is string {
   if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
-  const d = new Date(s + "T00:00:00Z");
-  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+  const y = Number(s.slice(0, 4));
+  const m = Number(s.slice(5, 7));
+  const d = Number(s.slice(8, 10));
+  const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1];
+  return days !== undefined && d >= 1 && d <= days;
 }
 
 /**
@@ -242,11 +248,9 @@ export function isValidISODate(s: string | undefined): s is string {
  */
 export function ageAt(birth: string | undefined, at: string): number | undefined {
   if (!isValidISODate(birth) || !isValidISODate(at)) return undefined;
-  const b = new Date(birth + "T00:00:00Z");
-  const d = new Date(at + "T00:00:00Z");
-  let age = d.getUTCFullYear() - b.getUTCFullYear();
-  const md = d.getUTCMonth() - b.getUTCMonth();
-  if (md < 0 || (md === 0 && d.getUTCDate() < b.getUTCDate())) age--;
+  // 「YYYY-MM-DD」のまま比べる（月日の文字列の大小は、月日の前後と同じ）
+  let age = Number(at.slice(0, 4)) - Number(birth.slice(0, 4));
+  if (at.slice(5) < birth.slice(5)) age--;
   return Math.max(0, age);
 }
 
@@ -260,16 +264,22 @@ interface SharePart {
 /**
  * 金額を割合で分ける（各人1円未満切捨て）。割合の合計が1のときだけ端数を寄せて合計を一致させる。
  * rest = "first" は先頭の人に（分け方どおりの財産。これまでと同じ）、
- * "largest" は割合がいちばん大きい人に（同じなら先の人。未分割の部分を含む財産）寄せる
+ * "largestId" は割合がいちばん大きい人に（同じなら rank の順で先の人。分け方の行の順・家族の一覧の順によらない。
+ * 小規模宅地等の特例を使う土地と、未分割の部分を含む財産・負担する人が決まっていない債務）寄せる。
+ * 1人の割合が分け方で決まった部分と未分割の部分に分かれていて同じなら、先に並ぶ分け方で決まった部分に寄せる
  */
-function splitParts(amount: number, parts: SharePart[], rest: "first" | "largest" | "none"): number[] {
+function splitParts(amount: number, parts: SharePart[], rest: "first" | "largestId" | "none", rank: (personId: string) => string = (id) => id): number[] {
   const out = parts.map((p) => mulYen(amount, p.f));
   if (rest === "none" || parts.length === 0) return out;
   const diff = amount - out.reduce((a, b) => a + b, 0);
   if (diff === 0) return out;
   let k = 0;
-  if (rest === "largest") {
-    for (let i = 1; i < parts.length; i++) if (parts[i].f.n * parts[k].f.d > parts[k].f.n * parts[i].f.d) k = i;
+  if (rest === "largestId") {
+    for (let i = 1; i < parts.length; i++) {
+      const l = parts[i].f.n * parts[k].f.d;
+      const r = parts[k].f.n * parts[i].f.d;
+      if (l > r || (l === r && keyCompare(rank(parts[i].personId), rank(parts[k].personId)) < 0)) k = i;
+    }
   }
   out[k] += diff;
   return out;
@@ -338,8 +348,11 @@ export function apportionRatios(taxables: number[], digits = 2): number[] {
   return apportionScaled(taxables, digits).map((v) => v / 10 ** digits);
 }
 
-/** 按分割合を 10^digits 倍した整数で返す（最大剰余法で合計を 10^digits にそろえる） */
-export function apportionScaled(taxables: number[], digits: number): number[] {
+/**
+ * 按分割合を 10^digits 倍した整数で返す（最大剰余法で合計を 10^digits にそろえる）。剰余が同じ人どうしは、
+ * ids を渡せばそのIDの順（家族の一覧の順によらない）、渡さなければ並んだ順に1ずつ足す
+ */
+export function apportionScaled(taxables: number[], digits: number, ids?: string[]): number[] {
   const total = taxables.reduce((a, b) => a + BigInt(b), 0n);
   if (total === 0n) return taxables.map(() => 0);
   const scale = 10n ** BigInt(digits);
@@ -348,7 +361,7 @@ export function apportionScaled(taxables: number[], digits: number): number[] {
   let rest = scale - floored.reduce((a, b) => a + b, 0n);
   rems
     .filter((x) => taxables[x.i] > 0)
-    .sort((a, b) => (b.rem > a.rem ? 1 : b.rem < a.rem ? -1 : a.i - b.i))
+    .sort((a, b) => (b.rem > a.rem ? 1 : b.rem < a.rem ? -1 : (ids ? keyCompare(ids[a.i], ids[b.i]) : 0) || a.i - b.i))
     .forEach((o) => {
       if (rest > 0n) {
         floored[o.i] += 1n;
@@ -390,27 +403,47 @@ const sqmText = (area100: number) => String(area100 / 100);
 
 /**
  * 小規模宅地等の特例の候補（限度面積の割り当てに使う形。土地と取得する人の組ごとに1つ）。
- * area100 は取得者の持分に応ずる面積（付表1の③。0.01㎡単位）、value はその価額（④）、
+ * area は取得者の持分に応ずる面積（付表1の③。㎡）、area100 はそれを0.01㎡単位にしたもの、value はその価額（④）、
  * cap100 はその人が特例を使える面積の上限（③か、その人が選んだ面積の少ない方）
  */
 interface SrSlot {
   kind: SmallLandKind;
+  area: number;
   area100: number;
   cap100: number;
   value: number;
   /** 取得する人が配偶者か（配偶者の税額軽減で税額が0円になりやすいので、同じ条件なら後に回す） */
   spouse?: boolean;
+  /** 取得する人のID */
+  person: string;
+  /**
+   * 取得する人の、IDによらない順位（続柄・2割加算・控除・贈与・ほかに取得した財産などの順。srSign が決める）。
+   * 同じ条件の候補を並べるときは、まずこの順にし、それも同じ（入れ替えても同じ人どうし）ときだけ key の順にする
+   */
+  sig?: number;
+  /** 入力した順によらない候補の名前（財産のIDと取得する人のID）。同じ条件の候補を並べるときは、この順にする */
+  key: string;
+  /**
+   * 1㎡あたりの減額を比べるときに使う価額と面積（0.01㎡単位）。1つの土地を何人かで受け継いだときは、その土地の候補の合計にする
+   * （持分で分けた価額の1円未満の端数は分け方の1行目の人に寄せるので、人ごとの価額で比べると、行の順だけで並べ方が変わってしまう）
+   */
+  effValue: number;
+  effArea100: number;
+  /** どの土地の候補か（同じ土地の候補をまとめるときだけに使う番号） */
+  lot: number;
 }
 
 /**
  * 1つの宅地を一緒に受け継いだ2人目以降の人の答え。土地についての答え（自宅の敷地か・事情があるか・事業に使っていたか・
- * 3年以内に始めたか）は1人目の答えを、人ごとの答え（同居・住み続け・続ける・税理士に確認した）はその人の答えを使う
+ * 生計を一にしていた親族が住んでいたか・3年以内に始めたか）は1人目の答えを、人ごとの答え（同居・住み続け・続ける・
+ * 税理士に確認した）はその人の答えを使う
  */
 export function mergeAcquirerCheck(lot: SmallResidentialCheck | undefined, own: SmallResidentialCheck | undefined): SmallResidentialCheck {
   return {
     ownHome: lot?.ownHome,
     special: lot?.special,
     business: lot?.business,
+    familyHome: lot?.familyHome,
     recent: lot?.recent,
     livedTogether: own?.livedTogether,
     keep: own?.keep,
@@ -454,63 +487,736 @@ function srBinds(slots: SrSlot[]): boolean {
   return t.residence > SMALL_LAND_RULE.residence.limitSqm * 100 || t.business > SMALL_LAND_RULE.business.limitSqm * 100;
 }
 
+/** 文字列を、入力した順や言語の設定によらない決まった順に比べる */
+const keyCompare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 /**
- * 既定の割り当て順：限度面積1㎡あたり（貸付事業用に換算）の減額が大きい順。同じなら配偶者でない人の分を先に
- * （1つの土地を一緒に受け継いだ人どうしは必ず同じになる。配偶者の税額軽減で税額が0円の配偶者に先に割り当てると、
- * 入力した順だけで家族全体の税額が変わってしまうため）、それも同じなら入力順。
- * 特定居住用だけなら「1㎡あたりの価額が高い順」と同じ。比べるのは 価額×減額割合×限度面積÷面積 で、整数のまま掛けて比べる
+ * 1円の端数などを寄せる人を決めるときの、人の順。生年月日、同じなら名前、それも同じなら人のIDの順
+ * （人のIDは入力のたびに変わるので、IDだけで決めると、同じ家族を入れ直したときに結果が変わることがある）
  */
-function defaultSrOrder(slots: SrSlot[]): number[] {
+const personRankOf = (persons: Person[]) => {
+  const m = new Map(persons.map((p) => [p.id, `${p.birthDate ?? ""}\u0000${p.name ?? ""}\u0000${p.id}`]));
+  return (id: string) => m.get(id) ?? `\u0001${id}`;
+};
+
+/**
+ * 限度面積1㎡あたり（貸付事業用に換算）の減額が a の方が大きければ負、b の方が大きければ正、同じなら0。
+ * 比べるのは 価額×減額割合×限度面積÷面積 で、整数のまま掛けて比べる。1つの土地を何人かで受け継いだときは
+ * 土地ごとの合計（effValue・effArea100）で比べるので、同じ土地の人どうしは必ず同じになる
+ */
+function srEffCompare(a: SrSlot, b: SrSlot): number {
   const eff = (x: SrSlot) => ({
-    n: BigInt(Math.max(0, x.value)) * BigInt(SMALL_LAND_RULE[x.kind].rate * SMALL_LAND_RULE[x.kind].limitSqm),
-    d: BigInt(Math.max(1, x.area100)),
+    n: BigInt(Math.max(0, x.effValue)) * BigInt(SMALL_LAND_RULE[x.kind].rate * SMALL_LAND_RULE[x.kind].limitSqm),
+    d: BigInt(Math.max(1, x.effArea100)),
   });
-  return slots
-    .map((_, i) => i)
-    .sort((i, j) => {
-      const a = eff(slots[i]);
-      const b = eff(slots[j]);
-      const l = a.n * b.d;
-      const r = b.n * a.d;
-      if (l !== r) return l > r ? -1 : 1;
-      if (!!slots[i].spouse !== !!slots[j].spouse) return slots[i].spouse ? 1 : -1;
-      return i - j;
-    });
+  const p = eff(a);
+  const q = eff(b);
+  const l = p.n * q.d;
+  const r = q.n * p.d;
+  return l === r ? 0 : l > r ? -1 : 1;
 }
 
+/** 同じ条件の候補どうしの順：配偶者でない人の分を先に、それも同じなら取得する人の順位（sig）、候補の名前の順 */
+const srSpouseCompare = (a: SrSlot, b: SrSlot) => (!!a.spouse === !!b.spouse ? 0 : a.spouse ? 1 : -1);
+const srSigCompare = (a: SrSlot, b: SrSlot) => (a.sig ?? 0) - (b.sig ?? 0) || keyCompare(a.key, b.key);
+
+/**
+ * 既定の割り当て順：限度面積1㎡あたり（貸付事業用に換算）の減額が大きい順。同じなら配偶者でない人の分を先に
+ * （配偶者の税額軽減で税額が0円の配偶者に先に割り当てると、家族全体の税額が増えやすいため）、
+ * それも同じなら取得する人の順位（sig。IDによらない）、候補の名前（財産のIDと取得する人のID）の順。
+ * 入力した順（家族・財産・分け方の行・一緒に使う人の順）では変わらず、人のIDで決まるのは、入れ替えても同じ人どうしの順だけ。
+ * 特定居住用だけなら「1㎡あたりの価額が高い順」と同じ
+ */
+function defaultSrOrder(slots: SrSlot[]): number[] {
+  return slots
+    .map((_, i) => i)
+    .sort((i, j) => srEffCompare(slots[i], slots[j]) || srSpouseCompare(slots[i], slots[j]) || srSigCompare(slots[i], slots[j]));
+}
+
+/**
+ * 限度面積の割り当て（calculate が探したもの）。selected は候補ごとの選択面積（付表1の⑤。0.01㎡単位）で、
+ * order は案内の文に候補を書く順（面積は selected のとおりにし、order では決めない）
+ */
+interface SrPlan {
+  order: number[];
+  selected: number[];
+}
+
+/** 割り当て1つの点数。score は納める相続税の合計から還付される額を引いたもの（小さい方がよい） */
+interface SrScore {
+  score: number;
+  /** 小規模宅地等の減額の合計（score が同じなら大きい方をとる） */
+  reduction: number;
+}
+
+/** a が b よりよい割り当てか（納める相続税が少ない、同じなら減額が大きい） */
+const srBetter = (a: SrScore, b: SrScore) => a.score < b.score || (a.score === b.score && a.reduction > b.reduction);
+
+/** 候補 x に面積 sel（0.01㎡単位）を割り当てたときの減額（付表1の⑦。compute と同じ計算） */
+function srReduction(x: SrSlot, sel: number): number {
+  if (!(sel > 0) || !(x.value > 0) || !(x.cap100 > 0)) return 0;
+  return smallResidentialSelection(x.value, x.area, sel / 100, SMALL_LAND_RULE[x.kind].rate).reduction;
+}
+
+/** 割り当て sel の、種類ごとの選択面積の合計（0.01㎡単位） */
+function srUsedOf(slots: SrSlot[], sel: number[]): Record<SmallLandKind, number> {
+  const used: Record<SmallLandKind, number> = { residence: 0, business: 0, rental: 0 };
+  sel.forEach((s, i) => (used[slots[i].kind] += s));
+  return used;
+}
+
+/**
+ * ほかの候補の面積をそのままにして、候補 j にあとどれだけ足せるか（0.01㎡単位。fillSmallLand と同じ限度の計算）。
+ * 貸付事業用を選んでいなければ特定居住用330㎡・特定事業用400㎡をそれぞれ別に、選んでいれば換算した合計で数える
+ */
+function srAddMax(slots: SrSlot[], sel: number[], j: number, used = srUsedOf(slots, sel)): number {
+  const x = slots[j];
+  if (!(x.value > 0) || !(x.cap100 > 0)) return 0;
+  const room = SR_ROOM100 - SR_WEIGHT.residence * used.residence - SR_WEIGHT.business * used.business - SR_WEIGHT.rental * used.rental;
+  let max = x.kind === "rental" ? Math.floor(room / SR_WEIGHT.rental) : SMALL_LAND_RULE[x.kind].limitSqm * 100 - used[x.kind];
+  if (x.kind !== "rental" && used.rental > 0) max = Math.min(max, Math.floor(room / SR_WEIGHT[x.kind]));
+  return Math.max(0, Math.min(x.cap100 - sel[j], max));
+}
+
+/**
+ * 候補を、入力した順によらない決まった順に並べたときの位置（探す順や、同じ条件のときの選び方に使う）。
+ * 限度面積1㎡あたりの減額が大きい順、同じなら配偶者でない人の分を先に、持分に応ずる面積・上限が大きい順、それも同じなら取得する人の順位（sig）、候補の名前の順。
+ * 価額そのもの（持分で分けた1円未満の端数を誰に寄せたかで変わる）や家族の一覧の順は使わない
+ */
+function srRanks(slots: SrSlot[]): number[] {
+  const order = slots
+    .map((_, i) => i)
+    .sort(
+      (i, j) =>
+        srEffCompare(slots[i], slots[j]) ||
+        srSpouseCompare(slots[i], slots[j]) ||
+        slots[j].area100 - slots[i].area100 ||
+        slots[j].cap100 - slots[i].cap100 ||
+        srSigCompare(slots[i], slots[j]),
+    );
+  const rank = slots.map(() => 0);
+  order.forEach((i, k) => (rank[i] = k));
+  return rank;
+}
+
+/**
+ * 割り当ての点数を計算する。家族全体の税額は、割り当てによって各人の減額の合計（各人の課税価格）が変わることでしか変わらないので、
+ * 各人の減額の合計が同じ割り当ては1回だけ計算する（覚えておくのは点数だけ）。evals は実際に計算した回数、lookups は点数を調べた回数
+ * （覚えておいた点数で答えた分も含む）
+ */
+function srScorer(slots: SrSlot[], run: (selected: number[]) => SrScore) {
+  const persons = [...new Set(slots.map((x) => x.person))].sort(keyCompare);
+  const personIndex = new Map(persons.map((p, k) => [p, k]));
+  const memo = new Map<string, SrScore>();
+  /** 候補ごとの、面積に対する減額（同じ面積を何度も計算しないように） */
+  const reductions = slots.map(() => new Map<number, number>());
+  const reduction = (i: number, sel: number) => {
+    if (!(sel > 0)) return 0;
+    let r = reductions[i].get(sel);
+    if (r === undefined) reductions[i].set(sel, (r = srReduction(slots[i], sel)));
+    return r;
+  };
+  const keyOf = (selected: number[]) => {
+    const by = persons.map(() => 0);
+    selected.forEach((s, i) => (by[personIndex.get(slots[i].person)!] += reduction(i, s)));
+    return by.join(",");
+  };
+  const scorer = {
+    evals: 0,
+    lookups: 0,
+    reduction,
+    /** 計算済みの結果（既定の順で計算した結果など）を覚えておく */
+    seed(selected: number[], result: TaxResult) {
+      memo.set(keyOf(selected), { score: result.totalPayable - result.totalRefund, reduction: result.assets.reduce((a, l) => a + l.reduction, 0) });
+    },
+    score(selected: number[]): SrScore {
+      scorer.lookups++;
+      const key = keyOf(selected);
+      let s = memo.get(key);
+      if (!s) {
+        scorer.evals++;
+        s = run(selected);
+        memo.set(key, s);
+      }
+      return s;
+    },
+  };
+  return scorer;
+}
+type SrScorer = ReturnType<typeof srScorer>;
+
+/**
+ * 割り当てをよくするときに計算してよい回数の上限（始めの割り当てを比べた分を除き、探す部分の全部で）。候補の数で決め、
+ * SR_BUDGET_MAX を超えない（時間では決めないので、同じ入力なら必ず同じ結果になる）。候補12個で340回、15個以上は400回。
+ * 上限に達するのは、ほとんどが 3.（切捨ての端数で少しだけ下がる割り当てを探す）の途中で、残る差は数百円まで
+ */
+const SR_BUDGET_MAX = 400;
+const srSearchBudget = (liveSlots: number) => Math.min(SR_BUDGET_MAX, 40 + 25 * liveSlots);
+/**
+ * 覚えておいた点数で答えた分も含めて、点数を調べてよい回数（計算してよい回数の何倍か）。同じ人の同じような宅地ばかりで、
+ * どう移しても減額が変わらないときにも、組を調べるだけで時間がかからないようにする
+ */
+const SR_LOOKUPS_PER_EVAL = 20;
+/** 2つの候補のあいだで移す面積を、はじめに何点で比べるか（そのあと、いちばんよかった点の前後を細かく調べる） */
+const SR_GRID = 6;
+/** 黄金比の逆数（細かく調べるときに区間を縮める割合） */
+const SR_GOLDEN = (Math.sqrt(5) - 1) / 2;
+/** 各人の減額を少し変えて、税額の変わり方を調べるときに動かす面積（0.01㎡単位。2㎡＝貸付事業用の限度面積の1%） */
+const SR_PROBE100 = 200;
+/** 仕上げで、どの移し方でも全部試す小さい面積（0.01㎡単位） */
+const SR_SMALL = 6;
+/** 全部の移し方を確かめるときに試す、移せる面積に対する割合（移せるだけ移す・半分移す） */
+const SR_CHECK = [1, 0.5];
+
+/**
+ * 面積の移し方。from から面積 t を減らし、to に足す（from が -1 なら減らさずに足すだけ、to が -1 なら減らすだけ）。足す面積は、
+ * 同じ種類なら t、種類が違えば限度面積の残りで足せるだけ（換算の重さが違うので、特定居住用 1㎡ は貸付事業用 200/330㎡ になる）
+ */
+interface SrMove {
+  from: number;
+  to: number;
+}
+
+/**
+ * 限度面積の割り当てをよくする（局所探索）。2つの候補のあいだで面積を移す：
+ * - 同じ種類（特定居住用どうしなど）なら、from から to へ同じ面積を移す（限度面積の換算面積の合計は変わらない）
+ * - 種類が違えば（貸付事業用の候補があるときだけ）、from を減らした分、to に限度面積の残りで足せるだけ足す。
+ *   「自宅の一部とアパートの大部分」のように、種類を組み合わせた割り当ても調べられる
+ * - 限度面積に残りがあれば、減らさずに足すだけの移し方も試す
+ * どれも各候補の上限（cap100）と0の範囲、限度面積（措置法69条の4第2項）の内に収まるようにする。
+ * 1. 見積もり：各人の減額を少し減らす・増やすと家族全体の相続税がどれだけ変わるかを、1人2回ずつの計算で調べる。
+ *    そこから、どの移し方で下がりそうかを見積もり、下がりそうな順に、移す量を探す（lineSearch）
+ * 2. 見積もりで見つからなければ、全部の移し方で、移せるだけ移す・半分移すを試す（控除の上限などで、
+ *    少し移しても下がらないのに、たくさん移すと下がることがある）。下がるものがあれば、その移し方で移す量を探す
+ * 3. それでもなければ、全部の移し方で移す量を探す（課税価格の1,000円未満の切捨てなどで、少しだけ下がることがある）
+ * 家族全体の相続税（還付を引いたもの）が今より下がるときだけ移し、下がらなくなるか試す回数の上限に達するまで繰り返す。
+ * phases は試す段階（1 なら 1. だけ、2 なら 2. まで）。
+ * 今の割り当てから始めて、下がるときだけ移すので、始めの割り当てより悪くなることはない。
+ * 移し方を試す順や、見積もりが同じときの選び方は srRanks の順で決めるので、入力した順では変わらない。
+ * 贈与税額控除などは、その人の算出税額までしか引けない（引ききれない分は捨てる）ため、1人に限度面積を寄せるより
+ * 何人かに分けた方が家族全体の相続税が少なくなることがある。配偶者の税額軽減の上限によっては、同じ人の中で
+ * 1㎡あたりの減額が小さい宅地に回した方が少なくなることもあるので、同じ人の候補のあいだでも移してみる
+ */
+/** 候補の一覧ごとの、探す順の位置と移し方の一覧（calculate の中で何度も探すので、1回だけ作る） */
+const srMoveCache = new WeakMap<SrSlot[], { rank: number[]; live: number[]; moves: SrMove[] }>();
+function srMoveSet(slots: SrSlot[]) {
+  const hit = srMoveCache.get(slots);
+  if (hit) return hit;
+  const rank = srRanks(slots);
+  const live = slots.flatMap((x, i) => (x.value > 0 && x.cap100 > 0 ? [i] : [])).sort((i, j) => rank[i] - rank[j]);
+  const rental = live.some((i) => slots[i].kind === "rental");
+  // 移し方の一覧。全部を試すときは、同じ種類のあいだ・種類の違うあいだ・足すだけ・減らすだけの順に試す
+  const same: SrMove[] = [];
+  const cross: SrMove[] = [];
+  live.forEach((i, a) =>
+    live.slice(a + 1).forEach((j) => {
+      const x = slots[i];
+      const y = slots[j];
+      // 種類が違う候補のあいだで移せるのは、貸付事業用の候補があるときだけ（なければ特定居住用と特定事業用の限度は別々）
+      if (x.kind !== y.kind && !rental) return;
+      // 同じ人の、種類も1㎡あたりの減額も同じ候補のあいだで移しても、その人の減額はほとんど変わらないので試さない
+      if (x.kind === y.kind && x.person === y.person && srEffCompare(x, y) === 0) return;
+      (x.kind === y.kind ? same : cross).push({ from: i, to: j }, { from: j, to: i });
+    }),
+  );
+  const moves: SrMove[] = [...same, ...cross, ...live.map((j) => ({ from: -1, to: j })), ...live.map((i) => ({ from: i, to: -1 }))];
+  const set = { rank, live, moves };
+  srMoveCache.set(slots, set);
+  return set;
+}
+
+function improveSrPlan(slots: SrSlot[], start: number[], scorer: SrScorer, budget: number, phases: 1 | 2 | 3 = 3): number[] {
+  const { rank, live, moves } = srMoveSet(slots);
+  const stop = scorer.evals + budget;
+  const lookupStop = scorer.lookups + budget * SR_LOOKUPS_PER_EVAL;
+  const spent = () => scorer.evals >= stop || scorer.lookups >= lookupStop;
+  let cur = start;
+  let curScore = scorer.score(cur);
+  /** 今の割り当ての、種類ごとの選択面積の合計（移し方ごとに数え直さない。候補が多いと時間がかかるため） */
+  let curUsed = srUsedOf(slots, cur);
+  /** 今の割り当て cur で、その移し方で移せるいちばん多い面積（from から減らせる面積。from が -1 なら足せる面積） */
+  const most = (sel: number[], m: SrMove): number => {
+    if (m.from < 0) return srAddMax(slots, sel, m.to, curUsed);
+    if (m.to < 0) return sel[m.from];
+    const x = slots[m.from];
+    const y = slots[m.to];
+    if (!(sel[m.from] > 0) || !(y.cap100 - sel[m.to] > 0)) return 0;
+    if (x.kind === y.kind) return Math.min(sel[m.from], y.cap100 - sel[m.to]);
+    // 貸付事業用を選んでいないときは、特定居住用と特定事業用の限度は別々なので、そのあいだでは移さない
+    if (x.kind !== "rental" && y.kind !== "rental" && !(curUsed.rental > 0)) return 0;
+    return sel[m.from];
+  };
+  /** 割り当て sel で、移し方 m で面積 t を移した割り当て */
+  const moved = (sel: number[], m: SrMove, t: number) => {
+    const next = [...sel];
+    if (m.from < 0) {
+      next[m.to] += t;
+      return next;
+    }
+    next[m.from] -= t;
+    if (m.to < 0) return next;
+    next[m.to] += slots[m.from].kind === slots[m.to].kind ? t : srAddMax(slots, next, m.to);
+    return next;
+  };
+  /**
+   * 移し方 m で 1〜hi を移すうちで、今より下がるいちばんよい割り当てを探す（なければ undefined）。
+   * 税額は面積に対して単調・凸とは限らないので、はじめに SR_GRID 点で比べ、いちばんよかった点の前後を黄金分割で縮め、
+   * 残った狭い区間は全部計算する。途中で計算したうちのいちばんよい点をとる（同じなら移す量が少ない方）
+   */
+  const lineSearch = (m: SrMove, hi: number): number[] | undefined => {
+    let best = { t: 0, s: curScore };
+    const at = (t: number): SrScore | undefined => {
+      if (t <= 0 || t > hi) return t === 0 ? curScore : undefined;
+      if (spent()) return undefined;
+      const s = scorer.score(moved(cur, m, t));
+      if (srBetter(s, best.s) || (!srBetter(best.s, s) && t < best.t)) best = { t, s };
+      return s;
+    };
+    const ts = [...new Set(Array.from({ length: SR_GRID }, (_, k) => Math.round((hi * (k + 1)) / SR_GRID)))];
+    for (const t of ts) at(t);
+    const k = ts.indexOf(best.t);
+    let a = k <= 0 ? 0 : ts[k - 1];
+    let b = k < 0 ? ts[0] : k + 1 < ts.length ? ts[k + 1] : hi;
+    const inner = (u: number, v: number) => Math.max(1, Math.round((v - u) * (1 - SR_GOLDEN)));
+    let x1 = a + inner(a, b);
+    let x2 = b - inner(a, b);
+    let f1 = b - a > 6 ? at(x1) : undefined;
+    let f2 = b - a > 6 ? at(x2) : undefined;
+    // a < x1 < x2 < b を保ち、x1 の方がよければ [a, x2]、そうでなければ [x1, b] に縮める
+    while (f1 && f2 && b - a > 6) {
+      if (!srBetter(f2, f1)) {
+        b = x2;
+        x2 = x1;
+        f2 = f1;
+        x1 = Math.min(x2 - 1, a + inner(a, b));
+        if (x1 <= a) break;
+        f1 = at(x1);
+      } else {
+        a = x1;
+        x1 = x2;
+        f1 = f2;
+        x2 = Math.max(x1 + 1, b - inner(a, b));
+        if (x2 >= b) break;
+        f2 = at(x2);
+      }
+    }
+    if (b - a <= 6) for (let t = a; t <= b; t++) if (t > 0 && !at(t)) break;
+    return best.t > 0 && srBetter(best.s, curScore) ? moved(cur, m, best.t) : undefined;
+  };
+  /** 0.01㎡あたりの減額（同じ土地の人どうしは同じ） */
+  const per = (i: number) => (slots[i].effValue * SMALL_LAND_RULE[slots[i].kind].rate) / 100 / Math.max(1, slots[i].effArea100);
+  /** from を 0.01㎡減らしたときに to に足せる面積（限度面積がいっぱいのときの目安。種類が違えば換算の重さの比） */
+  const gain = (m: SrMove) => (m.from < 0 || m.to < 0 || slots[m.from].kind === slots[m.to].kind ? 1 : SR_WEIGHT[slots[m.from].kind] / SR_WEIGHT[slots[m.to].kind]);
+  const persons = [...new Set(live.map((i) => slots[i].person))];
+  const reductionOf = (sel: number[], p: string) => live.reduce((a, i) => a + (slots[i].person === p ? scorer.reduction(i, sel[i]) : 0), 0);
+  const rankOf = (i: number) => (i < 0 ? -1 : rank[i]);
+  while (!spent()) {
+    // 1. 見積もり：減額1円あたりで、その人の減額を減らすと増える税額（down）と、増やすと減る税額（up）。
+    //    減らすときはその人の候補のうち1㎡あたりの減額がいちばん小さいものから、増やすときはいちばん大きいものに足して調べる
+    //    （増やした結果は限度面積を超えることがあるが、税額の変わり方を調べるだけで、割り当てには使わない）
+    const down = new Map<string, number>();
+    const up = new Map<string, number>();
+    for (const p of persons) {
+      if (spent()) break;
+      const mine = live.filter((i) => slots[i].person === p);
+      const from = [...mine].reverse().find((i) => cur[i] > 0);
+      const to = mine.find((i) => slots[i].cap100 - cur[i] > 0);
+      const r0 = reductionOf(cur, p);
+      if (from !== undefined) {
+        const next = [...cur];
+        next[from] -= Math.min(cur[from], SR_PROBE100);
+        const dr = r0 - reductionOf(next, p);
+        if (dr > 0) down.set(p, (scorer.score(next).score - curScore.score) / dr);
+      }
+      if (to !== undefined && !spent()) {
+        const next = [...cur];
+        next[to] += Math.min(slots[to].cap100 - cur[to], SR_PROBE100);
+        const dr = reductionOf(next, p) - r0;
+        if (dr > 0) up.set(p, (curScore.score - scorer.score(next).score) / dr);
+      }
+    }
+    // 移し方ごとの、0.01㎡移したときに増える税額の見積もり（負なら下がりそう）。誤差で順が入れ替わらないように6桁に丸める
+    const cands: { m: SrMove; hi: number; slope: number }[] = [];
+    for (const m of moves) {
+      const hi = most(cur, m);
+      if (!(hi > 0)) continue;
+      const q = m.to < 0 ? "" : slots[m.to].person;
+      const u = up.get(q);
+      let slope: number | undefined;
+      if (m.from < 0) {
+        if (u !== undefined) slope = -u * per(m.to);
+      } else if (m.to < 0) {
+        // 減らすだけ（減額が減ると税額が下がるときだけ候補になる）
+        const d = down.get(slots[m.from].person);
+        if (d !== undefined) slope = d * per(m.from);
+      } else {
+        const p = slots[m.from].person;
+        const d = down.get(p);
+        if (p !== q) {
+          if (d !== undefined && u !== undefined) slope = d * per(m.from) - u * per(m.to) * gain(m);
+        } else {
+          // 同じ人の中で移すときは、その人の減額が増えるか減るかだけ
+          const diff = per(m.to) * gain(m) - per(m.from);
+          if (diff > 0 && u !== undefined) slope = -u * diff;
+          if (diff < 0 && d !== undefined) slope = -d * diff;
+        }
+      }
+      if (slope !== undefined && slope < 0) cands.push({ m, hi, slope: Number(slope.toPrecision(6)) });
+    }
+    cands.sort((x, y) => x.slope - y.slope || rankOf(x.m.from) - rankOf(y.m.from) || rankOf(x.m.to) - rankOf(y.m.to));
+    let next: number[] | undefined;
+    for (const { m, hi } of cands) {
+      if (spent()) break;
+      next = lineSearch(m, hi);
+      if (next) break;
+    }
+    // 2. 見つからなければ、全部の移し方で、移せるだけ移す・半分移すを試す
+    for (const m of next || phases < 2 ? [] : moves) {
+      const hi = most(cur, m);
+      if (!(hi > 0)) continue;
+      if (spent()) break;
+      if (SR_CHECK.some((f) => !spent() && srBetter(scorer.score(moved(cur, m, Math.max(1, Math.round(hi * f)))), curScore))) {
+        next = lineSearch(m, hi);
+        if (next) break;
+      }
+    }
+    // 3. それでもなければ、全部の移し方で、まず少しだけ（0.01㎡〜SR_SMALL）移すのを全部試し、それから移す量を探す
+    //    （各人の課税価格の1,000円未満の切捨てなどで、少しだけ下がることがある）
+    for (const m of next || phases < 3 ? [] : moves) {
+      const hi = Math.min(most(cur, m), SR_SMALL);
+      let best: { t: number; s: SrScore } | undefined;
+      for (let t = 1; t <= hi && !spent(); t++) {
+        const s = scorer.score(moved(cur, m, t));
+        if (srBetter(s, best?.s ?? curScore)) best = { t, s };
+      }
+      if (best) {
+        next = moved(cur, m, best.t);
+        break;
+      }
+      if (spent()) break;
+    }
+    for (const m of next || phases < 3 ? [] : moves) {
+      const hi = most(cur, m);
+      if (!(hi > 0)) continue;
+      if (spent()) break;
+      next = lineSearch(m, hi);
+      if (next) break;
+    }
+    if (!next) break;
+    cur = next;
+    curScore = scorer.score(cur);
+    curUsed = srUsedOf(slots, cur);
+  }
+  return cur;
+}
+
+/**
+ * order の順で同じ並びになる候補（同じ種類で、1㎡あたりの減額が同じもの）のうち、限度面積の境目にかかるもの（一部だけ使うもの・
+ * 使うものと使わないものに分かれるもの）の並べ方を変えた割り当て。SR_TIE_PERMUTE 個までの並びは並べ方を全部、
+ * それより大きい並びは、それぞれの候補を最後・先頭にした並べ方を試す（割り当ては SR_TIE_FILLS 個まで）
+ */
+function srTieFills(slots: SrSlot[], order: number[]): SrPlan[] {
+  const live = order.filter((i) => slots[i].value > 0 && slots[i].cap100 > 0);
+  const fill = fillSmallLand(slots, order);
+  const groups: number[][] = [];
+  for (const i of live) {
+    const g = groups[groups.length - 1];
+    if (g && slots[g[0]].kind === slots[i].kind && srEffCompare(slots[g[0]], slots[i]) === 0) g.push(i);
+    else groups.push([i]);
+  }
+  const straddle = groups.filter((g) => g.length > 1 && g.some((i) => fill[i] > 0) && g.some((i) => fill[i] < slots[i].cap100));
+  /**
+   * 並びの並べ方（g の中の位置の並べ方）。大きい並びは、それぞれの候補を最後にしたもの（境目にかかって一部だけ使う人が変わる）と、
+   * 先頭にしたもの
+   */
+  const arrangements = (n: number): number[][] => {
+    if (n <= SR_TIE_PERMUTE) return permutations(n);
+    const ks = [...Array(n).keys()];
+    // とても大きい並び（同じような宅地を大勢で受け継いだときなど）は、はじめと終わりの SR_TIE_EDGE 人ずつだけを動かす（時間がかからないように）
+    const moved = n > 2 * SR_TIE_EDGE ? [...ks.slice(0, SR_TIE_EDGE), ...ks.slice(n - SR_TIE_EDGE)] : ks;
+    return [...moved.map((k) => [...ks.filter((m) => m !== k), k]), ...moved.map((k) => [k, ...ks.filter((m) => m !== k)])];
+  };
+  // 並びの中の並べ方を変えても、その並びで使う面積の合計（total）と、ほかの候補の面積は変わらない（同じ種類なので限度面積の数え方も同じ）。
+  // 並びの中では、並べた順に、上限か total の残りの少ない方を使う。そこで並びごとに、面積が違う並べ方だけ（はじめに出てきたもの）を残してから
+  // 組み合わせる（全部の並べ方を組み合わせてから同じ割り当てをまとめるのと、同じ割り当てが同じ順に出てくる）
+  const options = straddle.map((g) => {
+    const total = g.reduce((a, i) => a + fill[i], 0);
+    const kept: number[][] = [];
+    const seenHere = new Set<string>();
+    for (const perm of arrangements(g.length)) {
+      const members = perm.map((p) => g[p]);
+      let rest = total;
+      const sel = new Map<number, number>();
+      for (const i of members) {
+        const used = Math.min(slots[i].cap100, rest);
+        sel.set(i, used);
+        rest -= used;
+      }
+      const key = g.map((i) => sel.get(i)).join(",");
+      if (seenHere.has(key)) continue;
+      seenHere.add(key);
+      kept.push(members);
+    }
+    return kept;
+  });
+  // 並びのそれぞれの位置（ほかの並びを並べ替えても変わらない）
+  const pos = straddle.map((g) => g.map((i) => order.indexOf(i)).sort((a, b) => a - b));
+  const out: SrPlan[] = [];
+  const seen = new Set<string>();
+  const cur = [...order];
+  const walk = (k: number) => {
+    if (out.length >= SR_TIE_FILLS) return;
+    if (k === straddle.length) {
+      const sel = fillSmallLand(slots, cur);
+      const key = sel.join(",");
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push({ order: [...cur], selected: sel });
+      }
+      return;
+    }
+    for (const members of options[k]) {
+      members.forEach((i, m) => (cur[pos[k][m]] = i));
+      walk(k + 1);
+    }
+  };
+  walk(0);
+  return out;
+}
+
+/**
+ * 始めの割り当ての候補。それぞれ、並べた順に前から使えるだけ使う（order はその順で、案内の文もこの順に書く）。
+ * - 候補が SR_MAX_PERMUTE 個までなら、並べ方を全部
+ * - それより多ければ、既定の順と、土地ごとにまとめた並べ方（土地が SR_MAX_PERMUTE 筆までなら全部）、
+ *   種類の順（特定居住用・特定事業用・貸付事業用の6通り。種類の中は既定の順）、それぞれで配偶者の分を後に回したもの・
+ *   配偶者の分や貸付事業用を使わないもの、人ごとの価額で1㎡あたりの減額を比べた順
+ * 割り当てる面積が同じになる並べ方は1つにまとめる。先頭は既定の順
+ */
+function srStarts(slots: SrSlot[], def: number[]): SrPlan[] {
+  const isLive = (i: number) => slots[i].value > 0 && slots[i].cap100 > 0;
+  const liveDef = def.filter(isLive);
+  const rest = def.filter((i) => !isLive(i));
+  const out: SrPlan[] = [];
+  const seen = new Set<string>();
+  /** order の順に前から使う（skip に当たる候補は使わず、後ろに回す） */
+  const add = (order: number[], skip?: (i: number) => boolean) => {
+    const use = skip ? order.filter((i) => !skip(i)) : order;
+    const selected = fillSmallLand(slots, use);
+    const key = selected.join(",");
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ order: skip ? [...use, ...order.filter((i) => skip(i)), ...rest] : [...order, ...rest], selected });
+  };
+  if (liveDef.length <= SR_MAX_PERMUTE) {
+    for (const perm of permutations(liveDef.length)) add(perm.map((k) => liveDef[k]));
+    return out;
+  }
+  add(liveDef);
+  const spouse = (i: number) => !!slots[i].spouse;
+  const spouseLast = (o: number[]) => [...o.filter((i) => !spouse(i)), ...o.filter(spouse)];
+  // 土地ごとにまとめた並べ方（1つの土地を何人かで受け継いだときは、その人たちの分を続けて使う）
+  const lots: number[][] = [];
+  for (const i of liveDef) {
+    const g = lots.find((l) => slots[l[0]].lot === slots[i].lot);
+    if (g) g.push(i);
+    else lots.push([i]);
+  }
+  if (lots.length <= SR_MAX_PERMUTE) {
+    for (const perm of permutations(lots.length)) {
+      if (out.length >= SR_LOT_FILLS) break;
+      add(perm.flatMap((k) => lots[k]));
+    }
+  }
+  const kinds: SmallLandKind[] = ["residence", "business", "rental"];
+  for (const ko of permutations(kinds.length)) {
+    const kindRank = (i: number) => ko.indexOf(kinds.indexOf(slots[i].kind));
+    const o = [...liveDef].sort((i, j) => kindRank(i) - kindRank(j));
+    add(o);
+    add(spouseLast(o));
+    add(o, spouse);
+  }
+  add(liveDef, (i) => slots[i].kind === "rental");
+  add(liveDef, (i) => slots[i].kind === "rental" || spouse(i));
+  // 人ごとの価額と面積で1㎡あたりの減額を比べた順（これまでの計算の既定の順と同じ考え方。1つの土地の人どうしでは、
+  // 1円未満の端数を寄せた人が先になる）。同じなら配偶者の分を後に、取得する人の順位（sig）、候補の名前の順
+  const own = (x: SrSlot) => BigInt(Math.max(0, x.value)) * BigInt(SMALL_LAND_RULE[x.kind].rate * SMALL_LAND_RULE[x.kind].limitSqm);
+  add(
+    [...liveDef].sort((i, j) => {
+      const l = own(slots[i]) * BigInt(Math.max(1, slots[j].area100));
+      const r = own(slots[j]) * BigInt(Math.max(1, slots[i].area100));
+      return (l === r ? 0 : l > r ? -1 : 1) || srSpouseCompare(slots[i], slots[j]) || srSigCompare(slots[i], slots[j]);
+    }),
+  );
+  return out;
+}
+
+/**
+ * 候補を取得する人ごとに、IDによらない順位（sig）をつける。zero は限度面積を1㎡も使わないときの計算結果で、
+ * 続柄・配偶者か・2割加算の対象か・法定相続人か、未成年者控除・障害者控除の額、取得財産・相続時精算課税の贈与・債務・
+ * 加算する贈与の価額（1,000円単位）、贈与で納めた贈与税の額を並べたものの順にする。1つの土地を何人かで受け継ぐと
+ * 1㎡あたりの減額は同じになり、それまでは人のIDの順で並べていたため、IDを付け替えただけで探す道筋と税額が変わることがあった。
+ * これらがすべて同じ人（入れ替えても税額が変わらない人）どうしは同じ順位にし、IDの順で並べる
+ */
+function srSign(slots: SrSlot[], c: Case, zero: TaxResult) {
+  const giftTax = new Map<string, [number, number]>();
+  for (const g of c.priorGifts) {
+    const t = giftTax.get(g.personId) ?? [0, 0];
+    t[g.settlement ? 1 : 0] += Math.max(0, Math.floor(Number(g.giftTaxPaid) || 0));
+    giftTax.set(g.personId, t);
+  }
+  const k = (v: number) => Math.floor((Number.isFinite(v) ? v : 0) / 1000);
+  const sigs = new Map<string, string>();
+  for (const r of zero.persons) {
+    const p = r.person;
+    const sig = [
+      p.relation === "spouse" ? 1 : 0,
+      p.relation,
+      isSurchargeTarget(p, zero.heirsCivil.substitutes) ? 1 : 0,
+      r.isLegalHeir ? 1 : 0,
+      r.isCivilHeir ? 1 : 0,
+      r.minorCredit + r.minorExcess,
+      r.disabilityCredit + r.disabilityExcess,
+      k(r.acquired),
+      k(r.settlementGifts),
+      k(r.debts),
+      k(r.gifts),
+      ...(giftTax.get(p.id) ?? [0, 0]),
+    ];
+    if (!sigs.has(p.id)) sigs.set(p.id, JSON.stringify(sig));
+  }
+  const ranks = [...new Set(sigs.values())].sort(keyCompare);
+  for (const x of slots) x.sig = ranks.indexOf(sigs.get(x.person) ?? "");
+}
+
+/** 始めの割り当ての税額がいちばん少ないものとこの額（円）以内の差なら、そこからも探す */
+const SR_NEAR = 1_000;
+/** そうして探す始めの割り当ての数の上限（いちばん少ないものを含む） */
+const SR_NEAR_STARTS = 3;
+/** 貸付事業用を使う・使わないの反対の側から探すときに使う回数（探す部分の上限 budget の何分の1か。budget とは別に数える） */
+const SR_OTHER_SIDE = 4;
+/** 境目にかかる並びの並べ方を全部試す並びの大きさ（5つで120通り。割り当てが同じになる並べ方は1回だけ計算する。それより大きい並びは、それぞれを最後・先頭にした並べ方だけ） */
+const SR_TIE_PERMUTE = 5;
+/** 始めの割り当て1つから作る、境目にかかる並びの並べ方を変えた割り当ての数の上限 */
+const SR_TIE_FILLS = 48;
+/** 始めの割り当て全部から作る、境目にかかる並びの並べ方を変えた割り当ての数の上限（割り当てが同じものは1つに数える） */
+const SR_TIE_TOTAL = 200;
+/** 境目にかかる並びが大きいとき、並べ方を変えて試す候補の数（はじめと終わりからそれぞれ） */
+const SR_TIE_EDGE = 12;
+/**
+ * 始めの割り当てを比べる分も含めて、1回の計算で割り当てを計算してよい回数の上限を決める数。1回の計算にかかる時間は
+ * ほぼ家族の人数に比例し、財産の数の影響はその30分の1ほどなので、SR_EVAL_WORK ÷（家族の人数＋財産の数÷30）回までにする
+ * （家族が6人ほどまでなら上限にかからない）
+ */
+const SR_EVAL_WORK = 6_000;
+/**
+ * 1回の計算で、割り当てを探してよい量の目安（候補の数 ×（家族の数 ＋ 財産の数）× 計算する回数）。1回分の計算の手間は家族と財産の数で、
+ * 割り当てを1つ調べる手間は候補の数で増えるので、候補が何百もあるときは計算する回数を減らし、時間が際限なく延びないようにする。
+ * ふつうの入力（候補20個・家族10人・財産30件で 20×40×400＝32万）や、候補72個・家族10人・財産174件（72×184×400＝530万）では減らさない。
+ * 減らしたとき（lean）は、いちばんよい始めの割り当てから 1.（見積もり）だけで探す
+ */
+const SR_WORK = 8_000_000;
+/** 土地ごとにまとめた並べ方で作る、始めの割り当ての数の上限 */
+const SR_LOT_FILLS = 120;
+
 export function calculate(c: Case, opts: EngineOptions = {}): TaxResult {
-  // 割り当て順を変えて何度も計算するので、財産の評価は1回だけにする
+  // 割り当てを変えて何度も計算するので、財産の評価と、限度面積の割り当てより前の部分の計算は1回だけにする
   const cache = new Map<Asset, Valuation>();
   const value = (a: Asset) => {
     let v = cache.get(a);
     if (!v) cache.set(a, (v = valueAsset(a)));
     return v;
   };
-  const base = compute(c, opts, value);
-  // 限度面積をどの宅地に使うかは、宅地を取得した人全員の同意で選べる（措置法69条の4第1項。付表1の同意欄）。
+  const prep = computeBase(c, value);
+  // 限度面積をどの宅地（どの人の分）にどれだけ使うかは、宅地を取得した人全員の同意で選べる（措置法69条の4第1項。付表1の同意欄）。
   // 減額がいちばん大きい宅地を選んでも、税額が0円の配偶者の宅地を選ぶと、かえって家族全体の相続税が増えることがある。
-  // そこで、選べる宅地が少なければ割り当て順をすべて試し、納める相続税の合計（還付される額を引いたもの）がいちばん少ない割り当てにする
-  // （同じなら減額が大きい方、それも同じなら既定の順に近い方）。多いときは既定の順（限度面積1㎡あたりの減額が大きい順）のままにする
-  const slots = base.sr;
+  // 贈与税額控除などを引ききれない人がいるときは、何人かに分けた方が少なくなることもある。
+  // 貸付事業用を選ぶと特定居住用・特定事業用の限度も換算して合わせて数えるので、貸付事業用を使わない方が少なくなることもある。そこで、
+  // 1. 始めの割り当て（srStarts と、境目にかかる同じ並びの並べ方を変えたもの）を比べる。納める相続税の合計（還付される額を引いたもの）が
+  //    少ない方、同じなら減額が大きい方、それも同じなら先に作った方（既定の順に近い方）をとる
+  // 2. そこから、候補のあいだで面積を移して、家族全体の相続税が下がるかを試す（improveSrPlan）
+  // 3. 選んだ割り当てで、もう一度はじめから計算して返す
+  const slots = prep.srSlots;
   const live = slots.flatMap((x, i) => (x.value > 0 && x.cap100 > 0 ? [i] : []));
-  if (live.length < 2 || live.length > SR_MAX_PERMUTE || !srBinds(slots)) return base.result;
+  if (live.length < 2 || !srBinds(slots)) return computeRest(c, opts, prep).result;
+  // 取得する人の順位（IDによらない）を、限度面積を使わないときの計算から決めてから、既定の順で計算する
+  const none = slots.map(() => 0);
+  const zero = computeRest(c, opts, prep, { order: slots.map((_, i) => i), selected: none }, true).result;
+  srSign(slots, c, zero);
+  const base = computeRest(c, opts, prep);
   const def = defaultSrOrder(slots);
-  const liveDef = def.filter((i) => live.includes(i));
-  const rest = def.filter((i) => !live.includes(i));
-  const seen = new Set<string>();
-  let best: { result: TaxResult; score: number; reduction: number } | undefined;
-  for (const perm of permutations(liveDef.length)) {
-    const order = [...perm.map((k) => liveDef[k]), ...rest];
-    // 割り当てる面積が同じになる並べ方（上限に届いたあとの順番違いなど）は、結果も同じなので計算しない
-    const key = fillSmallLand(slots, order).join(",");
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const { result } = compute(c, opts, value, order);
-    const score = result.totalPayable - result.totalRefund;
-    const reduction = result.assets.reduce((a, l) => a + l.reduction, 0);
-    if (!best || score < best.score || (score === best.score && reduction > best.reduction)) best = { result, score, reduction };
+  const scorer = srScorer(slots, (selected) => {
+    const r = computeRest(c, opts, prep, { order: def, selected }, true).result;
+    return { score: r.totalPayable - r.totalRefund, reduction: r.assets.reduce((a, l) => a + l.reduction, 0) };
+  });
+  const defFill = fillSmallLand(slots, def);
+  scorer.seed(defFill, base.result);
+  scorer.seed(none, zero);
+  // 探す部分で計算してよい回数。候補の数で決め（srSearchBudget）、候補・家族・財産がとても多いときは SR_WORK に収まるよう減らす
+  // （そのときは、ほかの始めの割り当てからは探さず、2.・3.の全部の移し方を試す段階も使わない）。時間では決めないので、同じ入力なら必ず同じ結果になる
+  const full = srSearchBudget(live.length);
+  const workCap = Math.floor(SR_WORK / Math.max(1, live.length * (c.persons.length + prep.assetLines.length)));
+  const budget = Math.min(full, workCap);
+  const lean = budget < full;
+  const total = Math.floor((SR_EVAL_WORK * 30) / Math.max(1, 30 * c.persons.length + prep.assetLines.length));
+  const sc = (s: SrPlan) => scorer.score(s.selected);
+  const bestOf = (plans: SrPlan[], from: SrPlan) => plans.reduce((b, s) => (srBetter(sc(s), sc(b)) ? s : b), from);
+  const starts = srStarts(slots, def);
+  // 候補が多いときは、始めの割り当てそれぞれで、境目にかかる同じ並びの候補の並べ方も変えてみる（1つの土地を何人かで受け継いだとき、
+  // どの人の分から使うかで税額が変わる）。いちばんよかったもの、既定の順、そのほかの順に作り、割り当てが同じものは1つにまとめる
+  const ties: SrPlan[] = [];
+  if (live.length > SR_MAX_PERMUTE) {
+    const seen = new Set(starts.map((s) => s.selected.join(",")));
+    const top = bestOf(starts, starts[0]);
+    // 始めの割り当てと並べ方を変えたものを比べるのは、計算してよい回数（total）の3分の1まで
+    const cap = Math.max(0, Math.min(lean ? budget : SR_TIE_TOTAL, Math.floor(total / 3) - starts.length));
+    for (const st of lean ? [top] : [top, ...starts.filter((s) => s !== top)]) {
+      for (const t of ties.length < cap ? srTieFills(slots, st.order) : []) {
+        const key = t.selected.join(",");
+        if (ties.length >= cap || seen.has(key)) continue;
+        seen.add(key);
+        ties.push(t);
+      }
+    }
   }
-  return best!.result;
+  const all = [...starts, ...ties];
+  const first = bestOf(all, starts[0]);
+  // 始めの割り当ての税額がほとんど同じ（SR_NEAR 円以内）ものが他にもあれば、それぞれから 1.・2. だけ探して、いちばんよいものを残す。
+  // 同じ土地を何人かで受け継いだときは、価額の1円未満の端数を誰に寄せたか（分け方の行の順）だけで始めの割り当ての税額が少し変わり、
+  // 1つだけから探すと、行の順で行き着く割り当てが変わることがあるため（試す順は既定の順で決まり、入力した順によらない）。
+  // all の割り当てはどれも違うので、同じ割り当てから2回探すことはない
+  // 候補・家族・財産がとても多くて回数を減らしたとき（lean）は、いちばんよい始めの割り当てからだけ探す
+  // 探す部分の回数は、残りの回数の5分の4まで（残りは、反対の側から探す分）
+  const search = Math.min(budget, Math.floor((Math.max(0, total - scorer.evals) * 4) / 5));
+  const near = lean ? [first] : [first, ...all.filter((s) => s !== first && sc(s).score <= sc(first).score + SR_NEAR).slice(0, SR_NEAR_STARTS - 1)];
+  // 探す部分で計算する回数の上限は、全部で search。始めの割り当てが何個かあれば、その半分を分けて使い、残りで仕上げる
+  const spentFrom = scorer.evals;
+  let start = first;
+  let rough = first.selected;
+  if (near.length > 1) {
+    for (const s of near) {
+      const r = improveSrPlan(slots, s.selected, scorer, Math.floor(search / 2 / near.length), 2);
+      if (s === first || srBetter(scorer.score(r), scorer.score(rough))) {
+        start = s;
+        rough = r;
+      }
+    }
+  }
+  let best = improveSrPlan(slots, rough, scorer, Math.max(0, search - (scorer.evals - spentFrom)), lean ? 1 : 3);
+  // 貸付事業用を使うかどうかで限度面積の数え方が変わり（使わなければ特定居住用330㎡と特定事業用400㎡を別々に、使えば換算して合わせて）、
+  // 面積を移すだけでは行き来しにくい。そこで、いちばんよい始めの割り当てと反対の側（貸付事業用を使う・使わない）でいちばんよい
+  // 始めの割り当てからも、budget の4分の1まで探し、よければそちらをとる（上の探し方はそのままにするので、これで高くなることはない）
+  const usesRental = (s: SrPlan) => s.selected.some((v, i) => v > 0 && slots[i].kind === "rental");
+  const other = lean ? [] : all.filter((s) => usesRental(s) !== usesRental(first));
+  if (other.length) {
+    const o = bestOf(other, other[0]);
+    const r = improveSrPlan(slots, o.selected, scorer, Math.min(Math.floor(budget / SR_OTHER_SIDE), Math.max(0, total - scorer.evals)));
+    if (srBetter(scorer.score(r), scorer.score(best))) {
+      start = o;
+      best = r;
+    }
+  }
+  // 割り当て順を比べず（候補が多いとき）、既定の順のままがいちばんよければ、これまでどおりの計算と案内
+  if (live.length > SR_MAX_PERMUTE && best.every((s, i) => s === defFill[i])) return base.result;
+  return compute(c, opts, value, { order: start.order, selected: best }).result;
 }
 
 /** 「12,345円」 */
@@ -519,17 +1225,21 @@ const yenText = (n: number) => `${n.toLocaleString()}円`;
 const personText = (p: Person | undefined) => (p?.name ? `${p.name}さん` : "名前が入っていない人");
 
 /**
- * 相続税の計算の本体。srOrder は小規模宅地等の特例の候補（見つけた順の番号）に限度面積を割り当てる順番で、
- * 渡さなければ既定の順（defaultSrOrder）にする。sr は候補ごとの種類・取得者の持分に応ずる面積（0.01㎡単位）と価額
+ * 相続税の計算の本体。srPlan は calculate が探した小規模宅地等の限度面積の割り当て（候補ごとの選択面積と、案内に書く順）で、
+ * 渡さなければ既定の順（defaultSrOrder）に、前から使えるだけ使う。sr は候補ごとの種類・取得者の持分に応ずる面積（0.01㎡単位）と価額
  */
-function compute(
-  c: Case,
-  opts: EngineOptions,
-  valueOf: (a: Asset) => Valuation,
-  srOrder?: number[],
-): { result: TaxResult; sr: SrSlot[] } {
+function compute(c: Case, opts: EngineOptions, valueOf: (a: Asset) => Valuation, srPlan?: SrPlan): { result: TaxResult; sr: SrSlot[] } {
+  return computeRest(c, opts, computeBase(c, valueOf), srPlan);
+}
+
+/**
+ * compute の前半：財産の評価と取得者への配分、小規模宅地等の特例の候補まで（限度面積の割り当てより前なので、割り当てによらない）。
+ * calculate は割り当てを変えて何度も計算するので、この結果を1回だけ作り、computeRest に何度も渡す
+ */
+function computeBase(c: Case, valueOf: (a: Asset) => Valuation) {
   const blockers: string[] = [];
   const warnings: string[] = [];
+  const rankOf = personRankOf(c.persons);
   const deathDate = c.decedent.deathDate;
   const deathYear = Number(deathDate.slice(0, 4));
   if (deathYear !== 2026) {
@@ -622,21 +1332,7 @@ function compute(
   const undividedLabels: string[] = [];
   // 小規模宅地等の特例を受ける宅地と取得する人の組（限度面積は、全部の評価が終わってからまとめて割り当てる）。
   // 1つの宅地を何人かで受け継いだときは、特例を使う人ごとに1つずつ（付表1の1行ずつ）。見つけた順は、土地ごとに1人目、2人目以降（others の順）
-  const srCandidates: {
-    line: AssetLine;
-    part: { personId: string; amount: number };
-    landPart: number;
-    area: number;
-    area100: number;
-    /** 特例を使える面積の上限（0.01㎡単位）。③か、その人が選んだ面積の少ない方 */
-    cap100: number;
-    acquirerId: string;
-    kind: SmallLandKind;
-    /** SmallLandRelief.acquirerId の人（付表1の line.small）か、others の人（line.smallExtra）か */
-    first: boolean;
-    /** 案内に使う土地の名前。1つの土地で2人以上が特例を使うときは「「自宅」（長男さんの分）」のように人の名前を添える */
-    label: string;
-  }[] = [];
+  const srCandidates: SrCandidate[] = [];
   const allocateHint = "申告期限までに分け方が決まらないときは、遺産の分け方の画面で「分け方がまだ決まっていない」にチェックを入れてください（法定相続分で受け継いだものとして計算します）。";
   // 1回目：財産ごとに評価し、分け方で決まった割合（decided）と決まっていない割合（undecided）を調べる
   type Plan =
@@ -649,7 +1345,7 @@ function compute(
         valid: { personId: string; numerator: number; denominator: number }[];
         decided: SharePart[];
         undecided: Fraction;
-        rest: "first" | "largest" | "none";
+        rest: "first" | "largestId" | "none";
       };
   const plans: Plan[] = [];
   for (const a of c.assets) {
@@ -675,12 +1371,12 @@ function compute(
     const over = sub(total, ONE).n;
     const decided: SharePart[] = valid.map((s) => ({ personId: s.personId, f: frac(s.numerator, s.denominator), undivided: false }));
     let undecided = ZERO;
-    let rest: "first" | "largest" | "none" = "none";
+    let rest: "first" | "largestId" | "none" = "none";
     if (shares.length === 0) {
       if (c.undivided) {
-        // 未分割：法定相続分で取得したものとして計算する（相続税法55条）
+        // 未分割：法定相続分で取得したものとして計算する（相続税法55条）。1円未満の端数は、割合がいちばん大きい人（同じなら生年月日・名前・人のIDの順）に寄せる
         undecided = ONE;
-        rest = "largest";
+        rest = "largestId";
       } else {
         blockers.push(`${label}を受け継ぐ人が決まっていません。遺産の分け方で取得者を決めてください。${allocateHint}`);
       }
@@ -692,15 +1388,19 @@ function compute(
       blockers.push(`${label}の取得割合の合計が1になっていません（いま ${Math.round(shareSum * 10000) / 100}%）。遺産の分け方を確認してください。`);
     } else if (over < 0n) {
       if (c.undivided) {
-        // 一部だけ決まっている：残りの割合を、決まっていない部分として法定相続分で分ける
+        // 一部だけ決まっている：残りの割合を、決まっていない部分として法定相続分で分ける。1円未満の端数は、割合がいちばん大きい人
+        // （同じなら人のIDの順）に寄せる。分け方の行の順や家族の一覧の順で寄せると、小規模宅地等の特例を使う土地では、
+        // 並べ替えただけで限度面積の割り当てを探す計算の進み方が変わり、税額が変わることがあるため
         undecided = sub(ONE, total);
-        rest = "largest";
+        rest = "largestId";
       } else {
         const pct = Math.round((Number(total.n) / Number(total.d)) * 10000) / 100;
         blockers.push(`${label}は、受け継ぐ人が決まっていない部分があります（いま ${pct}%）。遺産の分け方で、取得者と割合の合計が100%になるように決めてください。${allocateHint}`);
       }
     } else {
-      rest = "first";
+      // 小規模宅地等の特例を使う土地は、持分で分けた1円未満の端数を、持分がいちばん大きい人（同じなら人のIDの順）に寄せる。
+      // 分け方の行の順で寄せると、行を並べ替えただけで限度面積の割り当てを探す計算の進み方が変わり、税額が変わることがあるため
+      rest = (a.kind === "land" || a.kind === "condo") && a.smallResidential ? "largestId" : "first";
     }
     plans.push({ a, valuation, receipt: false, label, valid, decided, undecided, rest });
   }
@@ -809,7 +1509,7 @@ function compute(
     }
     const { label, valid, rest } = pl;
     const parts: SharePart[] = pl.undecided.n > 0n ? [...pl.decided, ...undividedSplit(pl.undecided)] : pl.decided;
-    const amounts = splitParts(valuation.value, parts, rest);
+    const amounts = splitParts(valuation.value, parts, rest, rankOf);
     const byPerson: { personId: string; amount: number }[] = [];
     const undivided: { personId: string; amount: number }[] = [];
     parts.forEach((p, i) => {
@@ -957,17 +1657,141 @@ function compute(
       );
     }
   }
+  // 生前贈与のうち、相続開始前3年以内の暦年課税のもの（受け取った人ごと、入力した順）。令和8年中の相続開始は加算期間3年
+  const giftsInWindow = new Map<string, PriorGift[]>();
+  {
+    const death = new Date(deathDate + "T00:00:00Z");
+    const from = new Date(Date.UTC(death.getUTCFullYear() - 3, death.getUTCMonth(), death.getUTCDate()));
+    for (const g of c.priorGifts) {
+      if (g.settlement || !isValidISODate(g.date)) continue;
+      const d = new Date(g.date + "T00:00:00Z");
+      if (d >= from && d <= death) giftsInWindow.set(g.personId, [...(giftsInWindow.get(g.personId) ?? []), g]);
+    }
+  }
+  // 特例の候補がない財産（割り当てで変わらない財産）から各人が受け継ぐ価額の合計。保険金・退職金は除く
+  const srLines = new Set(srCandidates.map((x) => x.line));
+  const fixedFrom = new Map<string, number>();
+  for (const l of assetLines) {
+    if (srLines.has(l) || l.asset.kind === "insurance" || l.asset.kind === "retirement") continue;
+    const seen = new Set<string>();
+    for (const b of l.byPerson) {
+      // 同じ人の行が2つあっても、1つ目だけを数える（computeRest で候補のある財産を足すときと同じ）
+      if (seen.has(b.personId)) continue;
+      seen.add(b.personId);
+      addTo(fixedFrom, b.personId, b.amount);
+    }
+  }
+  return {
+    blockers,
+    warnings,
+    deathDate,
+    giftsInWindow,
+    fixedFrom,
+    heirsTax,
+    heirsCivil,
+    civil,
+    legalSet,
+    legalHeirCount,
+    basicDeduction,
+    living,
+    nameOf,
+    prior,
+    laterDeaths,
+    legalParts,
+    insuranceBy,
+    retirementBy,
+    assetLines,
+    dividedGross,
+    undividedBy,
+    addTo,
+    undividedLabels,
+    srCandidates,
+    /** 限度面積の割り当てに使う形の候補（割り当てによらないので1回だけ作る） */
+    srSlots: srSlotsOf(c, srCandidates),
+    plans,
+    compIn,
+    compOut,
+    compensation,
+    settlementAsShare,
+  };
+}
 
-  // 限度面積（措置法69条の4第2項）を、srOrder の順に、なければ既定の順に割り当てる。土地と取得する人の組ごとに、その人の上限（cap100）まで
-  const srSlots: SrSlot[] = srCandidates.map((x) => ({
+type ComputeBase = ReturnType<typeof computeBase>;
+
+/** 小規模宅地等の特例を受ける宅地と取得する人の組（compute の中の形。付表1の1行） */
+interface SrCandidate {
+  line: AssetLine;
+  part: { personId: string; amount: number };
+  landPart: number;
+  area: number;
+  area100: number;
+  /** 特例を使える面積の上限（0.01㎡単位）。③か、その人が選んだ面積の少ない方 */
+  cap100: number;
+  acquirerId: string;
+  kind: SmallLandKind;
+  /** SmallLandRelief.acquirerId の人（付表1の line.small）か、others の人（line.smallExtra）か */
+  first: boolean;
+  /** 案内に使う土地の名前。1つの土地で2人以上が特例を使うときは「「自宅」（長男さんの分）」のように人の名前を添える */
+  label: string;
+}
+
+/** 小規模宅地等の特例の候補を、限度面積の割り当てに使う形にする */
+function srSlotsOf(c: Case, cands: SrCandidate[]): SrSlot[] {
+  const sums = new Map<AssetLine, { value: number; area100: number }>();
+  for (const x of cands) {
+    const s = sums.get(x.line) ?? { value: 0, area100: 0 };
+    s.value += Math.max(0, x.landPart);
+    s.area100 += Math.max(0, x.area100);
+    sums.set(x.line, s);
+  }
+  // 同じ財産のIDが2つ以上あるとき（ふつうは起きない）は、見つけた順の番号を添えて区別する
+  const lots = new Map<AssetLine, number>();
+  for (const x of cands) if (!lots.has(x.line)) lots.set(x.line, lots.size);
+  const names = cands.map((x) => `${x.line.asset.id}\u0000${x.acquirerId}`);
+  const count = new Map<string, number>();
+  for (const k of names) count.set(k, (count.get(k) ?? 0) + 1);
+  return cands.map((x, i) => ({
     kind: x.kind,
+    area: x.area,
     area100: x.area100,
     cap100: x.cap100,
     value: x.landPart,
     spouse: c.persons.find((p) => p.id === x.acquirerId)?.relation === "spouse",
+    person: x.acquirerId,
+    key: count.get(names[i])! > 1 ? `${names[i]}\u0000${i}` : names[i],
+    effValue: sums.get(x.line)!.value,
+    effArea100: sums.get(x.line)!.area100,
+    lot: lots.get(x.line)!,
   }));
-  const srOrdered = srOrder ?? defaultSrOrder(srSlots);
-  const selected = fillSmallLand(srSlots, srOrdered);
+}
+
+/**
+ * compute の後半：限度面積の割り当てから税額・案内まで。base は何度も使うので変えない。lite のときは割り当ての案内の文を作らない
+ * （割り当てで変わる案内・止める理由・財産の明細と取得価額は、写してから使う）
+ */
+function computeRest(c: Case, opts: EngineOptions, base: ComputeBase, srPlan?: SrPlan, lite = false): { result: TaxResult; sr: SrSlot[] } {
+  const { deathDate, heirsTax, heirsCivil, civil, legalSet, legalHeirCount, basicDeduction, living, nameOf, prior, laterDeaths, legalParts } = base;
+  const { insuranceBy, retirementBy, dividedGross, undividedBy, addTo, undividedLabels, plans, compIn, compOut, compensation, settlementAsShare } = base;
+  const blockers = [...base.blockers];
+  const warnings = [...base.warnings];
+  // 割り当てで変わるのは、特例の候補がある財産の明細（減額・付表1の明細・取得者ごとの価額）だけ
+  const copies = new Map<AssetLine, AssetLine>();
+  for (const x of base.srCandidates) if (!copies.has(x.line)) copies.set(x.line, { ...x.line, byPerson: x.line.byPerson.map((b) => ({ ...b })) });
+  const assetLines = base.assetLines.map((l) => copies.get(l) ?? l);
+  const srCandidates = base.srCandidates.map((x) => {
+    const line = copies.get(x.line)!;
+    return { ...x, line, part: line.byPerson[x.line.byPerson.indexOf(x.part)] };
+  });
+
+  // 限度面積（措置法69条の4第2項）の割り当て。srPlan があればその面積を、なければ既定の順に前から使えるだけ使う。
+  // 土地と取得する人の組ごとに、その人の上限（cap100）まで
+  const srSlots = base.srSlots;
+  const srOrdered = srPlan?.order ?? defaultSrOrder(srSlots);
+  // srPlan は calculate が同じ入力から作った候補の一覧に合わせてある（限度面積の内に収まる）。念のため、候補の数が違うときは使わず、各候補の上限に収める
+  const planned = srPlan && srPlan.selected.length === srSlots.length && srPlan.order.length === srSlots.length;
+  const selected = planned
+    ? srSlots.map((x, i) => (x.value > 0 && x.cap100 > 0 ? Math.max(0, Math.min(x.cap100, Math.floor(srPlan.selected[i]) || 0)) : 0))
+    : fillSmallLand(srSlots, srOrdered);
   // 付表1の明細と減額（⑥ ＝ ④ × ⑤ ／ ③）。1人目は line.small、2人目以降は line.smallExtra（others の順）に入れ、
   // 土地の減額（reduction）はその合計。各人の取得価額からは、その人の減額だけを引く
   srCandidates.forEach((x, i) => {
@@ -990,18 +1814,24 @@ function compute(
   });
   const srUsed: string[] = [];
   const srSkipped: string[] = [];
-  for (const i of srOrdered) {
+  // lite（calculate が割り当てを比べるときの計算。税額だけを使う）は、割り当ての案内の文を作らない
+  for (const i of lite ? [] : srOrdered) {
     const x = srCandidates[i];
     if (!(x.landPart > 0) || !(x.cap100 > 0)) continue;
     if (selected[i] <= 0) srSkipped.push(x.label);
-    else srUsed.push(selected[i] < x.cap100 ? `${x.label}は残り${sqmText(selected[i])}㎡分` : `${x.label}に${sqmText(selected[i])}㎡`);
+    else srUsed.push(`${x.label}に${sqmText(selected[i])}㎡`);
   }
   const srLive = srCandidates.filter((x) => x.landPart > 0 && x.cap100 > 0);
-  if (srLive.length > 1 && srBinds(srSlots)) {
+  if (lite) {
+    // 案内の文は作らない
+  } else if (srLive.length > 1 && srBinds(srSlots)) {
     // 1つの土地を2人以上で使うときは、どの人の分に割り当てるかも選べる
     const sharedLot = new Set(srLive.map((x) => x.line)).size < srLive.length;
+    // 特定居住用の候補に、生計を一にしていた親族が住んでいた土地があれば、「自宅の敷地」ではなく、それも含めた言い方にする
+    const familyHome = srLive.some((x) => x.kind === "residence" && isFamilyHomeLot(x.line.asset));
     warnings.push(
-      `${smallLandLimitText(new Set(srLive.map((x) => x.kind)))}${srOrder ? "家族全体で納める相続税がいちばん少なくなるように" : srLive.every((x) => x.kind === "residence") ? "1㎡あたりの価額が高い土地から順に" : "減額できる額が大きい土地から順に"}、${srUsed.join("、")}を割り当てています${srSkipped.length ? `（${srSkipped.join("・")}には適用していません）` : ""}。どの土地${sharedLot ? "（どの人の分）" : ""}に割り当てるかは受け継ぐ人全員の合意で選べるので、別の割り当てにしたいときは税理士にご相談ください。`,
+      // 探した割り当ては、いちばん少ないとは限らない（試す数に上限がある）ので「少なくなる割り当てを計算で探し」とだけ書く
+      `${smallLandLimitText(new Set(srLive.map((x) => x.kind)), familyHome)}${planned ? "家族全体で納める相続税が少なくなる割り当てを計算で探し" : srLive.every((x) => x.kind === "residence") ? "1㎡あたりの価額が高い土地から順に" : "減額できる額が大きい土地から順に"}、${srUsed.join("、")}を割り当てています${srSkipped.length ? `（${srSkipped.join("・")}には適用していません）` : ""}。どの土地${sharedLot ? "（どの人の分）" : ""}に割り当てるかは受け継ぐ人全員の合意で選べるので、別の割り当てにしたいときは税理士にご相談ください。`,
     );
   } else if (srLive.length === 1 && srLive[0].cap100 > SMALL_LAND_RULE[srLive[0].kind].limitSqm * 100) {
     const x = srLive[0];
@@ -1009,7 +1839,7 @@ function compute(
     warnings.push(
       x.kind === "residence"
         ? `小規模宅地等の特例は330㎡までのため、${x.label}は330㎡分だけ適用しています。`
-        : `小規模宅地等の特例は、${SMALL_LAND_KIND_TEXT[x.kind]}では${limit}㎡までのため、${x.label}は${limit}㎡分だけ適用しています。`,
+        : `小規模宅地等の特例は、${smallLandKindText(x.kind)}では${limit}㎡までのため、${x.label}は${limit}㎡分だけ適用しています。`,
     );
   }
 
@@ -1024,7 +1854,7 @@ function compute(
   for (const d of c.debts) {
     const borne = d.bearers.reduce((acc, b) => acc + b.amount, 0);
     if (c.undivided && borne === 0 && d.amount > 0 && legalParts.length > 0) {
-      const amounts = splitParts(d.amount, legalParts, "largest");
+      const amounts = splitParts(d.amount, legalParts, "largestId", personRankOf(c.persons));
       bearersOf.set(d, legalParts.map((p, i) => ({ personId: p.personId, amount: amounts[i] })));
       unsettledDebts.add(d);
       debtsByLegal.push(`「${d.label || (d.kind === "debt" ? "債務" : "葬式費用")}」`);
@@ -1075,14 +1905,7 @@ function compute(
 
   // 生前贈与。暦年課税は相続開始前3年以内のもの（令和8年中の相続開始は加算期間3年）、
   // 相続時精算課税は期間に関係なくすべて（相続税法21条の15）
-  const death = new Date(deathDate + "T00:00:00Z");
-  const from = new Date(Date.UTC(death.getUTCFullYear() - 3, death.getUTCMonth(), death.getUTCDate()));
-  const inWindow = (g: PriorGift) => {
-    if (g.settlement || !isValidISODate(g.date)) return false;
-    const d = new Date(g.date + "T00:00:00Z");
-    return d >= from && d <= death;
-  };
-  const giftsInWindow = (personId: string) => c.priorGifts.filter((g) => g.personId === personId && inWindow(g));
+  const giftsInWindow = (personId: string) => base.giftsInWindow.get(personId) ?? [];
   // 受け取った人や日付が分からない贈与は、計算から黙って落とさずに止める
   c.priorGifts.forEach((g, i) => {
     if (!(g.amount > 0) && !(g.giftTaxPaid > 0)) return;
@@ -1139,9 +1962,9 @@ function compute(
   const persons: PersonTax[] = c.persons
     .filter((p) => !p.predeceased)
     .map((p) => {
-      const fromAssets = assetLines
-        .filter((l) => l.asset.kind !== "insurance" && l.asset.kind !== "retirement")
-        .reduce((acc, l) => acc + (l.byPerson.find((b) => b.personId === p.id)?.amount ?? 0), 0);
+      // 特例の候補がない財産の分は computeBase で足してある（財産が多いと、割り当てを変えるたびに全部を足すと時間がかかるため）
+      let fromAssets = base.fixedFrom.get(p.id) ?? 0;
+      for (const l of copies.values()) if (l.asset.kind !== "insurance" && l.asset.kind !== "retirement") fromAssets += l.byPerson.find((b) => b.personId === p.id)?.amount ?? 0;
       const compensationIn = compIn.get(p.id) ?? 0;
       const compensationOut = compOut.get(p.id) ?? 0;
       const inherited = fromAssets + compensationIn - compensationOut;
@@ -1265,7 +2088,11 @@ function compute(
 
   // 各人の算出税額
   const digits = opts.ratioDigits ?? 10;
-  const scaledRatios = apportionScaled(persons.map((p) => p.taxable), digits);
+  const scaledRatios = apportionScaled(
+    persons.map((p) => p.taxable),
+    digits,
+    persons.map((p) => personRankOf(c.persons)(p.person.id)),
+  );
   persons.forEach((p, i) => {
     const scaled = BigInt(scaledRatios[i]);
     const unit = 10n ** BigInt(digits);
@@ -1329,7 +2156,7 @@ function compute(
   };
   // 本人から引ききれない分は、同じ相続で財産を受け取った扶養義務者の相続税額から引く（19条の3第2項・19条の4第3項）。
   // 扶養義務者は続柄から確かに言える人だけにする（isSupporter）。
-  // 扶養義務者が2人以上なら、話し合いがなければ相続税額の割合で分ける（施行令4条の3）。端数はまず切り捨て、残りの1円ずつを家族の一覧の順に配る
+  // 扶養義務者が2人以上なら、話し合いがなければ相続税額の割合で分ける（施行令4条の3）。端数はまず切り捨て、残りの1円ずつを切り捨てた端数が大きい人から配る
   const transferred: {
     from: PersonTax;
     kind: "minor" | "disability";
@@ -1345,16 +2172,19 @@ function compute(
     const total = pool.reduce((a, q) => a + rem.get(q)!, 0);
     const give = pool.map((q) => (total <= excess ? rem.get(q)! : Number((BigInt(excess) * BigInt(rem.get(q)!)) / BigInt(total))));
     if (total > excess) {
+      // 残りの1円ずつは、切り捨てた端数が大きい人から配る（同じなら人のIDの順。家族の一覧の順では変わらないようにする）
+      const cut = pool.map((q) => (BigInt(excess) * BigInt(rem.get(q)!)) % BigInt(total));
+      const turn = pool.map((_, i) => i).sort((i, j) => (cut[j] > cut[i] ? 1 : cut[j] < cut[i] ? -1 : keyCompare(pool[i].person.id, pool[j].person.id)));
       let left = excess - give.reduce((a, b) => a + b, 0);
       while (left > 0) {
         let moved = false;
-        pool.forEach((q, i) => {
-          if (left > 0 && rem.get(q)! - give[i] > 0) {
+        for (const i of turn) {
+          if (left > 0 && rem.get(pool[i])! - give[i] > 0) {
             give[i]++;
             left--;
             moved = true;
           }
-        });
+        }
         if (!moved) break;
       }
     }
@@ -1443,7 +2273,12 @@ function compute(
       p.minorExcess = full - p.minorCredit;
     }
   }
-  for (const p of persons) if (p.minorExcess > 0) transfer(p, "minor", p.minorExcess);
+  // 引ききれない人が2人以上いて、同じ扶養義務者の相続税額から引くときは、どの人の分から先に引くかで1円の端数が変わる。
+  // 家族の一覧の順や人のIDで変わらないように、生年月日（同じなら名前、それも同じなら人のID）の順に引く
+  const transferOrder = [...persons].sort(
+    (a, b) => keyCompare(a.person.birthDate ?? "", b.person.birthDate ?? "") || keyCompare(a.person.name ?? "", b.person.name ?? "") || keyCompare(a.person.id, b.person.id),
+  );
+  for (const p of transferOrder) if (p.minorExcess > 0) transfer(p, "minor", p.minorExcess);
   for (const p of persons) {
     if (eligible(p) && p.person.disability && p.person.disability !== "none" && p.age! < 85) {
       const full = priorLimit(p, "disability", (85 - p.age!) * (p.person.disability === "special" ? 200_000 : 100_000));
@@ -1451,7 +2286,12 @@ function compute(
       p.disabilityExcess = full - p.disabilityCredit;
     }
   }
-  for (const p of persons) if (p.disabilityExcess > 0) transfer(p, "disability", p.disabilityExcess);
+  for (const p of transferOrder) if (p.disabilityExcess > 0) transfer(p, "disability", p.disabilityExcess);
+  // 案内と明細は、これまでどおり家族の一覧の順（未成年者控除の分が先）に並べる
+  const listed = (q: PersonTax) => persons.indexOf(q);
+  transferred.sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "minor" ? -1 : 1) || listed(a.from) - listed(b.from));
+  const fromIndex = new Map(persons.map((q, i) => [q.person.id, i]));
+  for (const q of persons) q.transfersIn.sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "minor" ? -1 : 1) || (fromIndex.get(a.fromId) ?? 0) - (fromIndex.get(b.fromId) ?? 0));
   for (const t of transferred) {
     const name = t.from.person.name || "この方";
     const what = t.kind === "minor" ? "未成年者控除" : "障害者控除";
@@ -1597,20 +2437,33 @@ function compute(
   return { result, sr: srSlots };
 }
 
-/** 小規模宅地等の特例の種類の、ふだんのことばでの言い方 */
-const SMALL_LAND_KIND_TEXT: Record<SmallLandKind, string> = {
-  residence: "自宅の敷地（特定居住用宅地等）",
-  business: "亡くなった方が事業に使っていた土地（特定事業用宅地等）",
-  rental: "人に貸していた土地（貸付事業用宅地等）",
-};
+/**
+ * 小規模宅地等の特例の種類の、ふだんのことばでの言い方。familyHome は、特定居住用の候補に、亡くなった方と生計を一にしていた
+ * 親族が住んでいた土地（措置法69条の4第1項の「被相続人等の居住の用」。自宅の敷地ではない）があるか
+ */
+function smallLandKindText(kind: SmallLandKind, familyHome = false): string {
+  if (kind === "residence") return `${residenceText(familyHome)}（特定居住用宅地等）`;
+  return kind === "business" ? "亡くなった方が事業に使っていた土地（特定事業用宅地等）" : "人に貸していた土地（貸付事業用宅地等）";
+}
 
-/** 限度面積の説明（措置法69条の4第2項）。選んだ種類によって変わる */
-function smallLandLimitText(kinds: Set<SmallLandKind>): string {
+/** 特定居住用宅地等の言い方（「（特定居住用宅地等）」を付けない形） */
+const residenceText = (familyHome: boolean) => (familyHome ? "自宅や、同じ家計の家族が住んでいた土地" : "自宅の敷地");
+
+/** 生計を一にしていた親族が無料で住んでいた土地（部屋）として特例を使う財産か（土地についての答え：自宅でも事業用でもなく、家族が住んでいた） */
+function isFamilyHomeLot(a: Asset): boolean {
+  if (a.kind !== "land" && a.kind !== "condo") return false;
+  const ch = a.smallResidential?.check;
+  return ch?.ownHome === "no" && ch.business === "no" && ch.familyHome === "yes";
+}
+
+/** 限度面積の説明（措置法69条の4第2項）。選んだ種類によって変わる。familyHome は smallLandKindText と同じ */
+function smallLandLimitText(kinds: Set<SmallLandKind>, familyHome = false): string {
   if (kinds.size === 1 && kinds.has("residence")) return "小規模宅地等の特例は合計330㎡までです。";
   if (kinds.size === 1) {
     const k = [...kinds][0];
-    return `小規模宅地等の特例は、${SMALL_LAND_KIND_TEXT[k]}では合計${SMALL_LAND_RULE[k].limitSqm}㎡までです。`;
+    return `小規模宅地等の特例は、${smallLandKindText(k, familyHome)}では合計${SMALL_LAND_RULE[k].limitSqm}㎡までです。`;
   }
-  if (!kinds.has("rental")) return "小規模宅地等の特例は、自宅の敷地は合計330㎡まで、亡くなった方が事業に使っていた土地は合計400㎡までです。";
-  return "小規模宅地等の特例は、人に貸していた土地も選ぶときは、自宅の敷地は330㎡を200㎡、事業に使っていた土地は400㎡を200㎡として数え、人に貸していた土地と合わせて200㎡までです。";
+  const home = residenceText(familyHome);
+  if (!kinds.has("rental")) return `小規模宅地等の特例は、${home}は合計330㎡まで、亡くなった方が事業に使っていた土地は合計400㎡までです。`;
+  return `小規模宅地等の特例は、人に貸していた土地も選ぶときは、${home}は330㎡を200㎡、事業に使っていた土地は400㎡を200㎡として数え、人に貸していた土地と合わせて200㎡までです。`;
 }

@@ -84,13 +84,21 @@ describe("未分割（相続税法55条）", () => {
     expect(r.warnings.some((w) => w.includes("すでに分け方が決まった財産も合わせて") && w.includes("遺言で相続分が決められている"))).toBe(true);
   });
 
-  it("相続分が同じ人の端数は、家族の一覧で先の人に寄せる", () => {
-    // 1,000,001円を長女・長男（一覧の順）で 1/2 ずつ：500,000円ずつ、残り1円は先の長女へ
-    const r = calculate(mk([c2, c1], [dep("預金", 1_000_001)], [], { undivided: true }));
-    expect(r.assets[0].byPerson).toEqual([
-      { personId: "c2", amount: 500_001 },
-      { personId: "c1", amount: 500_000 },
-    ]);
+  it("相続分が同じ人の端数は、生年月日の順で先の人（同じなら名前の順）に寄せる（家族の一覧の順や人のIDによらない）", () => {
+    // 1,000,001円を長女（c2）・長男（c1）で 1/2 ずつ：500,000円ずつ、残り1円は年上の長男（c1）へ。一覧の順を変えても同じ
+    const older = { ...c1, birthDate: "1970-04-01" };
+    const younger = { ...c2, birthDate: "1973-08-01" };
+    for (const persons of [
+      [younger, older],
+      [older, younger],
+    ]) {
+      const r = calculate(mk(persons, [dep("預金", 1_000_001)], [], { undivided: true }));
+      const by = Object.fromEntries(r.assets[0].byPerson.map((b) => [b.personId, b.amount]));
+      expect(by).toEqual({ c1: 500_001, c2: 500_000 });
+    }
+    // 人のIDを入れ替えても、同じ人（年上の長男）に寄せる
+    const r = calculate(mk([{ ...older, id: "z9" }, { ...younger, id: "a1" }], [dep("預金", 1_000_001)], [], { undivided: true }));
+    expect(Object.fromEntries(r.assets[0].byPerson.map((b) => [b.personId, b.amount]))).toEqual({ z9: 500_001, a1: 500_000 });
   });
 
   it("小規模宅地等は取得者が受け継ぐと決まった部分だけに使い、配偶者の税額軽減の基は第5表のとおり（未分割の部分は穴埋め方式）", () => {
@@ -388,10 +396,10 @@ describe("相次相続控除（相続税法20条・第7表）", () => {
 });
 
 describe("扶養義務者の相続税額から引く未成年者控除・障害者控除（相続税法19条の3第2項・19条の4第3項）", () => {
-  it("引ききれない分を、ほかの家族の相続税額の割合で引く。残りの1円は家族の一覧の順に配る", () => {
+  it("引ききれない分を、ほかの家族の相続税額の割合で引く。残りの1円は切り捨てた端数が大きい人に配る", () => {
     // 長男6,000万・長女3,000万・次男（9歳）1,000万。課税遺産総額 5,200万 → 1,733.3万×15%−50万 = 2,099,950 ×3 → 総額 6,299,800
     // 算出税額 長男 3,779,880・長女 1,889,940・次男 629,980。次男の未成年者控除 90万 → 本人 629,980、残り 270,020
-    // 長男 270,020×2/3 = 180,013.3 → 180,013、長女 90,006.6 → 90,006、残り1円は長男 → 180,014
+    // 長男 270,020×2/3 = 180,013.3 → 180,013、長女 90,006.6 → 90,006、残り1円は端数（.6）が大きい長女 → 90,007
     const minor: Person = { id: "m", name: "次男", relation: "child", birthDate: "2016-06-01" };
     const r = calculate(
       mk([c1, c2, minor], [dep("A", 60_000_000), dep("B", 30_000_000), dep("C", 10_000_000)], [all("A", ["c1", 1, 1]), all("B", ["c2", 1, 1]), all("C", ["m", 1, 1])]),
@@ -401,9 +409,9 @@ describe("扶養義務者の相続税額から引く未成年者控除・障害�
     const m = of(r, "m");
     expect(m.minorCredit).toBe(629_980);
     expect(m.minorExcess).toBe(270_020);
-    expect(of(r, "c1").transfersIn).toEqual([{ fromId: "m", kind: "minor", amount: 180_014 }]);
-    expect(of(r, "c2").transfersIn).toEqual([{ fromId: "m", kind: "minor", amount: 90_006 }]);
-    expect(of(r, "c1").otherCredits).toBe(180_014);
+    expect(of(r, "c1").transfersIn).toEqual([{ fromId: "m", kind: "minor", amount: 180_013 }]);
+    expect(of(r, "c2").transfersIn).toEqual([{ fromId: "m", kind: "minor", amount: 90_007 }]);
+    expect(of(r, "c1").otherCredits).toBe(180_013);
     expect(of(r, "c1").payable).toBe(3_599_800);
     expect(of(r, "c2").payable).toBe(1_799_900);
     expect(m.payable).toBe(0);
@@ -412,7 +420,7 @@ describe("扶養義務者の相続税額から引く未成年者控除・障害�
 
   it("順番：全員の未成年者控除 → その移し → 全員の障害者控除 → その移し", () => {
     // 総額 6,299,800 を X（障害者40歳）10%・M（15歳）1%・Y 89% → 629,980・62,998・5,606,822
-    // M の未成年者控除 30万：本人 62,998、残り 237,002 → X 23,939・Y 213,062、残り1円は一覧で先の X → 23,940
+    // M の未成年者控除 30万：本人 62,998、残り 237,002 → X 23,939.6・Y 213,062.4、残り1円は端数が大きい X → 23,940
     // X の障害者控除 450万：残りの税額 606,040 だけ本人から引き、残り 3,893,960 を Y から引く → Y 1,499,800
     const X: Person = { id: "x", name: "長男", relation: "child", birthDate: "1985-06-01", disability: "general" };
     const M: Person = { id: "m", name: "次男", relation: "child", birthDate: "2010-06-01" };
@@ -524,7 +532,7 @@ describe("小規模宅地等の種類（措置法69条の4）", () => {
     expect(apt.small?.selectedValue).toBe(sv);
     expect(apt.reduction).toBe(Math.floor(sv / 2));
     const w = r.warnings.find((x) => x.includes("人に貸していた土地も選ぶときは"));
-    expect(w).toContain("「自宅」に100㎡、「アパート」は残り139.39㎡分");
+    expect(w).toContain("「自宅」に100㎡、「アパート」に139.39㎡");
   });
 
   it("貸付事業用宅地等がなければ、特定居住用330㎡と特定事業用400㎡は別々に使える", () => {
