@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Button, Card, Check, Note, YenInput, fmt } from "@/components/ui";
 import { ConsultRequest } from "@/components/compass/ConsultRequest";
-import { CompassAvatar } from "@/components/compass/CompassKun";
+import { Bubble, CompassAvatar } from "@/components/compass/CompassKun";
 import {
   type AddTemplate,
   type ReviewAnswer,
@@ -53,6 +53,7 @@ export function ReviewStep() {
   const sum = reviewSummary(review);
   const set = (fn: (r: ReviewState) => ReviewState) => update((c) => withReview(c, fn));
   const consultReasons = sum.consult.flatMap((c) => c.reasons);
+  const consultIds = sum.consult.map((c) => c.id);
 
   return (
     <div className="space-y-5">
@@ -82,6 +83,15 @@ export function ReviewStep() {
       ))}
 
       {consultReasons.length > 0 && <ConsultRequest reasons={consultReasons} />}
+      {(consultIds.length > 0 || (review.consulted ?? []).length > 0) && (
+        <div className="rounded-xl border border-stone-200 bg-white p-4">
+          <Check
+            checked={consultIds.length === 0}
+            onChange={(v) => set((r) => ({ ...r, consulted: v ? [...new Set([...(r.consulted ?? []), ...consultIds])] : [] }))}
+            label="相談をおすすめされた項目は、すべて税理士に相談し、問題ないことを確かめました"
+          />
+        </div>
+      )}
       {sum.unsure.length > 0 && (
         <Note tone="warn">「分からない」と答えた項目は、未確認のまま残ります。分かった時点で答え直してください。未確認のまま申告書を作ると「下書き」と入ります。</Note>
       )}
@@ -105,7 +115,6 @@ function TopicRow({ t, review, set }: { t: Topic; review: ReviewState; set: (fn:
   const addAsset = (key: string, a: Asset) => {
     update((c) => withReview({ ...c, assets: [...c.assets, a] }, markAdded(key)));
   };
-  const consulted = (review.consulted ?? []).includes(t.id);
 
   return (
     <li className="py-3" data-q={t.id}>
@@ -168,13 +177,6 @@ function TopicRow({ t, review, set }: { t: Topic; review: ReviewState; set: (fn:
                 入れました
               </Button>
             </div>
-          )}
-          {(st.kind === "consult" || consulted) && (
-            <Check
-              checked={consulted}
-              onChange={(v) => set((r) => ({ ...r, consulted: v ? [...new Set([...(r.consulted ?? []), t.id])] : (r.consulted ?? []).filter((x) => x !== t.id) }))}
-              label="税理士に相談して確かめた"
-            />
           )}
           {st.kind === "clear" && (review.added ?? []).some((k) => k === t.id || k.startsWith(`${t.id}:`)) && (
             <Link href="/case/assets" className="text-xs font-semibold text-teal-800 underline">
@@ -282,16 +284,19 @@ function Talk({ t, review, set }: { t: Topic; review: ReviewState; set: (fn: (r:
 
   return (
     <div className="space-y-2">
-      {chat.length === 0 && !result && <p className="text-stone-700">コンパスくんが少しだけ詳しく聞きます。分かる範囲で、ふだんの言葉で書いてください。</p>}
-      {chat.length > 0 && (
-        <ul className="space-y-1.5">
-          {chat.map((m, i) => (
-            <li key={i} className={m.role === "user" ? "ml-8 rounded-lg bg-white p-2 text-stone-800" : "mr-8 rounded-lg bg-sky-100 p-2 text-stone-800"}>
-              {m.text}
+      <ul className="space-y-2">
+        <CompassSays>コンパスくんが少しだけ詳しく聞きます。分かる範囲で、ふだんの言葉で書いてください。</CompassSays>
+        {chat.map((m, i) =>
+          m.role === "user" ? (
+            <li key={i} className="flex justify-end">
+              <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-teal-700 px-3 py-2 text-white">{m.text}</p>
             </li>
-          ))}
-        </ul>
-      )}
+          ) : (
+            <CompassSays key={i}>{m.text}</CompassSays>
+          ),
+        )}
+        {busy && <CompassSays>ちょっと考えています…</CompassSays>}
+      </ul>
       {result ? (
         <div className="flex flex-wrap items-center gap-3">
           <span className="font-semibold text-stone-800">結論：{OUTCOME_LABEL[result.outcome]}</span>
@@ -316,7 +321,6 @@ function Talk({ t, review, set }: { t: Topic; review: ReviewState; set: (fn: (r:
               <Send className="h-4 w-4" aria-hidden />
             </Button>
           </div>
-          {busy && <p className="text-xs text-stone-500">コンパスくんが考えています…</p>}
           {err && <p className="text-xs text-red-700">{err}</p>}
           <button type="button" onClick={skip} className="text-xs text-stone-600 underline">
             話さずに税理士への相談に回す
@@ -324,5 +328,15 @@ function Talk({ t, review, set }: { t: Topic; review: ReviewState; set: (fn: (r:
         </>
       )}
     </div>
+  );
+}
+
+/** コンパスくんの発言（顔のアイコンと吹き出し） */
+function CompassSays({ children }: { children: React.ReactNode }) {
+  return (
+    <li className="flex items-start gap-2 pr-6">
+      <CompassAvatar size={34} />
+      <Bubble className="min-w-0 whitespace-pre-wrap">{children}</Bubble>
+    </li>
   );
 }

@@ -5,8 +5,8 @@ import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { AppShell, PageHead } from "@/components/shell/AppShell";
 import { Card } from "@/components/ui";
-import { consultMailto, consultMemo, consultPoints } from "@/lib/consult";
-import { CONSULT_FIRM } from "@/data/consultFirm";
+import { consultMemo, consultPoints } from "@/lib/consult";
+import { ConsultForm, FirmBadge } from "./ConsultForm";
 import { useCase } from "@/lib/store";
 
 export function ConsultPage() {
@@ -52,14 +52,11 @@ export function ConsultPage() {
         </Card>
         <Card title="相談先を探す">
           <ul className="space-y-3 text-sm">
-            {consultMailto(data, result) && (
-              <li>
-                <a href={consultMailto(data, result)!} className="font-semibold text-brand underline">
-                  {CONSULT_FIRM.name}に相談する（メールが開きます）
-                </a>
-                <p className="mt-0.5 text-stone-600">上の相談したいことを入れたメールが、お使いのメールソフトで開きます。内容を確かめてから送ってください。</p>
-              </li>
-            )}
+            <li className="space-y-2">
+              <FirmBadge />
+              <p className="text-stone-600">ここから相談できます。相談内容は、上の「相談のときに伝えること」を自動で入れています。</p>
+              <ConsultForm />
+            </li>
             <li>
               <a href="https://www.zeirishikensaku.jp/" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-semibold text-brand underline">
                 税理士情報検索サイト（日本税理士会連合会）
