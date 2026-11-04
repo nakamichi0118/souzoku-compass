@@ -6,10 +6,10 @@ import { formsNotGenerated } from "../filing";
 const forms = (c: typeof demoCase, r = calculate(c)) => formsNotGenerated(c, r).map((m) => m.form).join("\n");
 
 describe("自動で作らない表の一覧", () => {
-  it("3年以内の贈与を足したときは第14表を挙げる", () => {
+  it("3年以内の贈与を足したときも、第14表は自動で作るので挙げない", () => {
     const r = calculate(demoCase);
     expect(r.persons.some((p) => p.gifts > 0)).toBe(true);
-    expect(forms(demoCase, r)).toMatch(/第14表/);
+    expect(forms(demoCase, r)).not.toMatch(/第14表/);
   });
 
   it("贈与を足さないときは第14表を挙げない", () => {

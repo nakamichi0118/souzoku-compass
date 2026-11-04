@@ -403,11 +403,15 @@ describe("書類の作成（forms-8・forms-10）", () => {
     expect(shortFormName("第14表（純資産価額に加算される暦年課税分の贈与財産価額などの明細書）")).toBe("第14表");
     expect(shortFormName("第11・11の2表の付表1（別表1）（小規模宅地等についての課税価格の計算明細）")).toBe("第11・11の2表の付表1（別表1）");
     expect(shortFormName("申告期限後3年以内の分割見込書")).toBe("申告期限後3年以内の分割見込書");
-    const html = render(DocumentsStep, clone());
-    const full = "第14表（純資産価額に加算される暦年課税分の贈与財産価額などの明細書）";
+    // 第8の8表・第14表は自動で作るので、相続時精算課税の贈与（第11の2表）を足して見る
+    const c = clone();
+    c.priorGifts = [...c.priorGifts, { personId: "ichiro", date: "2025-02-01", amount: 2_000_000, giftTaxPaid: 0, settlement: true }];
+    const html = render(DocumentsStep, c);
+    const full = "第11の2表（相続時精算課税適用財産の明細書・相続時精算課税分の贈与税額控除額の計算書）";
     expect(html.split(full).length).toBe(2);
     expect(html.indexOf(full)).toBeGreaterThan(html.indexOf("表の正式名と様式"));
-    expect(html).toContain("上の「別に用意する表」（第8の8表・第14表）を加えます。");
+    expect(html).toContain("上の「別に用意する表」（第11の2表）を加えます。");
+    expect(render(DocumentsStep, clone())).not.toContain("別に用意してください");
   });
 });
 

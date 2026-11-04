@@ -1,0 +1,120 @@
+{
+ "page": "t08_8",
+ "title": "第8の8表",
+ "fields": [
+  {
+   "id": "d.name",
+   "seed": [
+    2020,
+    456
+   ],
+   "size": 11
+  },
+  {
+   "id": "h0.name",
+   "seed": [
+    1280,
+    830
+   ],
+   "size": 11
+  },
+  {
+   "id": "h0.r1",
+   "seed": [
+    1280,
+    952
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "h0.r2",
+   "seed": [
+    1280,
+    1070
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "h0.r3",
+   "seed": [
+    1280,
+    1188
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "h0.r4",
+   "seed": [
+    1280,
+    1306
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "h0.r5",
+   "seed": [
+    1280,
+    1424
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "h1.name",
+   "seed": [
+    2000,
+    830
+   ],
+   "size": 11
+  },
+  {
+   "id": "h1.r1",
+   "seed": [
+    2000,
+    952
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "h1.r2",
+   "seed": [
+    2000,
+    1070
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "h1.r3",
+   "seed": [
+    2000,
+    1188
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "h1.r4",
+   "seed": [
+    2000,
+    1306
+   ],
+   "align": "right",
+   "size": 11
+  },
+  {
+   "id": "h1.r5",
+   "seed": [
+    2000,
+    1424
+   ],
+   "align": "right",
+   "size": 11
+  }
+ ]
+}

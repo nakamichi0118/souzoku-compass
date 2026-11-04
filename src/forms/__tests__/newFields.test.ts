@@ -222,8 +222,15 @@ describe("第7表（相次相続控除）", () => {
     }
     const missing = formsNotGenerated(fc, fr).map((m) => m.form).join("\n");
     expect(missing).not.toMatch(/第7表/);
-    expect(missing).toMatch(/第8の8表/);
-    expect(formsNotGenerated(fc, fr).find((m) => m.form.startsWith("第8の8表"))!.reason).toMatch(/相次相続控除/);
+    expect(missing).not.toMatch(/第8の8表/);
+    // 第8の8表の③に各人の相次相続控除額（第1表⑭へ）
+    const p88 = buildFilingPages(fc, fr).filter((pg) => pg.page === "t08_8");
+    for (const pg of p88)
+      for (const j of [0, 1]) {
+        const p = fr.persons.find((x) => x.person.name === pg.values[`h${j}.name`]);
+        if (p) expect(num(pg.values[`h${j}.r3`])).toBe(p.successiveCredit);
+      }
+    expect(p88.length).toBeGreaterThan(0);
   });
   it("相次相続控除を使わないときは作らない", () => {
     expect(build07(demoCase, calculate(demoCase))).toEqual([]);

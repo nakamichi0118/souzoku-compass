@@ -315,3 +315,72 @@ export function buildF1(c: Case, r: TaxResult): PageFill[] {
   }
   return pages;
 }
+
+// ---------------------------------------------------------------- 第8の8表
+
+/**
+ * 第8の8表「1 税額控除額」：①未成年者控除額（第6表。扶養義務者として引いた分を含む）、②障害者控除額（同）、
+ * ③相次相続控除額（第7表）、⑤合計＝第1表⑭。④外国税額控除は相続コンパスでは扱わない（空欄）。1枚に2人まで。
+ * 「2 納税猶予税額」は扱わない（納税猶予は税理士への相談に回す）
+ */
+export function build08_8(c: Case, r: TaxResult): PageFill[] {
+  const people = r.persons.filter((p) => p.otherCredits > 0);
+  return chunk(people, 2).map((group) => {
+    const values: PageFill["values"] = { "d.name": c.decedent.name };
+    group.forEach((p, j) => {
+      const disability = p.disabilityCredit + transferredIn(p, "disability");
+      values[`h${j}.name`] = p.person.name;
+      values[`h${j}.r1`] = minorTotal(p) ? yen(minorTotal(p)) : "";
+      values[`h${j}.r2`] = disability ? yen(disability) : "";
+      values[`h${j}.r3`] = p.successiveCredit ? yen(p.successiveCredit) : "";
+      values[`h${j}.r5`] = yen(p.otherCredits);
+    });
+    return { page: "t08_8", values };
+  });
+}
+
+// ---------------------------------------------------------------- 第14表
+
+/**
+ * 第14表「1 純資産価額に加算される暦年課税分の贈与財産価額の明細」。
+ * 加算するのは、相続や遺贈で財産を受け取った人が、亡くなる前3年以内に受けた暦年課税の贈与（エンジンが加算した人の分だけ）。
+ * 財産の種類・細目・所在場所は相続コンパスで聞いていないため空欄（手書き）。特定贈与財産（②）は扱わないので、③＝①。
+ * 各人の④は第1表⑤・第15表㉓と同じ（エンジンの gifts）。明細は1枚に4件、各人の合計は1枚に4人まで
+ */
+export function build14(c: Case, r: TaxResult): PageFill[] {
+  const people = r.persons.filter((p) => p.gifts > 0);
+  if (people.length === 0) return [];
+  const death = c.decedent.deathDate;
+  const [y, m, d] = death.split("-").map(Number);
+  const from = new Date(Date.UTC(y - 3, m - 1, d)).toISOString().slice(0, 10);
+  const ids = new Set(people.map((p) => p.person.id));
+  const rows = c.priorGifts
+    .filter((g) => !g.settlement && ids.has(g.personId) && g.amount > 0 && g.date >= from && g.date <= death)
+    .sort((a, b) => (a.personId === b.personId ? a.date.localeCompare(b.date) : 0));
+  const name = new Map(c.persons.map((p) => [p.id, p.name]));
+  const rowPages = chunk(rows, 4);
+  const personPages = chunk(people, 4);
+  const pages: PageFill[] = [];
+  for (let i = 0; i < Math.max(rowPages.length, personPages.length); i++) {
+    const values: PageFill["values"] = { "d.name": c.decedent.name };
+    (rowPages[i] ?? []).forEach((g, j) => {
+      const w = wareki(g.date);
+      Object.assign(values, {
+        [`g${j}.name`]: name.get(g.personId),
+        [`g${j}.era`]: w?.code,
+        [`g${j}.y`]: w?.year,
+        [`g${j}.m`]: w?.month,
+        [`g${j}.d`]: w?.day,
+        [`g${j}.amount`]: yen(g.amount),
+        [`g${j}.added`]: yen(g.amount),
+      });
+    });
+    (personPages[i] ?? []).forEach((p, j) => {
+      values[`p${j}.name`] = p.person.name;
+      values[`p${j}.total`] = yen(p.gifts);
+    });
+    if (i === 0) values["p.total"] = yen(sum(people.map((p) => p.gifts)));
+    pages.push({ page: "t14", values });
+  }
+  return pages;
+}
