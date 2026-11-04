@@ -3,18 +3,18 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { blankInterview, demoInterview } from "@/domain/procedures/interview";
 import { buildTasks, type Task } from "@/domain/procedures/rules";
-import { MilestoneFlow, MilestoneView } from "../MilestoneView";
+import { MilestoneFlow, MilestoneView, flowWindow } from "../MilestoneView";
 
 const { ViewSwitch } = await import("../CalendarPage");
 
 const live = buildTasks(demoInterview()).tasks.filter((t) => !t.optional);
-type P = { tasks?: Task[]; done?: string[]; today?: string; locked?: (id: string) => string | undefined };
+type P = { tasks?: Task[]; done?: string[]; today?: string; locked?: (id: string) => string | undefined; around?: { before: number; after: number } };
 const props = (p: P) => ({ tasks: p.tasks ?? live, done: p.done ?? ["death-report", "funeral"], today: p.today ?? "2026-11-03", death: "2026-03-15" });
 const render = (p: P = {}) => renderToStaticMarkup(createElement(MilestoneView, { ...props(p), onMark: () => {}, locked: p.locked }));
 /** スマホでもパソコンでも出す縦の並び */
 const vertical = (html: string) => html;
 /** パソコンだけ、上に出す期限の流れ */
-const flow = (p: P = {}) => renderToStaticMarkup(createElement(MilestoneFlow, props(p)));
+const flow = (p: P = {}) => renderToStaticMarkup(createElement(MilestoneFlow, { ...props(p), around: p.around }));
 const order = (html: string, words: string[]) => words.map((w) => html.indexOf(w));
 
 describe("カレンダーの「手続きごと」", () => {
@@ -192,7 +192,7 @@ describe("パソコンの上に出す、期限の流れ", () => {
   it("亡くなった日から期限を1本の線でつないで1行に並べ、今日の列を入れる（横に動かさない）", () => {
     // 亡くなった日・死亡届・年金・健康保険・相続放棄・今日・遺産分割協議・相続税・相続登記
     expect(cols).toHaveLength(9);
-    expect(html).toMatch(/^<ol class="grid grid-rows-\[auto_auto_auto_auto_auto\]" style="grid-template-columns:(minmax\(0,1fr\) ){5}minmax\(3.25rem,0.5fr\)( minmax\(0,1fr\)){3}">/);
+    expect(html).toMatch(/^<ol class="grid grid-rows-\[auto_auto_auto_auto_auto\]" style="grid-template-columns:(minmax\(0,1fr\) ){5}minmax\(4rem,0.5fr\)( minmax\(0,1fr\)){3}">/);
     expect(html).not.toMatch(/overflow-x|whitespace-nowrap|flex-wrap/);
     const pos = order(html, ["亡くなった日", "死亡届", "年金の停止", "健康保険の手続き", "相続放棄・限定承認", ">今日<", "遺産分割協議", "相続税の申告・納付", "相続登記"]);
     expect([...pos].sort((a, b) => a - b)).toEqual(pos);
@@ -234,6 +234,77 @@ describe("パソコンの上に出す、期限の流れ", () => {
     const late = flow({ today: "2029-04-01" });
     expect(late.lastIndexOf(">今日<")).toBeGreaterThan(late.indexOf("相続登記"));
     expect(late).not.toContain("bg-stone-200");
+  });
+});
+
+describe("ホームの狭い画面で出す、今日のまわりだけの流れ", () => {
+  const names = (html: string) => [...html.matchAll(/text-balance[^"]*">([^<]+)<\/span>/g)].map((m) => m[1]);
+  const segs = (html: string) => html.match(/<span aria-hidden="true" class="absolute left-[^"]*h-1 -translate-y-1\/2 [^"]*"><\/span>/g)!;
+
+  it("範囲：今日の前と後ろの列。片側が足りなければもう片側に回し、いちばん近い期限は外にあっても入れる", () => {
+    expect(flowWindow(9, 5, 1, 2)).toEqual([4, 8]);
+    expect(flowWindow(9, 0, 1, 2)).toEqual([0, 4]);
+    expect(flowWindow(9, 8, 1, 2)).toEqual([5, 9]);
+    expect(flowWindow(3, 1, 2, 4)).toEqual([0, 3]);
+    // 列の数は変えずに右へずらす。今日の列は残す
+    expect(flowWindow(9, 5, 1, 1, 7)).toEqual([5, 8]);
+    expect(flowWindow(9, 5, 1, 2, 8)).toEqual([5, 9]);
+    // ずらしても入らないときだけ広げる
+    expect(flowWindow(12, 5, 1, 1, 9)).toEqual([5, 10]);
+    expect(flowWindow(9, 5, 1, 1, 6)).toEqual([4, 7]);
+  });
+
+  it("今日の1つ前から、2つ先まで。切った側の線は端まで引いて薄くする（横にはみ出さない）", () => {
+    const html = flow({ around: { before: 1, after: 2 } });
+    expect(names(html)).toEqual(["相続放棄・限定承認", "遺産分割協議", "相続税の申告・納付"]);
+    expect(html).toContain(">今日<");
+    expect(html).not.toContain("亡くなった日");
+    expect(html).not.toContain("相続登記");
+    // 4列で、内側の線 3 本ずつ ＋ 両端の薄い線
+    const s = segs(html);
+    expect(s).toHaveLength(8);
+    expect(s[0]).toContain("bg-linear-to-r from-sky-600/0 to-sky-600 to-50%");
+    expect(s[s.length - 1]).toContain("bg-linear-to-r from-stone-200 from-50% to-stone-200/0");
+    expect(html).not.toMatch(/overflow-x|whitespace-nowrap/);
+    // 年は最初の列に出す
+    expect(html.indexOf(">2026年<")).toBeGreaterThan(-1);
+    expect(html.indexOf(">2026年<")).toBeLessThan(html.indexOf("相続放棄・限定承認") + 400);
+  });
+
+  it("いちばん近い期限が範囲の外なら、列の数は変えずにずらして入れる", () => {
+    const html = flow({ around: { before: 1, after: 1 } });
+    expect(names(html)).toEqual(["遺産分割協議", "相続税の申告・納付"]);
+    expect(html).toContain(">今日<");
+    expect(html.match(/ring-orange-300/g)).toHaveLength(1);
+  });
+
+  it("同じ日の期限がいくつもあるときは、どれも出す（14日以内の健康保険・世帯主の変更・国民年金）", () => {
+    const tasks = buildTasks({ ...demoInterview(), pension: "national", health: "kokuho", householdHead: true }).tasks.filter((t) => !t.optional);
+    for (const today of ["2026-03-17", "2026-03-30"]) {
+      const html = flow({ tasks, today, done: today === "2026-03-17" ? ["death-report"] : [], around: { before: 1, after: 2 } });
+      expect(names(html), today).toEqual(expect.arrayContaining(["年金の停止", "健康保険の手続き", "世帯主の変更"]));
+      expect(html.match(/ring-orange-300/g)!.length, today).toBe(3);
+    }
+  });
+
+  it("今日よりあとの済んだ・不要にした区切りは出さず、これからの期限に列を使う", () => {
+    const done = ["death-report", "funeral", "pension-stop", "health-insurance", "na:renounce"];
+    const html = flow({ today: "2026-05-14", done, around: { before: 1, after: 2 } });
+    expect(names(html)).toEqual(["健康保険の手続き", "遺産分割協議", "相続税の申告・納付"]);
+    expect(html.match(/<li class="row-span-5 grid grid-rows-subgrid[^"]*">/g)).toHaveLength(4);
+    // すべて見せるときは残す（グレー）
+    expect(flow({ today: "2026-05-14", done })).toContain("相続放棄・限定承認");
+  });
+
+  it("列が狭いときは、どの列も曜日を日付の下に出す。名前は列に入らなければ折り返す", () => {
+    const html = flow({ around: { before: 1, after: 2 } });
+    expect(html).toContain('class="@container px-1 pt-1');
+    expect(html).toMatch(/<span class="text-\[11px\] @max-\[6.125rem\]:block">（月）<\/span>/);
+    expect(html).toContain("[overflow-wrap:anywhere] [word-break:auto-phrase]");
+  });
+
+  it("すべて見せるときは、端に薄い線を出さない", () => {
+    expect(flow()).not.toContain("bg-linear-to-r");
   });
 });
 

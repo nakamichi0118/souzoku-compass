@@ -8,6 +8,12 @@ export interface SystemNotice {
 
 export const SYSTEM_NOTICES: SystemNotice[] = [
   {
+    id: "2026-11-04-home-flow",
+    date: "2026-11-04",
+    title: "ホームに「手続きの流れ」を置きました",
+    body: "カレンダーと同じ、亡くなった日から期限を1本の線でつないだ流れを、ホームの「次にすること」の下に出します。スマホでは、今日のまわりの期限だけを出します。全体はカレンダーで見られます。",
+  },
+  {
     id: "2026-11-04-ratio-highlight",
     date: "2026-11-04",
     title: "評価倍率表のプレビューで、選んだ行に枠を付けるようにしました",

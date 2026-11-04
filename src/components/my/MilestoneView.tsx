@@ -221,23 +221,59 @@ function TodayRow({ today }: { today: string }) {
 type Col = { m: Milestone } | { today: string };
 
 /**
- * パソコンで上に出す、期限の流れ。亡くなった日から順に1本の線でつなぎ、今日までの線を濃くする。
- * どれだけ区切りがあっても1行に収める（名前は折り返す）。済んだ・不要にした区切りはグレー
+ * 狭い画面で、今日のまわりだけを出すときの範囲 [from, to)（cols の添え字。today は今日の列）。
+ * 今日より前を before 列、あとを after 列。片側が足りなければ、その分をもう片側に回す。
+ * いちばん近い期限（must。同じ日に複数あれば最後のもの）が範囲の外なら、列の数は変えずに右へずらす（今日の列は残す）。
+ * それでも入らないときだけ、そこまで広げる
  */
-export function MilestoneFlow({ tasks, done, today, death }: { tasks: Task[]; done: string[]; today: string; death: string }) {
+export function flowWindow(count: number, today: number, before: number, after: number, must = -1): [number, number] {
+  const want = before + after + 1;
+  let from = Math.max(0, today - before);
+  let to = Math.min(count, today + 1 + after);
+  if (to - from < want) {
+    if (from === 0) to = Math.min(count, want);
+    else from = Math.max(0, to - want);
+  }
+  if (must >= to) {
+    to = must + 1;
+    from = Math.min(today, Math.max(from, to - want));
+  }
+  return [from, to];
+}
+
+/**
+ * 期限の流れ。亡くなった日から順に1本の線でつなぎ、今日までの線を濃くする。
+ * どれだけ区切りがあっても1行に収める（名前は折り返す）。済んだ・不要にした区切りはグレー。
+ * around を渡すと、今日のまわりの区切りだけを出し、切った側の線は端で薄くする（スマホなど、狭い画面で横にはみ出さないように）。
+ * このときは、今日よりあとの済んだ・不要にした区切りは出さない（これからの期限に列を使う）
+ */
+export function MilestoneFlow({ tasks, done, today, death, around, dense: denseProp }: { tasks: Task[]; done: string[]; today: string; death: string; around?: { before: number; after: number }; dense?: boolean }) {
   const tl = timeline(tasks, done, today, death);
   const flat = tl.stops.flatMap((s) => s.milestones);
-  const at = tl.todayAt < tl.stops.length ? flat.indexOf(tl.stops[tl.todayAt].milestones[0]) : flat.length;
-  const cols: Col[] = [...flat.slice(0, at).map((m) => ({ m })), { today }, ...flat.slice(at).map((m) => ({ m }))];
+  const at0 = tl.todayAt < tl.stops.length ? flat.indexOf(tl.stops[tl.todayAt].milestones[0]) : flat.length;
+  const ahead = flat.slice(at0).filter((m) => !around || !isClosed(m.state));
+  const all: Col[] = [...flat.slice(0, at0).map((m) => ({ m })), { today }, ...ahead.map((m) => ({ m }))];
+  const [from, to] = around ? flowWindow(all.length, at0, around.before, around.after, all.findLastIndex((c) => "m" in c && c.m.next)) : [0, all.length];
+  const cols = all.slice(from, to);
+  const at = at0 - from;
+  const cutLeft = from > 0;
+  const cutRight = to < all.length;
   const dateOf = (c: Col) => ("m" in c ? c.m.date : c.today);
+  const dense = denseProp ?? cols.length > 10;
   return (
-    <ol className="grid grid-rows-[auto_auto_auto_auto_auto]" style={{ gridTemplateColumns: cols.map((c) => ("m" in c ? "minmax(0,1fr)" : "minmax(3.25rem,0.5fr)")).join(" ") }}>
+    <ol className="grid grid-rows-[auto_auto_auto_auto_auto]" style={{ gridTemplateColumns: cols.map((c) => ("m" in c ? "minmax(0,1fr)" : "minmax(4rem,0.5fr)")).join(" ") }}>
       {cols.map((c, i) => {
-        // 線は、列のまん中から左右へ半分ずつ引く。今日の列より左は、もう過ぎた道のり
+        // 線は、列のまん中から左右へ半分ずつ引く。今日の列より左は、もう過ぎた道のり。
+        // 範囲の外にも区切りがある側は、線を端まで引いて薄くし、流れが続いていることを示す
+        const left = i <= at ? "bg-sky-600" : "bg-stone-200";
+        const right = i < at ? "bg-sky-600" : "bg-stone-200";
+        // 薄くするのは外側の半分だけ（いちばん近い期限の大きな印に隠れても、線が続いて見えるように）
+        const fadeIn = i === 0 && cutLeft ? (i <= at ? "bg-linear-to-r from-sky-600/0 to-sky-600 to-50%" : "bg-linear-to-r from-stone-200/0 to-stone-200 to-50%") : null;
+        const fadeOut = i === cols.length - 1 && cutRight ? (i < at ? "bg-linear-to-r from-sky-600 from-50% to-sky-600/0" : "bg-linear-to-r from-stone-200 from-50% to-stone-200/0") : null;
         const line = (
           <>
-            {i > 0 && <span aria-hidden className={`absolute left-0 right-1/2 top-1/2 h-1 -translate-y-1/2 ${i <= at ? "bg-sky-600" : "bg-stone-200"}`} />}
-            {i < cols.length - 1 && <span aria-hidden className={`absolute left-1/2 right-0 top-1/2 h-1 -translate-y-1/2 ${i < at ? "bg-sky-600" : "bg-stone-200"}`} />}
+            {(i > 0 || cutLeft) && <span aria-hidden className={`absolute left-0 right-1/2 top-1/2 h-1 -translate-y-1/2 ${fadeIn ?? left}`} />}
+            {(i < cols.length - 1 || cutRight) && <span aria-hidden className={`absolute left-1/2 right-0 top-1/2 h-1 -translate-y-1/2 ${fadeOut ?? right}`} />}
           </>
         );
         const year = i === 0 || yearOf(dateOf(cols[i - 1])) !== yearOf(dateOf(c)) ? `${yearOf(dateOf(c))}年` : null;
@@ -259,7 +295,7 @@ export function MilestoneFlow({ tasks, done, today, death }: { tasks: Task[]; do
           );
         return (
           <li key={c.m.id} className="row-span-5 grid grid-rows-subgrid">
-            <FlowStep m={c.m} today={today} year={year} line={line} dense={cols.length > 10} />
+            <FlowStep m={c.m} today={today} year={year} line={line} dense={dense} />
           </li>
         );
       })}
@@ -307,15 +343,16 @@ function FlowStep({ m, today, year, line, dense }: { m: Milestone; today: string
         <Node m={m} />
       </span>
       {/* 区切りが多い（列が狭い）ときは、名前の字を少し小さくして、1文字だけ次の行に回らないようにする */}
-      <span className={`pt-1 font-bold leading-snug text-balance [word-break:auto-phrase] ${dense ? "px-0.5 text-xs" : "px-1 text-[13px]"} ${closed ? "text-stone-400" : "text-stone-900"}`}>{m.name}</span>
+      <span className={`pt-1 font-bold leading-snug text-balance [overflow-wrap:anywhere] [word-break:auto-phrase] ${dense ? "px-0.5 text-xs" : "px-1 text-[13px]"} ${closed ? "text-stone-400" : "text-stone-900"}`}>{m.name}</span>
       <span className="px-1 text-[11px] leading-4 text-stone-500">
         {m.kind === "aim" && <span className={`mr-1 font-semibold ${closed ? "" : "text-sky-800"}`}>目安</span>}
         {m.period}
       </span>
-      <span className={`px-1 pt-1 ${closed ? "text-stone-400" : "text-stone-800"}`}>
+      {/* 列が狭くて「11月15日（日）」が1行に入らないときは、どの列も曜日を日付の下に出す（列ごとに折り返し方がばらつかないように） */}
+      <span className={`@container px-1 pt-1 ${closed ? "text-stone-400" : "text-stone-800"}`}>
         {year && <span className="block text-[11px] leading-4 text-stone-500">{year}</span>}
         <span className="text-sm font-bold tabular-nums">{monthDay(m.date)}</span>
-        <span className="text-[11px]">{weekday(m.date)}</span>
+        <span className="text-[11px] @max-[6.125rem]:block">{weekday(m.date)}</span>
       </span>
       <span className="px-1 pb-1 text-[11px] leading-4">{state}</span>
     </>
