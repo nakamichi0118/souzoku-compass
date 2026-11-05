@@ -4,9 +4,9 @@ import { Camera, Plus, Upload } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { DocCamera } from "@/components/docs/DocCamera";
-import { FileThumbs } from "@/components/docs/DocFiles";
+import { DupNote, FileThumbs } from "@/components/docs/DocFiles";
 import { guessDocId } from "@/domain/filing/submission";
-import { useDocFiles } from "@/lib/docFiles";
+import { splitDuplicates, useDocFiles, type Duplicate } from "@/lib/docFiles";
 import { fmt } from "@/components/ui";
 import {
   TARGET_LABEL,
@@ -202,8 +202,23 @@ export function Reader({
   const [saving, setSaving] = useState(false);
   const busy = ex.busy || saving || progress !== null;
   /** 選んだ・撮影した書類を、1枚ずつ順に読む */
-  const readAll = async (files: File[], sampleName?: string) => {
-    if (!files.length) return;
+  const [dups, setDups] = useState<Duplicate[]>([]);
+  const readAll = async (
+    picked: File[],
+    sampleName?: string,
+    force = false,
+  ) => {
+    if (!picked.length) return;
+    let files = picked;
+    // 保存済みと同じ書類は、読み取りも保存もしないで知らせる（「別の書類なので追加する」で入れられる）
+    if (save && !sampleName && !force) {
+      setSaving(true);
+      const split = await splitDuplicates(picked, store.files);
+      setSaving(false);
+      setDups(split.dups);
+      files = split.fresh;
+      if (!files.length) return;
+    } else setDups([]);
     if (!doRead) {
       if (!docId || !save) return;
       setSaving(true);
@@ -263,6 +278,9 @@ export function Reader({
     <div className="rounded-xl border-2 border-dashed border-teal-400 bg-teal-50/40 p-4">
       {mine.length > 0 && (
         <div className="mb-3">
+          <p className="mb-1.5 text-xs font-semibold text-stone-600">
+            アップロード済み（{mine.length}枚）
+          </p>
           <FileThumbs files={mine} onRemove={(f) => void store.remove(f.id)} />
         </div>
       )}
@@ -342,6 +360,17 @@ export function Reader({
         )}
       </div>
       {saving && <p className="mt-2 text-sm text-teal-900">保存しています…</p>}
+      <DupNote
+        dups={dups}
+        onClose={() => setDups([])}
+        onForce={() =>
+          void readAll(
+            dups.map((d) => d.file),
+            undefined,
+            true,
+          )
+        }
+      />
       {store.err && <p className="mt-2 text-sm text-rose-700">{store.err}</p>}
       {doRead && progress && (
         <ProgressBar

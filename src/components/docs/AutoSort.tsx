@@ -9,9 +9,9 @@ import { useState } from "react";
 import { Reader } from "@/components/extract/Reader";
 import { EXTRA_DOCS, docName } from "@/domain/filing/submission";
 import { DOCS } from "@/domain/procedures/documents";
-import { useDocFiles, type DocFile } from "@/lib/docFiles";
+import { splitDuplicates, useDocFiles, type DocFile, type Duplicate } from "@/lib/docFiles";
 import { usePlan } from "@/lib/planStore";
-import { AddButtons } from "./DocFiles";
+import { AddButtons, DupNote } from "./DocFiles";
 
 const CHOICES = [...Object.keys(DOCS), ...Object.keys(EXTRA_DOCS)];
 
@@ -36,7 +36,15 @@ export function AutoSort() {
   const markDone = (docId: string) => {
     if (DOCS[docId] && !DOCS[docId].readable) plan.setStatus(`doc:${docId}`, "done");
   };
-  const add = async (list: File[]) => {
+  const [dups, setDups] = useState<Duplicate[]>([]);
+  const add = async (picked: File[], force = false) => {
+    // 保存済みと同じ書類は仕分けず、どこに入っているかを知らせる
+    let list = picked;
+    if (!force) {
+      const split = await splitDuplicates(picked, store.files);
+      setDups(split.dups);
+      list = split.fresh;
+    } else setDups([]);
     setBusy((n) => n + list.length);
     for (const f of list) {
       const docId = await classify(f);
@@ -54,6 +62,7 @@ export function AutoSort() {
       <div className="flex flex-wrap items-center gap-2">
         <AddButtons onFiles={(l) => void add(l)} label="撮影して仕分ける" />
       </div>
+      <DupNote dups={dups} onClose={() => setDups([])} onForce={() => void add(dups.map((d) => d.file), true)} />
       {busy > 0 && (
         <p className="flex items-center gap-2 text-sm text-teal-900">
           <CompassAvatar size={32} thinking />
