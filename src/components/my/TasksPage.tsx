@@ -14,6 +14,7 @@ import { OFFICE_LABEL, cityOf } from "@/domain/procedures/offices";
 import type { Category, Task } from "@/domain/procedures/rules";
 import { isRealEstate } from "@/domain/realEstate";
 import type { Asset } from "@/domain/types";
+import { useDocFiles } from "@/lib/docFiles";
 import { saveBlob } from "@/lib/download";
 import { useOverall, useRequireHearing } from "@/lib/overall";
 import type { ItemStatus } from "@/lib/planStore";
@@ -166,6 +167,7 @@ export function TaskRow({
 
 export function TasksPage() {
   const o = useOverall();
+  const files = useDocFiles();
   const params = useSearchParams();
   const router = useRouter();
   const [cat, setCat] = useState<(typeof CATS)[number]>("すべて");
@@ -495,6 +497,7 @@ export function TasksPage() {
                         <li key={id} className="flex items-center gap-2 text-sm">
                           <RowStatus status={ds} onChange={(v) => o.setStatus(k, v)} label={DOCS[id].name} muted />
                           <span className={ok ? "text-stone-400 line-through" : "text-stone-800"}>{DOCS[id].name}</span>
+                          {files.of(id).length > 0 && <span className="shrink-0 text-xs text-stone-500">アップロード済み {files.of(id).length}枚</span>}
                           <Link href={`/my/docs?id=${id}`} className="ml-auto shrink-0 py-2 text-xs text-sky-700 hover:underline">
                             {DOCS[id].readable ? "取り方・読み取り" : "取り方"} ›
                           </Link>

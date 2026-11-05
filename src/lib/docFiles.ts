@@ -80,6 +80,41 @@ export async function normalizeImage(file: File | Blob, name = "photo.jpg"): Pro
   return new File([blob], `${base}.jpg`, { type: "image/jpeg" });
 }
 
+/** 同じ書類が2回入ったときに知らせるための、すでに保存した書類と同じもの */
+export interface Duplicate {
+  name: string;
+  file: File;
+  same: DocFile;
+}
+
+/**
+ * 選んだ書類を、まだ保存していないものと、保存済みの書類と同じもの（同じ書類を2回入れたもの）に分ける。
+ * 保存するときと同じ変換をしてから、種類と大きさ（バイト数）が同じなら同じ書類とみなす（名前は変えられるので見ない）。
+ * 1回で同じ書類を2つ選んだときも、2つ目を同じものとする（same.docId が空）
+ */
+export async function splitDuplicates(list: File[], saved: DocFile[]): Promise<{ fresh: File[]; dups: Duplicate[] }> {
+  const fresh: File[] = [];
+  const dups: Duplicate[] = [];
+  const seen: DocFile[] = [...saved];
+  for (const file of list) {
+    let n: File;
+    try {
+      n = await normalizeImage(file);
+    } catch {
+      fresh.push(file);
+      continue;
+    }
+    const hit = seen.find((x) => x.type === n.type && x.size === n.size);
+    if (hit) {
+      dups.push({ name: file.name, file, same: hit });
+      continue;
+    }
+    fresh.push(file);
+    seen.push({ id: "", docId: "", name: file.name, type: n.type, size: n.size, addedAt: "", src: "", load: async () => n });
+  }
+  return { fresh, dups };
+}
+
 const newId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 /** 保存先：サーバー（ログイン中）か、この端末 */
