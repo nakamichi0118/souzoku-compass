@@ -105,12 +105,13 @@ describe("画面の下の「次へ」の帯（FinishBar）", () => {
     expect(html).toMatch(/<button type="button" class="[^"]*underline[^"]*">選んでいない質問があと/);
     const after = renderToStaticMarkup(createElement(FinishBar, { dateOk: true, unanswered: 3, onFinish: () => {}, confirmSkip: true }));
     expect(after).toContain("このまま進む →");
-    expect(bar({ unanswered: 0 })).toContain("マイページへ →");
+    expect(bar({ unanswered: 0 })).toContain("マイページへ進む →");
   });
 
-  it("全部答えたときは、あとから変えられることだけを出す", () => {
+  it("全部答えたときは、入力完了を知らせてマイページへのボタンを目立たせる", () => {
     const html = bar({ unanswered: 0 });
-    expect(phoneText(html)).toBe("答えはあとから変えられます。");
+    expect(html).toContain("すべて入力できました！");
+    expect(html).toMatch(/id="hearing-finish"[^>]*class="[^"]*bg-brand/);
     expect(html).not.toMatch(disabledBtn);
   });
 

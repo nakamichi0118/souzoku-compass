@@ -72,6 +72,12 @@ describe("相続コンパスからのお知らせ（SYSTEM_NOTICES）", () => {
     expect(more.body).toContain("これで全部");
   });
 
+  it("使い方ガイドで開く場所を示すことと、聞き取りの完了案内", () => {
+    const guide = byId("2026-11-06-guide-nav");
+    expect(guide.date).toBe("2026-11-06");
+    expect(guide.body).toContain("上のメニュー");
+  });
+
   it("税額の画面の財産の合計の内訳（小規模宅地等の特例・保険金の非課税）", () => {
     const breakdown = byId("2026-11-05-breakdown");
     expect(breakdown).toMatchObject({ id: "2026-11-05-breakdown", date: "2026-11-05" });
