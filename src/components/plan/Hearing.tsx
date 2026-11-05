@@ -115,12 +115,14 @@ export function FinishBar({
 /** すべて答え終わったときの案内（答え終えたその場で、ここまで画面を送る） */
 export function DoneCard({ onFinish, announce }: { onFinish: () => void; announce: boolean }) {
   const ref = useRef<HTMLElement>(null);
+  // この案内が出たその時だけ送る（答え終えた状態で開き直した人が答えを変えても、下へ飛ばさない）
+  const first = useRef(announce);
   useEffect(() => {
-    if (!announce) return;
+    if (!first.current) return;
     // 次の質問へ送る動きのあとに、この案内を真ん中に出す
     const t = window.setTimeout(() => ref.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 300);
     return () => window.clearTimeout(t);
-  }, [announce]);
+  }, []);
   return (
     <section ref={ref} id="hearing-done" className="flex flex-col items-center gap-3 rounded-2xl border-2 border-brand/40 bg-brand-soft p-6 text-center">
       <CompassAvatar size={56} />
