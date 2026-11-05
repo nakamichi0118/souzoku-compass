@@ -61,8 +61,10 @@ describe("相続コンパスからのお知らせ（SYSTEM_NOTICES）", () => {
     expect(SYSTEM_NOTICES[0].body).toContain("分からない");
   });
 
-  it("その前のお知らせは、小規模宅地等の特例の割り当て、受け取る人が決まっていない財産、第8の8表・第14表、郵便番号から住所を入れること、画面の文字を減らしたこと", () => {
-    const [, small, unsettled, latest, first, second] = SYSTEM_NOTICES;
+  it("その前のお知らせは、書類の撮影、小規模宅地等の特例の割り当て、受け取る人が決まっていない財産、第8の8表・第14表、郵便番号から住所を入れること、画面の文字を減らしたこと", () => {
+    const [, scan, small, unsettled, latest, first, second] = SYSTEM_NOTICES;
+    expect(scan).toMatchObject({ id: "2026-11-05-scan-bundle", date: "2026-11-05", title: "書類を撮影して提出用にまとめられます" });
+    expect(scan.body).toContain("印鑑証明書は原本");
     expect(small).toMatchObject({ id: "2026-11-04-small-land", date: "2026-11-04", title: "小規模宅地等の特例の割り当てを見直しました" });
     expect(small.body).toContain("税理士に確認できれば");
     expect(unsettled).toMatchObject({ id: "2026-11-04-unsettled-check", date: "2026-11-04" });

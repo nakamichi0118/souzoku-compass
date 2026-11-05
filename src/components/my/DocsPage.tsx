@@ -8,6 +8,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Bubble, CompassAvatar } from "@/components/compass/CompassKun";
 import { Reader } from "@/components/extract/Reader";
+import { AutoSort } from "@/components/docs/AutoSort";
+import { DocFiles } from "@/components/docs/DocFiles";
 import { OfficeLookup } from "@/components/plan/OfficeLookup";
 import { AppShell, PageHead } from "@/components/shell/AppShell";
 import { Panel } from "@/components/ui/Panel";
@@ -71,8 +73,8 @@ function DocCard({ item, address, open, onOpen, focus }: { item: DocItem; addres
       const ids = new Set(missing.map((a) => a.id));
       update((c) => ({ ...c, assets: c.assets.map((a) => (ids.has(a.id) ? { ...a, docFrom: a.docFrom || "手元にあり" } : a)) }));
     }
-    // 読み取れる書類は、そろったらアップロードを促す
-    if (v === "done" && doc.readable) onOpen(true);
+    // そろったら、撮影・アップロードを促す（読み取れる書類は金額も読む）
+    if (v === "done") onOpen(true);
   };
   const st: ItemStatus = item.done ? "done" : item.na ? "na" : "open";
   return (
@@ -96,13 +98,20 @@ function DocCard({ item, address, open, onOpen, focus }: { item: DocItem; addres
       </div>
       {open && (
         <div className="space-y-3 border-t border-stone-100 px-4 py-4 text-sm leading-relaxed text-stone-700 sm:pl-12">
-          {item.done && doc.readable && (
+          {item.done && (
             <div className="flex items-start gap-2">
               <CompassAvatar size={36} />
-              <Bubble>そろいましたね！アップロードすると金額を読み取ります。</Bubble>
+              <Bubble>{doc.readable ? "そろいましたね！撮影すると金額を読み取ります。" : "そろいましたね！撮影しておくと、税務署に出す書類にまとめます。"}</Bubble>
             </div>
           )}
-          {doc.readable && <Reader docId={item.id} onRegistered={() => setStatus(key, "done")} />}
+          {doc.readable ? (
+            <>
+              <Reader docId={item.id} onRegistered={() => setStatus(key, "done")} />
+              <DocFiles docId={item.id} buttons={false} />
+            </>
+          ) : (
+            <DocFiles docId={item.id} onAdded={() => setStatus(key, "done")} />
+          )}
           <AssetDocList docId={item.id} />
           <p>{doc.purpose}</p>
           <dl className="grid gap-x-4 gap-y-1 sm:grid-cols-[7rem_1fr]">
@@ -226,13 +235,24 @@ export function DocsPage() {
         </section>
       )}
 
-      <details className="mb-5 rounded-xl border border-teal-200 bg-white p-4">
-        <summary className="cursor-pointer font-bold text-teal-900">ほかの書類も読み取る（葬儀の領収書など）</summary>
-        <div className="mt-3">
-          <p className="mb-2 text-sm text-stone-600">税金の通知書・贈与の契約書なども読み取れます。</p>
-          <Reader />
+      <section className="mb-5 rounded-xl border border-teal-200 bg-white p-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="font-bold text-teal-900">届いた書類を撮影する</h2>
+          {o.filing && (
+            <Link href="/case/documents#bundle" className="text-sm font-semibold text-sky-800 underline">
+              税務署に出す書類をまとめる ›
+            </Link>
+          )}
         </div>
-      </details>
+        <p className="mb-3 mt-1 text-sm text-stone-600">何枚でもまとめてどうぞ。コンパスくんが種類ごとに仕分けます。</p>
+        <AutoSort />
+        <details className="mt-3 text-sm">
+          <summary className="cursor-pointer py-1 text-teal-800">金額だけ読み取る（贈与の契約書・税金の通知書など）</summary>
+          <div className="mt-2">
+            <Reader />
+          </div>
+        </details>
+      </section>
 
       {/* スマホでは「今集めるべき書類」を書類の一覧より上に出す。パソコンでは右の列の上（2行目を伸ばして、右の枠どうしの間を空けない） */}
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem] lg:grid-rows-[auto_1fr]">

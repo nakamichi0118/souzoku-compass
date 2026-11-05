@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, Calculator, House, Scale } from "lucide-react";
+import { CalendarDays, Calculator, FolderCheck, House, Scale } from "lucide-react";
 import Link from "next/link";
 import { AppShell, PageHead } from "@/components/shell/AppShell";
 import { useOverall } from "@/lib/overall";
@@ -21,6 +21,15 @@ export function PapersPage() {
       ready: !!o.result && c.assets.length > 0 && blockers.length === 0,
       need: o.filing ? "申告が必要（10か月以内）" : "申告不要の見込み（確認用に作れます）",
       todo: blockers.length > 0 ? `${blockers[0]}${blockers.length > 1 ? `（ほかに${blockers.length - 1}件あります）` : ""}` : "財産と相続人を入力すると作れます",
+    },
+    {
+      Icon: FolderCheck,
+      title: "税務署に出す書類一式",
+      text: "撮影した戸籍・証明書などを提出の順に並べ、申告書と1つのPDFにします。",
+      href: "/case/documents#bundle",
+      ready: o.filing,
+      need: "印鑑証明書は原本を同封します",
+      todo: "相続税の申告がいるときに使います",
     },
     {
       Icon: Scale,

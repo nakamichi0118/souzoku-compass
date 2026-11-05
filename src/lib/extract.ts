@@ -404,7 +404,7 @@ export function useExtract(hint?: () => { decedentName?: string; deathDate?: str
   const [err, setErr] = useState<string | null>(null);
   const [res, setRes] = useState<Extracted | null>(null);
   const [file, setFile] = useState<string | null>(null);
-  async function read(f: File) {
+  async function read(f: File): Promise<Extracted | null> {
     setBusy(true);
     setErr(null);
     setRes(null);
@@ -419,8 +419,10 @@ export function useExtract(hint?: () => { decedentName?: string; deathDate?: str
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error ?? "読み取りに失敗しました");
       setRes(j);
+      return j as Extracted;
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
+      return null;
     } finally {
       setBusy(false);
     }
