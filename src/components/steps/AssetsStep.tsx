@@ -14,6 +14,7 @@ import { type DivisionInput, LandEditor, LeaseRatioSelect, RentRatioField, Small
 import type { Interview } from "@/domain/procedures/interview";
 import { RECEIVABLE_TYPES, type Receivable } from "@/domain/review/receivables";
 import { ReceivableFields, VerdictLine } from "./ReceivableFields";
+import { otherRecipients, receiptOver } from "@/domain/receipt";
 
 const KINDS: { kind: AssetKind; label: string }[] = [
   { kind: "deposit", label: "預貯金" },
@@ -446,9 +447,7 @@ export function AssetEditor({
           <Field label="受取金額">
             <YenInput value={a.amount} onChange={(v) => patch({ amount: v })} />
           </Field>
-          <Field label="受取人">
-            <Select value={a.recipientId} onChange={(v) => patch({ recipientId: v })} options={[{ value: "", label: living.length ? "選んでください" : "（相続人が未登録）" }, ...living.map((p) => ({ value: p.id, label: `${p.name || "氏名未入力"}（${p.relationLabel ?? p.relation}）` }))]} />
-          </Field>
+          <Recipients a={a} living={living} patch={patch} />
         </>
       );
     case "building":
@@ -581,6 +580,49 @@ function ReceivableOnAsset({ value, onChange }: { value?: Receivable; onChange: 
           <VerdictLine r={value} deathDate={data.decedent.deathDate} />
         </>
       )}
+    </div>
+  );
+}
+
+type Deemed = Extract<Asset, { kind: "insurance" | "retirement" }>;
+
+/**
+ * 受取人。ふだんは1人を選ぶだけ。受取人が「法定相続人」となっている保険などで何人かが受け取るときは、
+ * 「受取人を追加」で2人目以降と金額を入れ、1人目（代表の受取人）は残りの金額を受け取ったものとする
+ */
+function Recipients({ a, living, patch }: { a: Deemed; living: Person[]; patch: (p: Partial<Asset>) => void }) {
+  const others = otherRecipients(a);
+  const options = [{ value: "", label: living.length ? "選んでください" : "（相続人が未登録）" }, ...living.map((p) => ({ value: p.id, label: `${p.name || "氏名未入力"}（${p.relationLabel ?? p.relation}）` }))];
+  const setOthers = (next: { personId: string; amount: number }[]) => patch({ otherRecipients: next.length ? next : undefined } as Partial<Asset>);
+  const othersSum = others.reduce((s, o) => s + (o.amount > 0 ? o.amount : 0), 0);
+  const over = receiptOver(a);
+  const firstGets = Math.max(0, (a.amount || 0) - othersSum);
+  return (
+    <div className="space-y-3 sm:col-span-2">
+      <Field label={others.length ? "受取人（1人目）" : "受取人"} hint={others.length ? `受け取る金額：${fmt(firstGets)}円（受取金額から2人目以降の分を引いた残り）` : undefined}>
+        <Select value={a.recipientId} onChange={(v) => patch({ recipientId: v })} options={options} />
+      </Field>
+      {others.map((o, i) => (
+        <div key={i} className="grid items-end gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+          <Field label={`受取人（${i + 2}人目）`}>
+            <Select value={o.personId} onChange={(v) => setOthers(others.map((x, j) => (j === i ? { ...x, personId: v } : x)))} options={options} />
+          </Field>
+          <Field label="受け取った金額">
+            <YenInput value={o.amount} onChange={(v) => setOthers(others.map((x, j) => (j === i ? { ...x, amount: v } : x)))} />
+          </Field>
+          <Button variant="danger" onClick={() => setOthers(others.filter((_, j) => j !== i))}>
+            外す
+          </Button>
+        </div>
+      ))}
+      {over > 0 && <Note tone="warn">2人目以降の金額の合計が、受取金額を{fmt(over)}円超えています。</Note>}
+      <div>
+        <Button variant="secondary" onClick={() => setOthers([...others, { personId: "", amount: 0 }])}>
+          <Plus className="mr-1 inline h-4 w-4" aria-hidden />
+          受取人を追加
+        </Button>
+        <p className="mt-1 text-xs text-stone-500">受取人が「法定相続人」となっている保険など、何人かで分けて受け取るときに使います。</p>
+      </div>
     </div>
   );
 }

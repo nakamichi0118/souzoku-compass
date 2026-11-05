@@ -42,7 +42,11 @@ export function removePerson(c: Case, id: string): Case {
     priorGifts: c.priorGifts.map((g) => (g.personId === id ? { ...g, personId: "" } : g)),
     debts: c.debts.map((d) => (d.bearers.some((b) => b.personId === id) ? { ...d, bearers: d.bearers.map((b) => (b.personId === id ? { ...b, personId: "" } : b)) } : d)),
     assets: c.assets.map((a) => {
-      if ((a.kind === "insurance" || a.kind === "retirement") && a.recipientId === id) return { ...a, recipientId: "" };
+      if (a.kind === "insurance" || a.kind === "retirement") {
+        // 追加した受取人の行は人を外して残す（金額は入れたままにして、選び直してもらう）
+        const others = a.otherRecipients?.some((o) => o.personId === id) ? { otherRecipients: a.otherRecipients.map((o) => (o.personId === id ? { ...o, personId: "" } : o)) } : {};
+        return a.recipientId === id ? { ...a, ...others, recipientId: "" } : { ...a, ...others };
+      }
       if (a.kind === "land" || a.kind === "condo") {
         const sr = a.smallResidential;
         if (!sr) return a;
@@ -264,30 +268,20 @@ export function HeirsStep() {
   );
 }
 
-/**
- * 住所・連絡先（書類に書くためだけの欄）。ふだんは畳み、入れてあれば見出しの横に1行で見せる。
- * 開けばいままでと同じ4つの欄が出る
- */
+/** 住所・連絡先（申告書・協議書に書く欄）。ほかの欄と同じく、ふつうに見せて入れてもらう */
 function ContactFields({ p, patch }: { p: Person; patch: (id: string, p: Partial<Person>) => void }) {
-  const filled = [p.zip ? `〒${p.zip}` : "", p.address ?? "", p.phone ?? ""].filter(Boolean).join(" ");
   return (
-    <details className="text-sm sm:col-span-3">
-      <summary className="cursor-pointer py-2 font-medium text-teal-800">
-        住所・連絡先（書類用）
-        {filled && <span className="ml-2 font-normal text-stone-600">{filled}</span>}
-      </summary>
-      <div className="grid gap-4 pt-2 sm:grid-cols-3">
-        <div className="sm:col-span-3">
-          <AddressField label="住所" address={p.address ?? ""} onAddress={(v) => patch(p.id, { address: v })} zip={p.zip ?? ""} onZip={(v) => patch(p.id, { zip: v })} />
-        </div>
-        <Field label="電話番号">
-          <TextInput value={p.phone ?? ""} onChange={(e) => patch(p.id, { phone: e.target.value })} placeholder="03-0000-0000" />
-        </Field>
-        <Field label="職業">
-          <TextInput value={p.occupation ?? ""} onChange={(e) => patch(p.id, { occupation: e.target.value })} />
-        </Field>
+    <>
+      <div className="sm:col-span-3">
+        <AddressField label="住所" address={p.address ?? ""} onAddress={(v) => patch(p.id, { address: v })} zip={p.zip ?? ""} onZip={(v) => patch(p.id, { zip: v })} />
       </div>
-    </details>
+      <Field label="電話番号">
+        <TextInput value={p.phone ?? ""} onChange={(e) => patch(p.id, { phone: e.target.value })} placeholder="03-0000-0000" />
+      </Field>
+      <Field label="職業">
+        <TextInput value={p.occupation ?? ""} onChange={(e) => patch(p.id, { occupation: e.target.value })} />
+      </Field>
+    </>
   );
 }
 

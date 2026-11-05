@@ -361,8 +361,13 @@ export interface UnlistedStockAsset extends AssetBase {
 export interface DeemedAsset extends AssetBase {
   kind: "insurance" | "retirement";
   amount: number;
-  /** 受取人（遺産分割の対象外。受取人が取得する） */
+  /** 受取人（遺産分割の対象外。受取人が取得する）。何人かで受け取るときは代表の1人目で、受取金額から2人目以降の分を引いた残りを受け取る */
   recipientId: string;
+  /**
+   * 受取人が何人かいるとき（受取人が「法定相続人」となっている保険など）の2人目以降と、それぞれが受け取った金額。
+   * 非課税の枠（500万円×法定相続人の数）は、受け取った人ごとの金額で分ける
+   */
+  otherRecipients?: { personId: string; amount: number }[];
 }
 
 export type Asset =

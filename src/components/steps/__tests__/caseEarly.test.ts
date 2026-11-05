@@ -102,15 +102,15 @@ describe("亡くなった方", () => {
 });
 
 describe("相続人", () => {
-  it("住所・連絡先は畳み、入れてあれば見出しの横に1行で見せる（開けば4つの欄がある）", () => {
+  it("住所・連絡先は畳まず、ほかの欄と同じように見せる", () => {
     const html = render(HeirsStep);
-    const hanako = html.slice(html.indexOf("住所・連絡先（書類用）"));
-    expect(hanako).toMatch(/^住所・連絡先（書類用）<span [^>]*>〒100-0099 東京都千代田区架空町一丁目2番3号 03-0000-0000<\/span><\/summary>/);
-    for (const label of ["電話番号", "職業"]) expect(hanako).toContain(`>${label}</span>`);
-    // 住所は郵便番号つきの欄（郵便番号を入れると住所が入る）
-    expect(hanako).toContain('aria-label="郵便番号"');
-    expect(hanako).toContain(">住所</label>");
-    expect(html).not.toMatch(/<details[^>]*open[^>]*><summary[^>]*>住所・連絡先/);
+    expect(html).not.toContain("<details");
+    expect(html).not.toContain("住所・連絡先（書類用）");
+    for (const label of ["電話番号", "職業"]) expect(html).toContain(`>${label}</span>`);
+    // 住所は郵便番号つきの欄（郵便番号を入れると住所が入る）。入れた値がそのまま欄に見える
+    expect(html).toContain('aria-label="郵便番号"');
+    expect(html).toContain(">住所</label>");
+    expect(html).toContain("東京都千代田区架空町一丁目2番3号");
   });
 
   it("下書きであることは残し、続柄の例は入力欄の中に出す", () => {
