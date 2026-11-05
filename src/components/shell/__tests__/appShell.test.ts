@@ -60,9 +60,9 @@ describe("マイページ共通の見出し（スマホ）", () => {
     expect(html).not.toContain("手続き中の相続");
   });
 
-  it("お知らせの一覧は、スマホではベルではなく見出しの幅に合わせる（左にはみ出さない）", () => {
+  it("お知らせと使い方の欄は、スマホではボタンではなく見出しの幅に合わせる（左にはみ出さない）", () => {
     const html = header();
-    expect(tagWith(html, "shrink-0", "sm:relative")).toHaveLength(1);
+    expect(tagWith(html, "shrink-0", "sm:relative")).toHaveLength(2);
     // 一覧を合わせる先の行
     expect(tagWith(html, "relative", "mx-auto", "max-w-7xl")).toHaveLength(1);
   });
