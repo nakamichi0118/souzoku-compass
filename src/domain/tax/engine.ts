@@ -27,6 +27,7 @@ import { Valuation, smallResidentialSelection, valueAsset } from "../valuation";
 import { ratio4, ratioText } from "../valuation/lease";
 import { judgeReceivable } from "../review/receivables";
 import { SMALL_LAND_RULE, type SmallResidentialCheck, judgeSmallResidential, shouldApply, smallLandKind } from "../valuation/smallResidential";
+import { otherRecipients, receiptOver, receiptShares } from "../receipt";
 
 /** 速算表（相続税法16条） */
 export const RATE_TABLE: readonly { upTo: number; rate: number; deduction: number }[] = [
@@ -1377,6 +1378,14 @@ function computeBase(c: Case, valueOf: (a: Asset) => Valuation) {
         // 受取人がいないと金額がどこにも集計されず課税価格から消えるため、確定させない
         blockers.push(`「${a.label || (a.kind === "insurance" ? "死亡保険金" : "死亡退職金")}」の受取人が選ばれていません。財産の画面で受取人を選んでください。`);
       }
+      // 何人かで受け取るとき：2人目以降の人と金額がそろっていないと、受け取った人ごとの金額（非課税の枠の分け方）が決まらない
+      const name = `「${a.label || (a.kind === "insurance" ? "死亡保険金" : "死亡退職金")}」`;
+      const others = otherRecipients(a);
+      if (others.some((o) => !o?.personId || !living.has(o.personId))) blockers.push(`${name}の追加した受取人に、選ばれていない人がいます。財産の画面で受取人を選ぶか、その行を消してください。`);
+      if (others.some((o) => o?.personId && !(typeof o.amount === "number" && o.amount > 0))) blockers.push(`${name}の追加した受取人に、受け取った金額が入っていない人がいます。財産の画面で金額を入れてください。`);
+      const over = receiptOver(a);
+      if (over > 0) blockers.push(`${name}の追加した受取人の金額の合計が、受取金額を${over.toLocaleString("ja-JP")}円超えています。財産の画面で金額を直してください。`);
+      if (others.some((o) => o?.personId && o.personId === a.recipientId)) warnings.push(`${name}の受取人に、同じ人が2回入っています。その人の分は合わせて計算しています。`);
       plans.push({ a, valuation, receipt: true });
       continue;
     }
@@ -1519,8 +1528,10 @@ function computeBase(c: Case, valueOf: (a: Asset) => Valuation) {
     if (pl.receipt) {
       if (a.kind !== "insurance" && a.kind !== "retirement") continue;
       const m = a.kind === "insurance" ? insuranceBy : retirementBy;
-      addTo(m, a.recipientId, valuation.value);
-      assetLines.push({ asset: a, valuation, reduction: 0, byPerson: [{ personId: a.recipientId, amount: valuation.value }] });
+      // 受取人ごとに受け取った金額で集計する（非課税の枠はこの人ごとの金額で分ける）
+      const byPerson = receiptShares(a, valuation.value);
+      for (const s of byPerson) addTo(m, s.personId, s.amount);
+      assetLines.push({ asset: a, valuation, reduction: 0, byPerson });
       continue;
     }
     const { label, valid, rest } = pl;
