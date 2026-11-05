@@ -5,7 +5,7 @@
  *  1. 税額の確認：止まる事項ごとに「〜で直す」リンクがあり、押すとその行へ送って枠で目立たせる
  *  2. 書類の作成：止まる事項があると申告書のボタンは押せず、理由を1行で出す
  *  3. 財産：形がいびつな土地は「入力待ち」にならず評価額を出し、相談する・しないを選べる
- *  4. 小規模宅地：答え始めて取得する人がいないと「あと少し」と未回答の印を出す
+ *  4. 小規模宅地：答え始めて質問が残っていると「あと少し」と未回答の印を出す（取得する人は、分け方で1人が受け継ぐなら自動で入る）
  *  5. 聞き取り：飛ばした質問に「未回答」の印、下の帯のリンクで未回答へ送る
  */
 import path from "node:path";
@@ -101,9 +101,9 @@ const shot = async (page, name) => OUT && page.screenshot({ path: path.join(OUT,
   check("形がいびつな土地も評価額を出す（入力待ちにしない）", !row.includes("入力待ち") && /30,000,000円/.test(row), row.replace(/\s+/g, " "));
   check("相談する・しないを選べる", (await page.getByRole("button", { name: "相談しない" }).count()) > 0);
 
-  // 4. 小規模宅地：答え始めたのに取得する人がいない
+  // 4. 小規模宅地：答え始めたのに質問が残っている
   const srHint = page.getByText(/あと少し：/);
-  check("小規模宅地：取得する人がいないと「あと少し」と出す", (await srHint.count()) > 0, (await srHint.first().innerText().catch(() => "")).slice(0, 40));
+  check("小規模宅地：答え始めて質問が残っていると「あと少し」と出す", (await srHint.count()) > 0, (await srHint.first().innerText().catch(() => "")).slice(0, 40));
   await srHint.first().scrollIntoViewIfNeeded();
   await shot(page, "4_land_reduction_sr");
 

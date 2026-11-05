@@ -11,6 +11,8 @@ import { jpDate, monthsDeadline, nextOpenDay } from "@/domain/procedures/dates";
 import { relationLabel } from "@/forms/filing";
 import { unsettledAssets } from "@/lib/progress";
 import { BlockerList } from "./BlockerList";
+import { TaxBreakdownList } from "./TaxBreakdown";
+import { taxBreakdown } from "@/lib/taxBreakdown";
 import { useCase } from "@/lib/store";
 import { summarizeForAssistant } from "@/lib/summary";
 
@@ -202,6 +204,7 @@ export function TaxStep() {
         <ol className="space-y-5">
           <li>
             <p className="text-sm font-bold text-stone-800">1. 財産から基礎控除を引く</p>
+            <TaxBreakdownList b={taxBreakdown(data, r)} />
             <div className="mt-2 flex h-9 overflow-hidden rounded-lg text-xs font-semibold text-white">
               <div className="grid place-items-center bg-stone-400 px-2" style={{ width: `${r.totalTaxable ? (basicPart / r.totalTaxable) * 100 : 100}%` }}>
                 基礎控除 {man(r.basicDeduction)}

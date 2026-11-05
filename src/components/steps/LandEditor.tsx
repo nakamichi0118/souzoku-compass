@@ -7,12 +7,13 @@ import { Fragment, useState } from "react";
 import { ConsultLink } from "@/components/compass/ConsultLink";
 import { Choice } from "@/components/plan/inputs";
 import { Button, Check, Field, Note, NumInput, OptionalNumInput, Select, TextInput, YenInput, fmt } from "@/components/ui";
-import type { Asset, Case, CondoAsset, LandAsset, LandUse, Person, SmallLandAcquirer, SmallLandKind, SmallLandRelief } from "@/domain/types";
+import type { Asset, CondoAsset, LandAsset, LandUse, Person, SmallLandAcquirer, SmallLandKind, SmallLandRelief } from "@/domain/types";
 import { DISTRICTS, type District } from "@/domain/valuation/depth";
 import { type PendingReduction, pendingReductions, reductionAdvice } from "@/domain/valuation";
 import { LEASE_LETTERS, LEASE_RATIO_BY_LETTER, type LeaseLetter, leaseLetterOf, ratio4 } from "@/domain/valuation/lease";
 import { type Edge, type RoadInput, correctionRates, evaluateRoads } from "@/domain/valuation/roads";
 import { type Answer, SMALL_LAND_RULE, type SmallResidentialCheck, judgeSmallResidential, shouldApply, smallLandKind } from "@/domain/valuation/smallResidential";
+import { type DivisionInput, smallLandDivisionGap, wholeTaker } from "@/lib/smallLand";
 
 const ANSWERS: { value: Answer; label: string }[] = [
   { value: "yes", label: "はい" },
@@ -266,26 +267,7 @@ function Ask({ q, hint, value, onChange, missing }: { q: string; hint?: string; 
   );
 }
 
-/** 小規模宅地等の特例の計算に使う、遺産の分け方の入力 */
-export type DivisionInput = Pick<Case, "undivided" | "allocations">;
-
-/**
- * 特例の条件を満たしていても、分け方の入力のために計算では特例を使わないとき、その理由（計算と同じ判定）。
- * 特例は、取得する人が分け方で受け継ぐと決まった部分だけに使える（租税特別措置法69条の4第4項）。
- * undivided：分け方がまだ決まっていない部分があり、取得する人の分が決まっていない。
- * notAcquirer：分け方が入っているのに、取得する人が入っていない。
- * 分け方をまだ入れていない（未分割でもない）ときは、これから入れるので null
- */
-export function smallLandDivisionGap(division: DivisionInput | undefined, assetId: string, acquirerId: string | undefined): "undivided" | "notAcquirer" | null {
-  if (!division || !acquirerId) return null;
-  const shares = division.allocations.find((x) => x.assetId === assetId)?.shares ?? [];
-  const valid = shares.filter((s) => Number.isInteger(s.numerator) && Number.isInteger(s.denominator) && s.numerator > 0 && s.denominator > 0);
-  if (valid.some((s) => s.personId === acquirerId)) return null;
-  // 決まった割合の合計が1に届かない（何も決まっていないときを含む）なら、残りは法定相続分で分けたもの（未分割）
-  const decided = valid.reduce((t, s) => t + s.numerator / s.denominator, 0);
-  if (division.undivided && decided < 1 - 1e-9) return "undivided";
-  return shares.length > 0 ? "notAcquirer" : null;
-}
+export { type DivisionInput, smallLandDivisionGap, wholeTaker } from "@/lib/smallLand";
 
 export function SmallResidential({
   living,
@@ -303,14 +285,18 @@ export function SmallResidential({
   const check: SmallResidentialCheck = sr.check ?? {};
   const kind = smallLandKind(a);
   const rule = SMALL_LAND_RULE[kind];
-  const acquirer = living.find((p) => p.id === sr.acquirerId);
+  // 相続人が1人のときや、遺産の分け方でこの土地を1人が受け継ぐと決めたときは、その人が取得する人（答え始めると保存される。withSmallLandAcquirers）
+  const taker = wholeTaker(division, a.id);
+  const fixedTaker = taker && living.some((p) => p.id === taker) && (!sr.acquirerId || sr.acquirerId === taker) ? taker : undefined;
+  const acquirerId = sr.acquirerId || fixedTaker;
+  const acquirer = living.find((p) => p.id === acquirerId);
   // マンションの部屋では、説明の文を部屋の画面の入力（「家賃をもらって人に貸している」のチェック）に合わせる
   const opts = { assetKind: a.kind };
   const j = judgeSmallResidential(check, acquirer, kind, opts);
   // 特例を使うと判定したとき（税理士に確認して使えると分かったときも）は、分け方のために使えないかを確かめる
-  const gap = shouldApply(j, check) ? smallLandDivisionGap(division, a.id, sr.acquirerId) : null;
+  const gap = shouldApply(j, check) ? smallLandDivisionGap(division, a.id, acquirerId) : null;
   const set = (next: Partial<SmallLandRelief>) => {
-    const n: SmallLandRelief = { ...sr, ...next };
+    const n: SmallLandRelief = { ...sr, ...(fixedTaker && !sr.acquirerId ? { acquirerId: fixedTaker } : {}), ...next };
     const c = n.check ?? {};
     // 自宅でなく事業に使っていた土地なら特定事業用、と答えで種類が変わるので、新しい答えで決め直して判定する
     const k = smallLandKind({ ...a, smallResidential: { ...n, check: c } });
@@ -337,14 +323,21 @@ export function SmallResidential({
       <p className="text-xs text-stone-500">分からないときは特例を使わずに計算します。</p>
       {incomplete && <p className="text-sm font-semibold text-orange-800">あと少し：{j.reason}特例はまだ使っていません。</p>}
       <div data-missing={incomplete && !acquirer ? "" : undefined} className={incomplete && !acquirer ? "-mx-2 rounded-md border-l-4 border-orange-400 bg-orange-50/70 px-2 py-1" : ""}>
+      {fixedTaker ? (
+        <p className="text-sm text-stone-700">
+          {what}を取得する人：<span className="font-semibold">{acquirer ? personLabel(acquirer) : ""}</span>
+          <span className="ml-1 text-xs text-stone-500">{living.filter((p) => !p.renounced).length === 1 ? "（相続人が1人のため）" : "（遺産の分け方で決まっています）"}</span>
+        </p>
+      ) : (
       <Field label={`${what}を取得する人`}>
-        <Select
-          value={sr.acquirerId ?? ""}
-          // 取得する人を変えたら、前の人についての答え（同居・続けるか・持ち続けるか）と税理士への確認は引き継がない
-          onChange={(v) => v !== (sr.acquirerId ?? "") && set(firstAcquirerChange(sr, v))}
-          options={[{ value: "", label: "選んでください" }, ...living.map((p) => ({ value: p.id, label: `${p.name || "（未入力）"}（${p.relationLabel ?? ""}）` }))]}
-        />
-      </Field>
+          <Select
+            value={sr.acquirerId ?? ""}
+            // 取得する人を変えたら、前の人についての答え（同居・続けるか・持ち続けるか）と税理士への確認は引き継がない
+            onChange={(v) => v !== (sr.acquirerId ?? "") && set(firstAcquirerChange(sr, v))}
+            options={[{ value: "", label: "選んでください" }, ...living.map((p) => ({ value: p.id, label: `${p.name || "（未入力）"}（${p.relationLabel ?? ""}）` }))]}
+          />
+        </Field>
+      )}
       </div>
       {kind === "rental" ? (
         // 人に貸している土地・部屋（貸付事業用宅地等）：自宅かどうかは聞かない
