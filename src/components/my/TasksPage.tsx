@@ -551,7 +551,7 @@ export function TasksPage() {
           </article>
         )}
       </div>
-      {prompt && <UploadPrompt docs={prompt.docs} open={prompt.open} onOpen={() => setPrompt({ ...prompt, open: true })} onClose={() => setPrompt(null)} onRegistered={(d) => o.setStatus(`doc:${d}`, "done")} />}
+      {prompt && <UploadPrompt docs={prompt.docs} open={prompt.open} onOpen={() => setPrompt({ ...prompt, open: true })} onClose={() => setPrompt(null)} onRegistered={(d, all = true) => o.setStatus(`doc:${d}`, all ? "done" : "open")} />}
     </AppShell>
   );
 }

@@ -56,28 +56,38 @@ describe("あなたへのお知らせの文", () => {
 });
 
 describe("相続コンパスからのお知らせ（SYSTEM_NOTICES）", () => {
-  it("いちばん新しいお知らせは、使い方ガイドで開く場所を示すことと、聞き取りの完了案内", () => {
-    const [guide] = SYSTEM_NOTICES;
-    expect(guide).toMatchObject({ id: "2026-11-06-guide-nav", date: "2026-11-06" });
+  // 並び順は「新しい順に並ぶ」で確かめる。中身は id で引く（お知らせを足しても壊れないように）
+  const byId = (id: string) => SYSTEM_NOTICES.find((n) => n.id === id) ?? ({ id: "", date: "", title: "", body: "" } as (typeof SYSTEM_NOTICES)[number]);
+
+  it("いちばん新しいお知らせは、口座・保険が複数あっても続けて読めること", () => {
+    const [more] = SYSTEM_NOTICES;
+    expect(more).toMatchObject({ id: "2026-11-06-more-docs" });
+    expect(more.body).toContain("ほかにもある");
+    expect(more.body).toContain("これで全部");
+  });
+
+  it("使い方ガイドで開く場所を示すことと、聞き取りの完了案内", () => {
+    const guide = byId("2026-11-06-guide-nav");
+    expect(guide.date).toBe("2026-11-06");
     expect(guide.body).toContain("上のメニュー");
   });
 
-  it("その前は、税額の画面の財産の合計の内訳（小規模宅地等の特例・保険金の非課税）", () => {
-    const [, breakdown] = SYSTEM_NOTICES;
+  it("税額の画面の財産の合計の内訳（小規模宅地等の特例・保険金の非課税）", () => {
+    const breakdown = byId("2026-11-05-breakdown");
     expect(breakdown).toMatchObject({ id: "2026-11-05-breakdown", date: "2026-11-05" });
     expect(breakdown.body).toContain("500万円×法定相続人の数");
     expect(breakdown.body).toContain("小規模宅地等の特例");
   });
 
   it("その前は、止まった理由から直す場所へ飛べること", () => {
-    const [, , gates] = SYSTEM_NOTICES;
+    const gates = byId("2026-11-05-gates");
     expect(gates).toMatchObject({ id: "2026-11-05-gates", date: "2026-11-05" });
     expect(gates.body).toContain("未回答");
     expect(gates.body).toContain("下書き");
   });
 
   it("その前は、還付金・高額療養費の判定、画面をめぐる操作ガイドと右上の「使い方」", () => {
-    const [, , , receivables, tour, help] = SYSTEM_NOTICES;
+    const [receivables, tour, help] = ["2026-11-05-receivables", "2026-11-05-tour", "2026-11-05-help"].map(byId);
     expect(receivables).toMatchObject({ id: "2026-11-05-receivables", date: "2026-11-05" });
     expect(receivables.body).toContain("高額療養費");
     expect(tour).toMatchObject({ id: "2026-11-05-tour", date: "2026-11-05" });
@@ -87,7 +97,7 @@ describe("相続コンパスからのお知らせ（SYSTEM_NOTICES）", () => {
   });
 
   it("その前のお知らせは、書類の撮影、小規模宅地等の特例の割り当て、受け取る人が決まっていない財産、第8の8表・第14表、郵便番号から住所を入れること、画面の文字を減らしたこと", () => {
-    const [, , , , , , scan, small, unsettled, latest, first, second] = SYSTEM_NOTICES;
+    const [scan, small, unsettled, latest, first, second] = ["2026-11-05-scan-bundle", "2026-11-04-small-land", "2026-11-04-unsettled-check", "2026-11-04-forms-8-8-14", "2026-11-04-zip", "2026-11-04-less-text"].map(byId);
     expect(scan).toMatchObject({ id: "2026-11-05-scan-bundle", date: "2026-11-05", title: "書類を撮影して提出用にまとめられます" });
     expect(scan.body).toContain("印鑑証明書は原本");
     expect(small).toMatchObject({ id: "2026-11-04-small-land", date: "2026-11-04", title: "小規模宅地等の特例の割り当てを見直しました" });

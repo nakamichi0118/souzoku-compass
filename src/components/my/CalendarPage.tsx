@@ -148,7 +148,7 @@ export function CalendarPage() {
         </div>
       </div>
       <p className="mt-4 text-xs text-stone-500">期限は亡くなった日から数えています（土日祝・年末年始なら次の平日）。</p>
-      {prompt && <UploadPrompt docs={prompt.docs} open={prompt.open} onOpen={() => setPrompt({ ...prompt, open: true })} onClose={() => setPrompt(null)} onRegistered={(d) => o.setStatus(`doc:${d}`, "done")} />}
+      {prompt && <UploadPrompt docs={prompt.docs} open={prompt.open} onOpen={() => setPrompt({ ...prompt, open: true })} onClose={() => setPrompt(null)} onRegistered={(d, all = true) => o.setStatus(`doc:${d}`, all ? "done" : "open")} />}
     </AppShell>
   );
 }
