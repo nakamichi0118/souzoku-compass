@@ -292,7 +292,11 @@ function Receivables({ review, set, deathDate }: { review: ReviewState; set: (fn
             </p>
           ) : (
             <>
-              <ReceivableFields r={e} onChange={(r) => patch(e.id, { ...r, id: e.id, amount: e.amount })} />
+              <ReceivableFields
+                r={e}
+                // 種類を変えたときは前の種類の「何の分か」「宛名」を残さないよう、行ごと置きかえる
+                onChange={(r) => setRows((xs) => xs.map((x) => (x.id === e.id ? { ...r, id: e.id, amount: x.amount } : x)), e.id)}
+              />
               <Field label="金額（分かれば）">
                 <YenInput value={e.amount} onChange={(v) => patch(e.id, { amount: v })} />
               </Field>
