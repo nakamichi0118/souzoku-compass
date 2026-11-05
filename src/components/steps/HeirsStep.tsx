@@ -11,6 +11,7 @@ import { newId, useCase } from "@/lib/store";
 import { Choice } from "@/components/plan/inputs";
 import { ConsultLink } from "@/components/compass/ConsultLink";
 import { addedAnchor, useShowAdded } from "./useShowAdded";
+import { PhoneField } from "@/components/ui/PhoneField";
 
 const RELATIONS: { value: Relation; label: string; hint: string }[] = [
   { value: "spouse", label: "配偶者", hint: "夫・妻（法律上の婚姻）" },
@@ -275,9 +276,7 @@ function ContactFields({ p, patch }: { p: Person; patch: (id: string, p: Partial
       <div className="sm:col-span-3">
         <AddressField label="住所" address={p.address ?? ""} onAddress={(v) => patch(p.id, { address: v })} zip={p.zip ?? ""} onZip={(v) => patch(p.id, { zip: v })} />
       </div>
-      <Field label="電話番号">
-        <TextInput value={p.phone ?? ""} onChange={(e) => patch(p.id, { phone: e.target.value })} placeholder="03-0000-0000" />
-      </Field>
+      <PhoneField value={p.phone ?? ""} onChange={(v) => patch(p.id, { phone: v })} />
       <Field label="職業">
         <TextInput value={p.occupation ?? ""} onChange={(e) => patch(p.id, { occupation: e.target.value })} />
       </Field>
