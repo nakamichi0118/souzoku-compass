@@ -7,13 +7,13 @@ import { calculate } from "../tax/engine";
 import { receiptOver, receiptShares } from "../receipt";
 import { build09 } from "@/forms/attachments";
 import { removePerson } from "@/components/steps/HeirsStep";
-import type { Asset, Case, Person } from "../types";
+import type { Asset, Case, DeemedAsset, Person } from "../types";
 
 const decedent = { name: "相続 太郎", birthDate: "1950-01-01", deathDate: "2026-03-15", address: "東京都千代田区" };
 const spouse: Person = { id: "s", name: "妻", relation: "spouse" };
 const c1: Person = { id: "c1", name: "長男", relation: "child" };
 const c2: Person = { id: "c2", name: "長女", relation: "child" };
-const ins = (over: Partial<Extract<Asset, { kind: "insurance" }>> = {}): Extract<Asset, { kind: "insurance" }> => ({
+const ins = (over: Partial<DeemedAsset> = {}): DeemedAsset => ({
   id: "ins",
   kind: "insurance",
   label: "みほん生命",
@@ -72,7 +72,7 @@ describe("保険金の受取人を追加", () => {
 
   it("家族を消したら、追加した受取人の行は人だけ外す", () => {
     const c = removePerson(mk([ins({ otherRecipients: [{ personId: "c1", amount: 10_000_000 }] })]), "c1");
-    const a = c.assets.find((x) => x.id === "ins") as Extract<Asset, { kind: "insurance" }>;
+    const a = c.assets.find((x) => x.id === "ins") as DeemedAsset;
     expect(a.otherRecipients).toEqual([{ personId: "", amount: 10_000_000 }]);
   });
 });
