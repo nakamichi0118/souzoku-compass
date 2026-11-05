@@ -103,7 +103,7 @@ export function SubmissionBundle({ formsReady, getForms }: { formsReady: boolean
             <Note tone="stop">{err}</Note>
           </div>
         )}
-        <p className="mt-3 text-xs text-stone-500">撮った書類はこの端末の中にだけ保存しています。</p>
+        <p className="mt-3 text-xs text-stone-500">{store.cloud ? "撮った書類は、ご本人だけが見られるよう保存しています。" : "デモでは、撮った書類はこの端末の中にだけ保存します。"}</p>
       </Card>
     </div>
   );

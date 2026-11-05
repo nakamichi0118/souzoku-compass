@@ -5,7 +5,7 @@
  * ファイルはこの端末の中だけに保存する（src/lib/docFiles.ts）。
  */
 import { Camera, FileText, Upload, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { useDocFiles, type DocFile } from "@/lib/docFiles";
 import { DocCamera } from "./DocCamera";
 
@@ -49,17 +49,15 @@ export function AddButtons({ onFiles, label = "撮影する", multiple = true, d
 
 /** 保存した書類の小さな見本（押すと別のタブで開く） */
 export function FileThumbs({ files, onRemove }: { files: DocFile[]; onRemove?: (f: DocFile) => void }) {
-  const urls = useMemo(() => files.map((f) => URL.createObjectURL(f.blob)), [files]);
-  useEffect(() => () => urls.forEach((u) => URL.revokeObjectURL(u)), [urls]);
   if (!files.length) return null;
   return (
     <ul className="flex flex-wrap gap-2">
-      {files.map((f, i) => (
+      {files.map((f) => (
         <li key={f.id} className="relative">
-          <a href={urls[i]} target="_blank" rel="noreferrer" className="block h-16 w-12 overflow-hidden rounded border border-stone-300 bg-white" title={f.name}>
+          <a href={f.src} target="_blank" rel="noreferrer" className="block h-16 w-12 overflow-hidden rounded border border-stone-300 bg-white" title={f.name}>
             {f.type.startsWith("image/") ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={urls[i]} alt={f.name} className="h-full w-full object-cover" />
+              <img src={f.src} alt={f.name} className="h-full w-full object-cover" />
             ) : (
               <span className="grid h-full place-items-center text-stone-500">
                 <FileText className="h-5 w-5" aria-hidden />
