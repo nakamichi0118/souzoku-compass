@@ -38,7 +38,7 @@ export function SubmissionBundle({ formsReady, getForms }: { formsReady: boolean
       return c.persons.length;
     }
   })();
-  const missing = items.filter((i) => !i.generated && !i.optional && !i.original && !itemReady(i, count, formsReady));
+  const missing = items.filter((i) => !i.generated && !i.optional && !i.original && !i.selfOnly && !itemReady(i, count, formsReady));
   const t = c.filing?.taxOffice?.trim();
   const office = t ? (t.endsWith("税務署") ? t : `${t}税務署`) : "亡くなった方の住所地の税務署";
 
@@ -64,8 +64,8 @@ export function SubmissionBundle({ formsReady, getForms }: { formsReady: boolean
           {items.map((item, i) => {
             const ok = item.original ? o.done.includes("doc:inkan") : itemReady(item, count, formsReady);
             const n = filesFor(item, store.files).length;
-            const state = item.generated ? (formsReady ? "入ります" : "まだ作れません") : item.original ? "原本を同封" : n > 0 ? `${n}枚` : item.optional ? "あれば" : "まだ";
-            const canAdd = !item.generated && !item.original;
+            const state = item.generated ? (formsReady ? "入ります" : "まだ作れません") : item.original ? "原本を同封" : item.selfOnly ? "ご自身で用意" : n > 0 ? `${n}枚` : item.optional ? "あれば" : "まだ";
+            const canAdd = !item.generated && !item.original && !item.selfOnly;
             return (
               <li key={item.id} className={`rounded-lg border ${item.original ? "border-amber-300 bg-amber-50" : ok ? "border-stone-200 bg-stone-50" : "border-stone-200 bg-white"}`}>
                 <button type="button" disabled={!canAdd} onClick={() => setOpen(open === item.id ? null : item.id)} aria-expanded={open === item.id} className="flex w-full items-start gap-3 p-3 text-left">

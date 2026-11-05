@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { currentUser, sameOrigin } from "@/server/auth/http";
 import { getFileDb } from "@/server/files/store";
 import { isDocId } from "@/server/files/limits";
+import { NO_UPLOAD } from "@/domain/filing/submission";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,8 +14,15 @@ const NOT_FOUND = () => NextResponse.json({ error: "書類が見つかりませ�
 export async function GET(_req: Request, { params }: Ctx) {
   const user = await currentUser();
   if (!user) return NextResponse.json({ error: "ログインしてください。" }, { status: 401 });
-  const r = await (await getFileDb()).get(user.id, (await params).id);
+  const db = await getFileDb();
+  const id = (await params).id;
+  const r = await db.get(user.id, id);
   if (!r) return NOT_FOUND();
+  // マイナンバーの書類は預からない（以前に入ったものは渡さずに消す）
+  if (NO_UPLOAD.has(r.meta.docId)) {
+    await db.remove(user.id, id);
+    return NOT_FOUND();
+  }
   return new NextResponse(Buffer.from(r.bytes), {
     headers: {
       "content-type": r.meta.type,

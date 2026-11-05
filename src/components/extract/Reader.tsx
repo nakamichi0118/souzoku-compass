@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { DocCamera } from "@/components/docs/DocCamera";
 import { DupNote, FileThumbs } from "@/components/docs/DocFiles";
-import { guessDocId } from "@/domain/filing/submission";
+import { NO_UPLOAD, NO_UPLOAD_NOTE, guessDocId } from "@/domain/filing/submission";
 import { splitDuplicates, useDocFiles, type Duplicate } from "@/lib/docFiles";
 import { fmt } from "@/components/ui";
 import {
@@ -203,6 +203,7 @@ export function Reader({
   const busy = ex.busy || saving || progress !== null;
   /** 選んだ・撮影した書類を、1枚ずつ順に読む */
   const [dups, setDups] = useState<Duplicate[]>([]);
+  const [refused, setRefused] = useState(false);
   const readAll = async (
     picked: File[],
     sampleName?: string,
@@ -219,6 +220,7 @@ export function Reader({
       files = split.fresh;
       if (!files.length) return;
     } else setDups([]);
+    setRefused(false);
     if (!doRead) {
       if (!docId || !save) return;
       setSaving(true);
@@ -253,9 +255,10 @@ export function Reader({
       }
       setRuns((rs) => [...rs, run]);
       if (save && !sampleName) {
-        const id =
-          docId ?? (res ? guessDocId(res.documentType) : null) ?? "otherDoc";
-        await store.add(id, [f]);
+        const guessed = res ? guessDocId(res.documentType) : null;
+        // マイナンバーの書類と分かったものは、どの欄に入れても保存しない
+        if (guessed && NO_UPLOAD.has(guessed)) setRefused(true);
+        else await store.add(docId ?? guessed ?? "otherDoc", [f]);
       }
     }
     setProgress(null);
@@ -371,6 +374,7 @@ export function Reader({
           )
         }
       />
+      {refused && <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">{NO_UPLOAD_NOTE}</p>}
       {store.err && <p className="mt-2 text-sm text-rose-700">{store.err}</p>}
       {doRead && progress && (
         <ProgressBar

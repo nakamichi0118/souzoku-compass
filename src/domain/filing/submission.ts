@@ -12,6 +12,13 @@ export const EXTRA_DOCS: Record<string, string> = {
   otherDoc: "その他の書類",
 };
 
+/**
+ * 相続コンパスに入れない書類（マイナンバーなど）。預からないので、撮影・アップロード・保存のどれも受け付けない。
+ * 仕分けや読み取りでこの種類と分かった書類も保存しない
+ */
+export const NO_UPLOAD = new Set(["mynumber"]);
+export const NO_UPLOAD_NOTE = "マイナンバーが載った書類は、相続コンパスでは預かりません。保存していません。";
+
 /** 書類の種類の名前（資料集めの書類か、提出用の追加の書類） */
 export const docName = (id: string) => DOCS[id]?.name ?? EXTRA_DOCS[id] ?? "その他の書類";
 
@@ -24,6 +31,8 @@ export interface SubmitItem {
   generated?: "forms";
   /** 原本を出す（印刷したコピーでは足りない） */
   original?: boolean;
+  /** 相続コンパスには入れず、ご自身で用意して重ねる（マイナンバーの写しなど） */
+  selfOnly?: boolean;
   /** 出さなくてもよい（あれば添える） */
   optional?: boolean;
   note?: string;
@@ -65,7 +74,7 @@ export function submissionItems(x: SubmitInput): SubmitItem[] {
           },
           { id: "inkan", label: "相続人全員の印鑑証明書", docIds: ["inkan"], original: true, note: "原本を出します（コピー不可）" },
         ]),
-    { id: "mynumber", label: "マイナンバーの確認書類の写し", docIds: ["mynumber"], note: "カードの表と裏（なければ通知カード＋免許証など）" },
+    { id: "mynumber", label: "マイナンバーの確認書類の写し", docIds: [], selfOnly: true, note: "ご自身で写しを用意して重ねてください（カードの表と裏、なければ通知カード＋免許証など）。相続コンパスには入れません" },
     ...(x.smallLand ? [{ id: "smallLand", label: "小規模宅地等の特例の書類", docIds: ["juminhyoHeir"], note: "住民票の写しなど" }] : []),
     { id: "assets", label: "財産・債務の資料の写し", docIds: [...assets, "otherDoc"], optional: true, note: "残高証明書・評価証明書など" },
   ];
@@ -74,6 +83,7 @@ export function submissionItems(x: SubmitInput): SubmitItem[] {
 /** 欄ごとの「そろった」：作る書類は作れるとき、それ以外は1枚でも入っているとき（あれば添える欄は数えない） */
 export function itemReady(item: SubmitItem, count: (docId: string) => number, formsReady: boolean): boolean {
   if (item.generated) return formsReady;
+  if (item.selfOnly) return true;
   if (item.id === "family") return count("houteiJoho") > 0 || (count("kosekiDecedent") > 0 && count("kosekiHeirs") > 0);
   return item.docIds.some((d) => count(d) > 0);
 }
