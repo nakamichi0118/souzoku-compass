@@ -339,7 +339,7 @@ export function TaxStep() {
             </ul>
             {(roundingTip || supporterTip) && (
               <details className="mt-2 text-xs text-stone-600">
-                <summary className="cursor-pointer py-2 text-teal-800">Tips：一人ひとりの税額</summary>
+                <summary className="tips-summary cursor-pointer py-2 text-teal-800">Tips：一人ひとりの税額</summary>
                 {roundingTip && <p className="mt-2 leading-relaxed">{ROUNDING_TIP}</p>}
                 {supporterTip && <p className="mt-2 leading-relaxed">{SUPPORTER_TIP}</p>}
               </details>

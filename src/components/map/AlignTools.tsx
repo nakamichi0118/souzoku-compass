@@ -128,6 +128,7 @@ export function PointControls({
     <div className="space-y-2">
       <p className="text-xs text-stone-600">
         {what}→地図の順に、同じ場所（交差点の角など）をクリック。離れた2か所以上で正確になります。
+        {what === "路線価図" && pairs.length > 0 && "地図の番号の印はドラッグで直せます（図も一緒に動きます）。"}
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <Button onClick={() => setMode(mode === "idle" ? "sheetPoint" : "idle")} disabled={!sheet} variant={mode === "idle" ? "secondary" : "primary"}>

@@ -632,7 +632,7 @@ function RoadsEditor({ a, m, patch }: { a: LandAsset; m: RosenkaMethod; patch: (
         </span>
       </Note>
       <details className="text-xs text-stone-600">
-        <summary className="cursor-pointer py-2 font-medium text-teal-800">Tips：計算していないことと補正率の入れ方</summary>
+        <summary className="tips-summary cursor-pointer py-2 font-medium text-teal-800">Tips：計算していないことと補正率の入れ方</summary>
         <ul className="mt-2 list-disc space-y-1 pl-5">
           <li>奥行は、その道路から土地の反対側までの距離、間口は、その道路に接している部分の長さです。</li>
           <li>間口が狭い・奥行が長い補正は、正面の道路の間口を入れたときだけします（財産評価基本通達20-4）。</li>
@@ -697,7 +697,7 @@ export function landUsePatch(a: LandAsset, v: LandUse): Partial<LandAsset> {
 function UseTips() {
   return (
     <details className="text-xs text-stone-600 sm:col-span-2">
-      <summary className="cursor-pointer py-2 font-medium text-teal-800">Tips：土地の使い方の選び方</summary>
+      <summary className="tips-summary cursor-pointer py-2 font-medium text-teal-800">Tips：土地の使い方の選び方</summary>
       <ul className="mt-2 list-disc space-y-1 pl-5">
         <li>家族などに無料で貸している土地は、貸していることになりません（固定資産税くらいの額を受け取るだけのときも同じです。使用貸借といいます）。「自分で使っている」を選んでください。</li>
         <li>地代を払わずに（固定資産税くらいの額だけ払って）人の土地を借りて建物を建てているときは、土地を借りている権利は0円なので、この土地は財産に入れません。建物は「家屋」として入れてください。</li>
@@ -734,6 +734,16 @@ function roadLetter(a: LandAsset): LeaseLetter | undefined {
   return leaseLetterOf(notation);
 }
 
+/** 土地の入力の区切り（2列の並びをまたいで、番号つきの見出しを出す） */
+function Part({ n, title }: { n: number; title: string }) {
+  return (
+    <h3 className="mt-3 flex items-center gap-2 border-b-2 border-amber-200 pb-1.5 text-sm font-bold text-stone-900 sm:col-span-2">
+      <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-amber-400 text-[11px] text-white">{n}</span>
+      {title}
+    </h3>
+  );
+}
+
 export function LandEditor({
   living,
   a,
@@ -752,6 +762,7 @@ export function LandEditor({
   const setUse = (v: LandUse) => patch(landUsePatch(a, v));
   return (
     <>
+      <Part n={1} title="場所と使い方" />
       <Field label="所在地番">
         <TextInput value={a.location} onChange={(e) => patch({ location: e.target.value })} />
       </Field>
@@ -783,6 +794,7 @@ export function LandEditor({
           />
         ))}
       <UseTips />
+      <Part n={2} title="評価のしかた" />
       {(a.landUse === "宅地" || a.landUse === "雑種地") && (
         <Field label="この土地に当てはまること">
           <Select value={a.condition ?? ""} onChange={(v) => patch({ condition: (v || undefined) as LandAsset["condition"] })} options={CONDITION_OPTIONS} />
@@ -814,6 +826,7 @@ export function LandEditor({
           地図で評価する
         </Link>
       </div>
+      <Part n={3} title={m.type === "rosenka" ? "道路と路線価" : m.type === "multiplier" ? "固定資産税評価額と倍率" : "評価額"} />
       {m.type === "rosenka" && <RoadsEditor a={a} m={m} patch={patch} />}
       {m.type === "multiplier" && (
         <>
@@ -850,6 +863,7 @@ export function LandEditor({
           </div>
         </>
       )}
+      <Part n={4} title="特例" />
       <SmallResidential living={living} a={a} patch={patch} division={division} />
     </>
   );

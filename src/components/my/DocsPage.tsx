@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronDown } from "lucide-react";
 import { useCase } from "@/lib/store";
 import { DOC_OF, assetHasDoc, assetsMissingDoc } from "@/lib/assetDocs";
 import { AskCompass, useAsk } from "@/components/compass/AskCompass";
@@ -94,6 +95,11 @@ function DocCard({ item, address, open, onOpen, focus }: { item: DocItem; addres
             <p className="mt-0.5 text-xs font-semibold text-orange-700">まだ：{missing.map((a) => a.label || "（名称未入力）").join("、")}</p>
           )}
           {item.used.length > 0 && <p className="mt-0.5 text-xs text-stone-500">{item.used.length === 1 ? `${item.used[0].title}で使う` : `${item.used.length}件の手続きで使う`}</p>}
+        </button>
+        {/* 押すと開くことが分かるよう、右端に開閉の印を出す */}
+        <button type="button" onClick={() => onOpen(!open)} aria-hidden tabIndex={-1} className="-mr-1 flex shrink-0 items-center gap-0.5 rounded-lg px-1.5 py-1 text-xs text-stone-500 hover:bg-stone-100">
+          <span className="hidden sm:inline">{open ? "閉じる" : "詳しく"}</span>
+          <ChevronDown className={`h-5 w-5 transition-transform ${open ? "rotate-180" : ""}`} />
         </button>
       </div>
       {open && (
@@ -235,7 +241,7 @@ export function DocsPage() {
         </section>
       )}
 
-      <section className="mb-5 rounded-xl border border-teal-200 bg-white p-4">
+      <section data-tour="docs-scan" className="mb-5 rounded-xl border border-teal-200 bg-white p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="font-bold text-teal-900">届いた書類を撮影する</h2>
           {o.filing && (

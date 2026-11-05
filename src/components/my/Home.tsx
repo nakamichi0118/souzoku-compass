@@ -59,7 +59,7 @@ export function Home() {
         say={o.next ? "今日はここから始めましょう。" : "すべての手続きが終わりました、おつかれさまでした。"}
       />
       {o.next && (
-        <section className="mb-5 flex flex-wrap items-center gap-4 rounded-2xl border-2 border-brand/40 bg-brand-soft p-5">
+        <section data-tour="home-next" className="mb-5 flex flex-wrap items-center gap-4 rounded-2xl border-2 border-brand/40 bg-brand-soft p-5">
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-brand">次にすること</p>
             <p className="mt-1 text-xl font-bold text-stone-900">

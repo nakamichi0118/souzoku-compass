@@ -64,13 +64,15 @@ export function blankAsset(kind: AssetKind, recipientId = ""): Asset {
 /** 財産の種類ごとに、評価の根拠になる書類（資料集めのチェックと連動） */
 export { DOC_OF, assetHasDoc } from "@/lib/assetDocs";
 
-const GROUPS: { label: string; kinds: AssetKind[] }[] = [
-  { label: "土地・建物", kinds: ["land", "building", "condo"] },
-  { label: "預貯金・現金", kinds: ["deposit", "cash"] },
-  { label: "株式", kinds: ["listedStock", "unlistedStock"] },
-  { label: "保険金・退職金", kinds: ["insurance", "retirement"] },
-  { label: "その他", kinds: ["household", "other"] },
+/** 財産の分類と、分類ごとの色（一覧で種類がひと目で分かるよう、左の線・種類の札・上の集計に使う） */
+const GROUPS: { label: string; kinds: AssetKind[]; bar: string; top: string; chip: string }[] = [
+  { label: "土地・建物", kinds: ["land", "building", "condo"], bar: "border-l-amber-400", top: "border-t-amber-400", chip: "bg-amber-50 text-amber-900" },
+  { label: "預貯金・現金", kinds: ["deposit", "cash"], bar: "border-l-sky-400", top: "border-t-sky-400", chip: "bg-sky-50 text-sky-900" },
+  { label: "株式", kinds: ["listedStock", "unlistedStock"], bar: "border-l-violet-400", top: "border-t-violet-400", chip: "bg-violet-50 text-violet-900" },
+  { label: "保険金・退職金", kinds: ["insurance", "retirement"], bar: "border-l-rose-400", top: "border-t-rose-400", chip: "bg-rose-50 text-rose-900" },
+  { label: "その他", kinds: ["household", "other"], bar: "border-l-stone-400", top: "border-t-stone-400", chip: "bg-stone-100 text-stone-700" },
 ];
+const toneOf = (k: AssetKind) => GROUPS.find((g) => g.kinds.includes(k)) ?? GROUPS[GROUPS.length - 1];
 
 const PLACEHOLDER: Record<AssetKind, string> = {
   deposit: "〇〇銀行 △△支店 普通預金",
@@ -174,7 +176,7 @@ export function AssetsStep() {
           const items = data.assets.filter((a) => g.kinds.includes(a.kind));
           const sum = items.reduce((s, a) => s + (valueOf(a.id)?.valuation.value ?? 0), 0);
           return (
-            <li key={g.label} className="rounded-xl border border-stone-200 bg-white px-3 py-2">
+            <li key={g.label} className={`rounded-xl border border-t-4 border-stone-200 bg-white px-3 py-2 ${g.top}`}>
               <p className="text-xs font-semibold text-stone-500">{g.label}</p>
               <p className="font-bold tabular-nums text-stone-900">{items.length ? `${fmt(sum)}円` : "—"}</p>
               <p className="text-[11px] text-stone-500">{items.length}件</p>
@@ -241,11 +243,11 @@ export function AssetsStep() {
               ref={(el) => {
                 refs.current[a.id] = el;
               }}
-              className={`scroll-mt-40 rounded-xl border bg-white ${open ? "border-sky-400 shadow-sm" : "border-stone-200"}`}
+              className={`scroll-mt-40 rounded-xl border border-l-4 bg-white ${toneOf(a.kind).bar} ${open ? "border-y-sky-400 border-r-sky-400 shadow-md" : "border-y-stone-200 border-r-stone-200"}`}
             >
               <button type="button" onClick={() => toggle(a.id, open ? null : a.id)} aria-expanded={open} className="flex w-full items-center gap-2 px-4 py-3 text-left sm:gap-3">
                 {/* スマートフォンでは種類を絵だけにして、名称に1行を使う */}
-                <span className="flex shrink-0 items-center gap-1.5 rounded bg-stone-100 px-2 py-0.5 text-xs font-medium text-stone-700 sm:w-28">
+                <span className={`flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold sm:w-28 ${toneOf(a.kind).chip}`}>
                   <AssetIcon k={a.kind} className="h-4 w-4 shrink-0" />
                   <span className="sr-only sm:hidden">{kindLabel(a.kind)}</span>
                   <span className="hidden truncate sm:inline">{kindLabel(a.kind)}</span>

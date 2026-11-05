@@ -7,6 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { LogoMark } from "@/components/compass/CompassKun";
 import { centerCurrent } from "@/components/ui/scroll";
+import { GuideTour } from "@/components/my/FirstGuide";
 import { HelpButton } from "./HelpButton";
 import { NoticeBell } from "./Notices";
 import { useOutsideClose } from "./useOutsideClose";
@@ -77,79 +78,83 @@ export function AppHeader() {
 
   const close = () => setMenu(false);
   return (
-    <header className="sticky top-0 z-40 border-b border-sky-100 bg-white/95 backdrop-blur">
-      {/* スマホ・タブレットでは、メニューを横に並べず ▾ の中に入れる（横に送る帯にしない） */}
-      <div className="relative mx-auto flex max-w-7xl items-center gap-3 px-4 py-2">
-        <Link href="/my" className="flex shrink-0 items-center gap-2 text-lg font-bold whitespace-nowrap text-sky-950">
-          <LogoMark size={30} />
-          <span className="lg:hidden xl:inline">相続コンパス</span>
-        </Link>
-        <nav ref={navRef} className="hidden min-w-0 flex-1 gap-1 overflow-x-auto lg:flex" aria-label="メニュー">
-          <NavLinks path={path} left={left} caseHref={caseHref} className="flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 text-sm font-medium" />
-        </nav>
-        <div className="ml-auto flex shrink-0 items-center gap-1 lg:ml-0">
-          <HelpButton />
-          <NoticeBell />
-          <div ref={menuRef} className="relative">
-            <button
-              type="button"
-              onClick={() => setMenu((m) => !m)}
-              aria-expanded={menu}
-              className="flex min-h-9 items-center gap-1 rounded-full px-2 py-1.5 text-sm text-stone-700 hover:bg-stone-100"
-            >
-              <Menu className="h-5 w-5 text-brand lg:hidden" aria-hidden />
-              <span className="sr-only md:hidden">メニュー</span>
-              <UserRound className="hidden h-5 w-5 text-brand lg:block" aria-hidden /> <span className="hidden md:inline">{o.account?.name ?? ""}さん</span> ▾
-            </button>
-            {menu && (
-              <div className="absolute right-0 z-50 mt-1 max-h-[calc(100dvh-4rem)] w-56 overflow-y-auto rounded-xl border border-stone-200 bg-white p-1 text-sm shadow-lg">
-                <div className="mb-1 border-b border-stone-100 pb-1 lg:hidden">
-                  <NavLinks path={path} left={left} caseHref={caseHref} onPick={close} className="flex items-center gap-2 rounded-lg px-3 py-2 font-medium" />
-                </div>
-                <Link href="/my/hearing" onClick={close} className="block rounded-lg px-3 py-2 hover:bg-stone-50">
-                  聞き取りを直す
-                </Link>
-                <Link href="/my/consult" onClick={close} className="block rounded-lg px-3 py-2 hover:bg-stone-50">
-                  税理士への相談
-                </Link>
-                {isStaffEmail(o.account?.email) && (
-                  <Link href="/firm" onClick={close} className="block rounded-lg px-3 py-2 hover:bg-stone-50">
-                    事務所の画面
+    <>
+      <header className="sticky top-0 z-40 border-b border-sky-100 bg-white/95 backdrop-blur">
+        {/* スマホ・タブレットでは、メニューを横に並べず ▾ の中に入れる（横に送る帯にしない） */}
+        <div className="relative mx-auto flex max-w-7xl items-center gap-3 px-4 py-2">
+          <Link href="/my" className="flex shrink-0 items-center gap-2 text-lg font-bold whitespace-nowrap text-sky-950">
+            <LogoMark size={30} />
+            <span className="lg:hidden xl:inline">相続コンパス</span>
+          </Link>
+          <nav ref={navRef} className="hidden min-w-0 flex-1 gap-1 overflow-x-auto lg:flex" aria-label="メニュー">
+            <NavLinks path={path} left={left} caseHref={caseHref} className="flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 text-sm font-medium" />
+          </nav>
+          <div className="ml-auto flex shrink-0 items-center gap-1 lg:ml-0">
+            <HelpButton />
+            <NoticeBell />
+            <div ref={menuRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setMenu((m) => !m)}
+                aria-expanded={menu}
+                className="flex min-h-9 items-center gap-1 rounded-full px-2 py-1.5 text-sm text-stone-700 hover:bg-stone-100"
+              >
+                <Menu className="h-5 w-5 text-brand lg:hidden" aria-hidden />
+                <span className="sr-only md:hidden">メニュー</span>
+                <UserRound className="hidden h-5 w-5 text-brand lg:block" aria-hidden /> <span className="hidden md:inline">{o.account?.name ?? ""}さん</span> ▾
+              </button>
+              {menu && (
+                <div className="absolute right-0 z-50 mt-1 max-h-[calc(100dvh-4rem)] w-56 overflow-y-auto rounded-xl border border-stone-200 bg-white p-1 text-sm shadow-lg">
+                  <div className="mb-1 border-b border-stone-100 pb-1 lg:hidden">
+                    <NavLinks path={path} left={left} caseHref={caseHref} onPick={close} className="flex items-center gap-2 rounded-lg px-3 py-2 font-medium" />
+                  </div>
+                  <Link href="/my/hearing" onClick={close} className="block rounded-lg px-3 py-2 hover:bg-stone-50">
+                    聞き取りを直す
                   </Link>
-                )}
-                <Link href="/" onClick={close} className="block rounded-lg px-3 py-2 hover:bg-stone-50">
-                  トップページ
-                </Link>
-                <button
-                  type="button"
-                  className="block w-full rounded-lg px-3 py-2 text-left text-stone-600 hover:bg-stone-50"
-                  onClick={() => o.signOut()}
-                >
-                  ログアウト
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-      {o.valid && o.heard && (
-        <div className="border-t border-sky-50 bg-sky-50/60">
-          {/* スマホでは1行に収める（名前が長いときは省略する） */}
-          <div className="mx-auto flex max-w-7xl items-center gap-x-3 gap-y-1 px-4 py-1.5 text-sm sm:flex-wrap sm:gap-x-4">
-            <span className="min-w-0 truncate font-semibold text-stone-800">{o.iv.decedentName ? `${o.iv.decedentName}さんの相続` : "あなたの相続"}</span>
-            <div className="ml-auto flex shrink-0 items-center gap-2">
-              <span className="whitespace-nowrap text-stone-600">全体の進捗</span>
-              <span className="h-2 w-14 overflow-hidden rounded-full bg-white sm:w-48">
-                <span className="block h-full rounded-full bg-emerald-500" style={{ width: `${o.pct}%` }} />
-              </span>
-              <span className="whitespace-nowrap font-bold tabular-nums text-stone-800">
-                {o.pct}%<span className="ml-1 hidden text-xs font-normal text-stone-500 sm:inline">（{o.finished} / {o.total} 件）</span>
-              </span>
+                  <Link href="/my/consult" onClick={close} className="block rounded-lg px-3 py-2 hover:bg-stone-50">
+                    税理士への相談
+                  </Link>
+                  {isStaffEmail(o.account?.email) && (
+                    <Link href="/firm" onClick={close} className="block rounded-lg px-3 py-2 hover:bg-stone-50">
+                      事務所の画面
+                    </Link>
+                  )}
+                  <Link href="/" onClick={close} className="block rounded-lg px-3 py-2 hover:bg-stone-50">
+                    トップページ
+                  </Link>
+                  <button
+                    type="button"
+                    className="block w-full rounded-lg px-3 py-2 text-left text-stone-600 hover:bg-stone-50"
+                    onClick={() => o.signOut()}
+                  >
+                    ログアウト
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
-      )}
-    </header>
+        {o.valid && o.heard && (
+          <div className="border-t border-sky-50 bg-sky-50/60">
+            {/* スマホでは1行に収める（名前が長いときは省略する） */}
+            <div className="mx-auto flex max-w-7xl items-center gap-x-3 gap-y-1 px-4 py-1.5 text-sm sm:flex-wrap sm:gap-x-4">
+              <span className="min-w-0 truncate font-semibold text-stone-800">{o.iv.decedentName ? `${o.iv.decedentName}さんの相続` : "あなたの相続"}</span>
+              <div className="ml-auto flex shrink-0 items-center gap-2">
+                <span className="whitespace-nowrap text-stone-600">全体の進捗</span>
+                <span className="h-2 w-14 overflow-hidden rounded-full bg-white sm:w-48">
+                  <span className="block h-full rounded-full bg-emerald-500" style={{ width: `${o.pct}%` }} />
+                </span>
+                <span className="whitespace-nowrap font-bold tabular-nums text-stone-800">
+                  {o.pct}%<span className="ml-1 hidden text-xs font-normal text-stone-500 sm:inline">（{o.finished} / {o.total} 件）</span>
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+      </header>
+      {/* 操作ガイド（案内中なら、その番の画面に移って説明を重ねる）。ヘッダーのぼかしの外に置く */}
+      <GuideTour />
+    </>
   );
 }
 

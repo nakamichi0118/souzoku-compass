@@ -193,11 +193,20 @@ export function TasksPage() {
     for (const t of list) m.set(officeGroup(t), [...(m.get(officeGroup(t)) ?? []), t]);
     return [...m.entries()].sort((a, b) => OFFICE_ORDER.indexOf(a[0]) - OFFICE_ORDER.indexOf(b[0]));
   }, [list]);
-  // チェックを付けたら、残っている手続きが見えるようにリストを先頭へ戻す
-  const [bump, setBump] = useState(0);
-  useEffect(() => {
-    if (bump) listRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-  }, [bump]);
+  // 分類ごとの進み具合（済んだ・不要 / 全部）。リボンに「1/10」のように出す
+  const counts = useMemo(() => {
+    const m = new Map<string, { done: number; all: number }>();
+    for (const t of o.tasks) {
+      if (!optional && t.optional) continue;
+      for (const k of ["すべて", t.category]) {
+        const c = m.get(k) ?? { done: 0, all: 0 };
+        c.all++;
+        if (closed(t.id)) c.done++;
+        m.set(k, c);
+      }
+    }
+    return m;
+  }, [o.tasks, closed, optional]);
   const urlId = params.get("id");
   // 選ばずに開いて済ませた手続き。URLが変わるまでのあいだも詳細に出したままにする（keepShown）
   const [pinned, setPinned] = useState<string | null>(null);
@@ -240,7 +249,6 @@ export function TasksPage() {
       router.replace(`/my/tasks?id=${id}`, { scroll: false });
     }
     o.setStatus(id, v);
-    if (v !== "open") setBump((n) => n + 1);
     const task = o.tasks.find((x) => x.id === id);
     const docs = v === "done" && task ? docsToUpload(task, o.done) : [];
     setPrompt(docs.length ? { taskId: id, docs, open: false } : null);
@@ -323,6 +331,11 @@ export function TasksPage() {
         {CATS.map((c) => (
           <button key={c} type="button" onClick={() => setCat(c)} className={`rounded-full px-3 py-1 text-sm ${cat === c ? "bg-sky-700 font-semibold text-white" : "bg-white text-stone-700 ring-1 ring-stone-200 hover:bg-sky-50"}`}>
             {c}
+            {counts.get(c) && (
+              <span className={`ml-1.5 text-xs tabular-nums ${cat === c ? "text-sky-100" : "text-stone-500"}`} aria-label={`${counts.get(c)!.all}件中${counts.get(c)!.done}件済み`}>
+                {counts.get(c)!.done}/{counts.get(c)!.all}
+              </span>
+            )}
           </button>
         ))}
         <span className="mx-1 h-5 w-px bg-stone-300" />
@@ -344,7 +357,7 @@ export function TasksPage() {
       </div>
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:h-[calc(100vh-13rem)] lg:min-h-[32rem] lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-        <div className="flex min-h-0 flex-col rounded-2xl border border-sky-100 bg-sky-50/40 p-2">
+        <div data-tour="tasks-list" className="flex min-h-0 flex-col rounded-2xl border border-sky-100 bg-sky-50/40 p-2">
           <div className="mb-2 flex gap-1 rounded-full bg-white p-1 text-sm ring-1 ring-stone-200">
             {(
               [

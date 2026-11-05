@@ -747,6 +747,7 @@ function LandWizard() {
           property={property}
           pairs={effectivePairs}
           pins={step === 3 ? pairs : []}
+          onPinMove={step === 3 ? setPairs : undefined}
           frame={step === 3 && alignOpen && frame ? frameCorners(frame, paper) : null}
           onFrameMove={(c) => setFrame((f) => (f ? { ...f, center: c } : f))}
           pendingImg={step === 3 && pointMode === "mapPoint" ? pending : step === 2 && kozuMode === "mapPoint" ? kozuPending : null}

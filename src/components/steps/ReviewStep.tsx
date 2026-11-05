@@ -68,7 +68,7 @@ export function ReviewStep() {
 
       {GROUPS.map((g) => (
         <Card key={g.id} title={g.title}>
-          <ul className="divide-y divide-stone-100">
+          <ul className="space-y-2">
             {TOPICS.filter((t) => t.group === g.id).map((t) => (
               <TopicRow key={t.id} t={t} review={review} set={set} />
             ))}
@@ -105,7 +105,8 @@ function TopicRow({ t, review, set }: { t: Topic; review: ReviewState; set: (fn:
   };
 
   return (
-    <li className="py-3" data-q={t.id}>
+    // 1問ずつ枠で囲んで区切る（答えたものは地の色を少し落とす）
+    <li className={`rounded-xl border px-3 py-3 sm:px-4 ${answer ? "border-stone-200 bg-stone-50/70" : "border-stone-300 bg-white shadow-sm"}`} data-q={t.id}>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <p className="min-w-0 text-sm text-stone-800">
           {st.kind === "clear" && <CheckIcon className="mr-1 inline h-4 w-4 text-stone-400" aria-label="確認済み" />}
@@ -127,7 +128,7 @@ function TopicRow({ t, review, set }: { t: Topic; review: ReviewState; set: (fn:
       </div>
       {t.tip && (
         <details className="mt-1 text-xs text-stone-600">
-          <summary className="cursor-pointer py-1 text-teal-800">Tips</summary>
+          <summary className="tips-summary cursor-pointer py-1 text-teal-800">Tips</summary>
           <p className="leading-relaxed">{t.tip}</p>
         </details>
       )}

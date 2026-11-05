@@ -16,13 +16,16 @@ export function FirmBadge({ size = "md" }: { size?: "sm" | "md" }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
       {CONSULT_FIRM.logo ? (
-        <img src={CONSULT_FIRM.logo} alt={CONSULT_FIRM.name} style={{ height: h }} className="w-auto" />
+        // ロゴに事務所の名前が入っているので、名前は重ねて出さない
+        <img src={CONSULT_FIRM.logo} alt={CONSULT_FIRM.name} style={{ height: h }} className="w-auto max-w-full" />
       ) : (
-        <span className="grid shrink-0 place-items-center rounded-lg bg-sky-900 font-bold text-white" style={{ height: h, width: h, fontSize: h * 0.42 }} aria-hidden>
-          IU
-        </span>
+        <>
+          <span className="grid shrink-0 place-items-center rounded-lg bg-sky-900 font-bold text-white" style={{ height: h, width: h, fontSize: h * 0.42 }} aria-hidden>
+            IU
+          </span>
+          <span className="font-bold text-stone-900">{CONSULT_FIRM.name}</span>
+        </>
       )}
-      <span className="font-bold text-stone-900">{CONSULT_FIRM.name}</span>
       {CONSULT_FIRM.url && (
         <a href={CONSULT_FIRM.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 text-xs font-semibold text-teal-800 underline">
           公式ホームページ
