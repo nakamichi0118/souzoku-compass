@@ -104,7 +104,7 @@ describe("道路の評価に間口狭小・奥行長大の補正を掛ける", (
     const v = valueLand(a);
     expect(v.unitPrice).toBe(290_883);
     expect(v.value).toBe(40_723_620); // 290,883 × 140
-    // 税理士に確認した補正率はこのあとに掛ける：290,883 × 0.9 = 261,794.7 → 261,794円 × 140㎡
+    // 修正した補正率はこのあとに掛ける：290,883 × 0.9 = 261,794.7 → 261,794円 × 140㎡
     const w = valueLand({ ...a, method: { ...a.method, otherCorrection: 0.9 } as LandAsset["method"] });
     expect(w.unitPrice).toBe(261_794);
     expect(w.value).toBe(36_651_160);

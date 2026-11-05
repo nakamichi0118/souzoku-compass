@@ -124,7 +124,7 @@ describe("土地の評価", () => {
     expect(valueLand(land({ type: "rosenka", routePrice: 0, depthCorrection: 1, roads: [{ edge: 0, price: 291_000, depth: 15 }] }, 100.07)).value).toBe(29_120_370);
   });
 
-  it("税理士に確認した補正率が空欄・0のときは補正なし（0円にしない）", () => {
+  it("修正した補正率が空欄・0のときは補正なし（0円にしない）", () => {
     for (const otherCorrection of [undefined, 0, -1, Number.NaN]) {
       expect(valueLand(land({ type: "rosenka", routePrice: 300_000, depthCorrection: 0.97, otherCorrection })).value).toBe(48_160_500);
       expect(valueLand(land({ type: "rosenka", routePrice: 0, depthCorrection: 1, otherCorrection, roads: [{ edge: 0, price: 291_000, depth: 15 }] })).value).toBe(48_160_500);

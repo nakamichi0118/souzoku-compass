@@ -23,6 +23,8 @@ export interface Interview {
   decedentName: string;
   /** 亡くなった方の最後の住所（提出先の案内に使う） */
   address: string;
+  /** 亡くなった方の最後の住所の郵便番号（相続税申告の「亡くなった方」にも引き継ぐ） */
+  zip: string;
   /** あなたから見た亡くなった方（例：父・母・夫・妻）。窓口への連絡の文例に使う */
   myRelation: string;
   // 家族
@@ -67,6 +69,7 @@ export const blankInterview = (): Interview => ({
   stage: "",
   decedentName: "",
   address: "",
+  zip: "",
   myRelation: "",
   spouse: false,
   children: 0,

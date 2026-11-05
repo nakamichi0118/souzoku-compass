@@ -1,6 +1,6 @@
 /**
  * レビューで見つかった評価の問題の修正（不整形地と間口狭小・奥行長大、正面路線の同額、賃貸割合の案内、
- * 税理士に確認した補正率 1、評価方法ごとの案内、配偶者居住権、貸家建付借地権、貸している部分の評価額 など）。
+ * 修正した補正率 1、評価方法ごとの案内、配偶者居住権、貸家建付借地権、貸している部分の評価額 など）。
  * 数字はすべて手で計算したもの。
  */
 import { describe, expect, it } from "vitest";
@@ -163,7 +163,7 @@ describe("形がいびつ・セットバックで地積規模の大きな宅地�
     expect(v.needsConsultation).toContain("形がいびつ");
     expect(v.needsConsultation).toContain("地積規模の大きな宅地");
     expect(v.needsConsultation).toContain("規模格差補正率");
-    expect(v.needsConsultation).toContain("税理士に確認した補正率");
+    expect(v.needsConsultation).toContain("補正率を修正");
     const s = valueLand(big({ condition: "setback", method: { type: "rosenka", routePrice: 200_000, depthCorrection: 1 } })).needsConsultation;
     expect(s).toContain("セットバック");
     expect(s).toContain("規模格差補正率");
@@ -173,7 +173,7 @@ describe("形がいびつ・セットバックで地積規模の大きな宅地�
     expect(v.needsConsultation).toContain("セットバック");
     expect(v.needsConsultation).toContain("地積規模の大きな宅地");
     expect(v.needsConsultation).toContain("評価額を直接入力");
-    expect(v.needsConsultation).not.toContain("「税理士に確認した補正率」");
+    expect(v.needsConsultation).not.toContain("「補正率を修正」");
   });
   it("広くなければ、地積規模の大きな宅地のことは書かない", () => {
     const v = valueLand(land({ condition: "irregular", method: { type: "rosenka", routePrice: 200_000, depthCorrection: 1 } }));
@@ -190,19 +190,19 @@ describe("形がいびつ・セットバックで地積規模の大きな宅地�
 });
 
 describe("税理士に確認した値の入れ方は評価方法で変える", () => {
-  it("路線価方式は「税理士に確認した補正率」、倍率方式・直接入力は評価額の直接入力", () => {
+  it("路線価方式は「補正率を修正」、倍率方式・直接入力は評価額の直接入力", () => {
     for (const c of ["irregular", "setback"] as const) {
       expect(conditionMessage(c, "rosenka")).toContain(ADVISOR_HINT_RATE);
       for (const m of ["multiplier", "manual"] as const) {
         // 倍率方式の宅地で形がいびつなときは補正しないので、入れ方の案内はしない（review3 valuation-2）
         const landUse = c === "irregular" && m === "multiplier" ? ("雑種地" as const) : undefined;
         expect(conditionMessage(c, m, { landUse })).toContain("評価額を直接入力");
-        expect(conditionMessage(c, m, { landUse })).not.toContain("「税理士に確認した補正率」");
+        expect(conditionMessage(c, m, { landUse })).not.toContain("「補正率を修正」");
       }
     }
     const v = valueLand(land({ condition: "setback", method: { type: "multiplier", fixedAssetValue: 10_000_000, multiplier: 1.1 } }));
     expect(v.needsConsultation).toContain("評価額を直接入力");
-    expect(v.needsConsultation).not.toContain("「税理士に確認した補正率」");
+    expect(v.needsConsultation).not.toContain("「補正率を修正」");
   });
   it("補正率の案内は、減額なしなら 1 を入れることも書く", () => {
     expect(ADVISOR_HINT_RATE).toContain("1 を入れて");

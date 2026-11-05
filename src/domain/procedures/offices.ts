@@ -35,3 +35,10 @@ export function areaOf(address: string): string {
   const m = a.match(/^(.*?)(?=[0-9０-９]|[一二三四五六七八九十]+丁目|[一二三四五六七八九十]+番)/);
   return (m ? m[1] : a).replace(/[ー－-]$/, "");
 }
+
+/** 税務署の正式名称から、申告書の「〇〇税務署長」の〇〇の部分だけを取り出す（例：東京国税局 麹町税務署 → 麹町） */
+export function taxOfficeShortName(name: string): string {
+  const s = name.replace(/\s/g, "").replace(/^[^税]*国税局/, "");
+  const m = s.match(/^(.+?)税務署/);
+  return m ? m[1] : "";
+}

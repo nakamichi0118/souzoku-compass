@@ -87,6 +87,8 @@ export interface Decedent {
   birthDate: ISODate;
   deathDate: ISODate;
   address: string;
+  /** 最後の住所の郵便番号 */
+  zip?: string;
   occupation?: string;
   /** 亡くなった方が、亡くなる前10年以内に相続で財産を受け取り相続税を納めていた（相次相続控除の対象）。"unknown"＝分からない（控除は見込まず、確かめ方を案内する） */
   priorInheritanceTax?: boolean | "unknown";
@@ -178,6 +180,16 @@ export interface RosenkaSheet {
   notation?: string;
 }
 
+/** 地図で評価している途中の内容 */
+export interface MapDraft {
+  step: number;
+  route?: "rosenka" | "ratio";
+  shape?: [number, number][];
+  edgeOn?: boolean[];
+  district?: string;
+  sheet?: Omit<RosenkaSheet, "notation">;
+}
+
 /** 相続登記の申請書に書く事項（登記事項証明書・固定資産税の課税明細書から写す） */
 export interface RegistryInfo {
   /** 固定資産評価額（登録免許税の課税標準）。マンションは区分建物の評価額 */
@@ -212,6 +224,11 @@ export interface LandAsset extends AssetBase {
   geo?: { lat: number; lng: number };
   /** 地図に重ねた路線価図（基準点は画像の幅・高さを1とした座標と緯度経度の組） */
   rosenkaSheet?: RosenkaSheet;
+  /**
+   * 地図で評価している途中の内容（評価額には使わない）。開き直したら、このステップから続ける。
+   * 評価を反映したら消す
+   */
+  mapDraft?: MapDraft;
   /** 土地の使い方（評価が変わる）。未設定は "self"（自分で使っている＝自用地） */
   use?: LandUse;
   /** 貸家建付地・貸家建付借地権の賃貸割合（0より大きく1以下。未設定は1＝全部貸している） */
@@ -414,7 +431,8 @@ export interface Case {
   /** 代償金（代償分割） */
   compensation?: Compensation[];
   /** 申告書の提出先税務署・提出日 */
-  filing?: { taxOffice: string; submitDate?: ISODate };
+  /** taxOfficeFrom：税務署を住所から自動で入れたときの、その住所（番地より前）。住所が変わったら調べ直す */
+  filing?: { taxOffice: string; taxOfficeFrom?: string; submitDate?: ISODate };
   /** 相続税申告のステップのうち「次へ」で完了にしたもの（進捗表示用。計算には使わない） */
   /** completed：「次へ」で完了にしたステップ。formsKey：申告書PDFを作ったときの入力の目印（src/lib/progress.ts formsKey） */
   progress?: { completed: string[]; formsKey?: string };

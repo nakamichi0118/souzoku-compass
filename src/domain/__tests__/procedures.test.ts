@@ -5,7 +5,7 @@ import { VACANT_HOME_LAST_SALE, blueFilerDue, blueReturnDue, buildTasks, newBusi
 import { googleEventUrl, icsStamp, toICS } from "../procedures/calendar";
 import { decodeFeed, decodeInterview, encodeInterview } from "../procedures/share";
 import { DOCS } from "../procedures/documents";
-import { areaOf, cityOf, isTokyoWard } from "../procedures/offices";
+import { areaOf, cityOf, isTokyoWard, taxOfficeShortName } from "../procedures/offices";
 
 const iv = (p: Partial<Interview>): Interview => ({ ...blankInterview(), deathDate: "2026-01-06", ...p });
 
@@ -314,5 +314,14 @@ describe("年金の受給停止（亡くなった方が受けていた年金の�
   });
   it("分からないときは、確かめ方を案内する", () => {
     expect(stop("unknown")?.what).toContain("年金事務所に問い合わせ");
+  });
+});
+
+describe("提出先の税務署の名前", () => {
+  it("正式名称から、申告書に書く部分だけを取り出す", () => {
+    expect(taxOfficeShortName("麹町税務署")).toBe("麹町");
+    expect(taxOfficeShortName("東京国税局 麹町税務署")).toBe("麹町");
+    expect(taxOfficeShortName("博多税務署（福岡国税局）")).toBe("博多");
+    expect(taxOfficeShortName("福岡市役所")).toBe("");
   });
 });
