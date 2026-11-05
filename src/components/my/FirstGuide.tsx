@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { CompassAvatar } from "@/components/compass/CompassKun";
 import { kvGet, kvSet, PREFIX } from "@/lib/cloud";
 
@@ -13,6 +13,8 @@ export const OPEN_GUIDE = "souzoku-compass:open-guide";
 const TOUR_KEY = `${PREFIX}tour-step`;
 /** 「あとで」を押した（このタブを閉じるまで、ホームで案内を出さない） */
 const LATER_KEY = `${PREFIX}guide-later`;
+/** 案内の画面に移ろうとした回数（聞き取り前などで戻されるとき、行き来し続けないため） */
+const PUSH_KEY = `${PREFIX}tour-push`;
 
 /**
  * 操作ガイドの順番。実際の画面に移り、その画面の大事なところ（data-tour の印）を明るくして説明する。
@@ -47,6 +49,7 @@ const TOUR_EVENT = "souzoku-compass:tour";
 
 /** ガイドを最初から始める（ヘルプ・使い方のボタンから） */
 export function startTour() {
+  write(PUSH_KEY, null);
   write(TOUR_KEY, "0");
   window.dispatchEvent(new Event(TOUR_EVENT));
 }
@@ -134,18 +137,21 @@ export function GuideTour() {
   const s = step == null ? null : TOUR[step];
   const here = !!s && path === s.href;
   // その番の画面にいなければ移る（聞き取りがまだで別の画面に戻されるときなどは、何度も移ろうとせずにやめる）
-  const pushes = useRef(0);
+  // 何度移ろうとしたかは、画面が作り直されても数え続ける（ヘッダーごとガイドも作り直されるため）
   useEffect(() => {
     if (!s) return;
     if (here) {
-      pushes.current = 0;
+      write(PUSH_KEY, null);
       return;
     }
-    if (pushes.current++ >= 3) {
+    const n = Number(read(PUSH_KEY) ?? 0);
+    if (n >= 3) {
+      write(PUSH_KEY, null);
       write(TOUR_KEY, null);
       setStep(null);
       return;
     }
+    write(PUSH_KEY, String(n + 1));
     router.push(s.href);
   }, [s, here, router]);
 

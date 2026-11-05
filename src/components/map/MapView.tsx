@@ -200,6 +200,8 @@ export default function MapView({ center, property, pairs, pins, frame, onFrameM
   edgeRef.current = onEdgeToggle;
   /** 重ねている路線価図（枠を動かしている間、画像も一緒に動かすため） */
   const sheetImg = useRef<{ img: HTMLImageElement; matrix: (pairs?: GeoPair[]) => string } | null>(null);
+  const pinsRef = useRef(pins);
+  pinsRef.current = pins;
   const pinMoveRef = useRef(onPinMove);
   pinMoveRef.current = onPinMove;
   const frameMoveRef = useRef(onFrameMove);
@@ -318,7 +320,8 @@ export default function MapView({ center, property, pairs, pins, frame, onFrameM
       const dLat = ll.lat - c[0];
       const dLng = ll.lng - c[1];
       poly.setLatLngs(frame.map((p) => [p[0] + dLat, p[1] + dLng] as [number, number]));
-      const s = sheetImg.current;
+      // 基準点（番号の印）で合わせているときは、重ねた図は基準点で決まるので動かさない
+      const s = (pinsRef.current?.length ?? 0) >= 2 ? null : sheetImg.current;
       if (s) {
         const a = map.latLngToLayerPoint(c);
         const b = map.latLngToLayerPoint(ll);
