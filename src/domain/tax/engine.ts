@@ -335,13 +335,21 @@ function allocateExempt(limit: number, receipts: Map<string, number>, eligible: 
   const out = new Map<string, number>();
   let total = 0;
   for (const [id, v] of receipts) if (eligible.has(id)) total += v;
-  for (const [id, v] of receipts) {
-    if (!eligible.has(id) || total === 0) {
-      out.set(id, 0);
-      continue;
-    }
-    out.set(id, total <= limit ? v : Number((BigInt(limit) * BigInt(v)) / BigInt(total)));
+  for (const [id] of receipts) out.set(id, 0);
+  if (total === 0) return out;
+  if (total <= limit) {
+    for (const [id, v] of receipts) if (eligible.has(id)) out.set(id, v);
+    return out;
   }
+  // 限度額 × その人の受取額 / 相続人全員の受取額。1円未満で合計が限度額に届かない分は、
+  // 切り捨てた端数の大きい人から1円ずつ足し、非課税の合計をちょうど限度額にする（500万円×人数がそのまま引かれる）
+  const ids = [...receipts.keys()].filter((id) => eligible.has(id) && (receipts.get(id) ?? 0) > 0);
+  const scaled = apportionScaledTo(
+    ids.map((id) => receipts.get(id) ?? 0),
+    BigInt(limit),
+    ids,
+  );
+  ids.forEach((id, i) => out.set(id, scaled[i]));
   return out;
 }
 
@@ -355,9 +363,13 @@ export function apportionRatios(taxables: number[], digits = 2): number[] {
  * ids を渡せばそのIDの順（家族の一覧の順によらない）、渡さなければ並んだ順に1ずつ足す
  */
 export function apportionScaled(taxables: number[], digits: number, ids?: string[]): number[] {
+  return apportionScaledTo(taxables, 10n ** BigInt(digits), ids);
+}
+
+/** taxables の割合で scale を整数に分ける（最大剰余法。合計はちょうど scale） */
+function apportionScaledTo(taxables: number[], scale: bigint, ids?: string[]): number[] {
   const total = taxables.reduce((a, b) => a + BigInt(b), 0n);
   if (total === 0n) return taxables.map(() => 0);
-  const scale = 10n ** BigInt(digits);
   const floored = taxables.map((t) => (BigInt(t) * scale) / total);
   const rems = taxables.map((t, i) => ({ i, rem: BigInt(t) * scale - floored[i] * total }));
   let rest = scale - floored.reduce((a, b) => a + b, 0n);
