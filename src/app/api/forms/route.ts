@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     if (!consent?.terms || !consent.responsibility) {
       return NextResponse.json({ error: "利用規約への同意と、申告内容の責任についての確認にチェックを入れてください。" }, { status: 400 });
     }
-    const pdf = await renderForms(buildFilingPages(c, r), { draft: draftReason(c.review) });
+    const pdf = await renderForms(buildFilingPages(c, r), { draft: draftReason(c.review, c.decedent.deathDate) });
     return new NextResponse(Buffer.from(pdf), {
       headers: {
         "content-type": "application/pdf",

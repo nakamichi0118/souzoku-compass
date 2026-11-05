@@ -66,7 +66,7 @@ export function consultPoints(c: Case, r: TaxResult | null): string[] {
     if (!p.predeceased && p.relation === "adoptedChild" && p.grandchildAdopted && p.alsoSubstituteHeir)
       out.push(`${p.name || "養子"}さんは孫を養子にした人で、先に亡くなった子の代わりに相続する人（代襲相続人）でもある（二重の資格）。`);
   }
-  out.push(...reviewConsultLines(c.review));
+  out.push(...reviewConsultLines(c.review, c.decedent.deathDate));
   return out;
 }
 

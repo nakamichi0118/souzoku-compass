@@ -6,6 +6,8 @@
  * - 相談に回すのは、ここに書いた論点・条件に当てはまるときだけ（Claude が自分で相談を増やすことはない）。
  */
 
+import { type Receivable, judgeReceivable, receivableType } from "./receivables";
+
 export type TopicId =
   | "company"
   | "esop"
@@ -38,6 +40,16 @@ export interface AddTemplate {
   kind: "cash" | "other" | "listedStock" | "deposit";
   label: string;
   pending: string[];
+  /** 金額が分かっているとき */
+  amount?: number;
+  /** 亡くなったあとに受け取るお金の種類と日付（財産の画面でも判定を続ける） */
+  receivable?: Receivable;
+}
+
+/** 亡くなったあとに受け取るお金の1件（申告前の確認で入れる） */
+export interface ReceivableEntry extends Receivable {
+  id: string;
+  amount?: number;
 }
 
 export interface Topic {
@@ -56,6 +68,8 @@ export interface Topic {
   talk?: { focus: string; outcomes: TalkOutcome[]; consultReason: string };
   /** 「ある」のとき：亡くなる前後の引き出しの計算 */
   withdrawal?: true;
+  /** 「ある」のとき：受け取るお金を1件ずつ、種類と日付で相続財産かを決める */
+  receivables?: true;
 }
 
 export const TOPICS: Topic[] = [
@@ -139,9 +153,9 @@ export const TOPICS: Topic[] = [
   {
     id: "receivables",
     group: "assets",
-    question: "亡くなったあとに受け取るお金がある（家賃・給与・還付金など）",
-    tip: "配当・税金の還付・高額療養費なども入ります。まだ受け取っていない年金（未支給年金）は、受け取る家族のお金なので入れません。",
-    add: { kind: "other", label: "未収金（家賃・配当・還付金など）", pending: ["受け取る金額"] },
+    question: "亡くなったあとに受け取るお金がある（還付金・高額療養費・家賃・給与など）",
+    tip: "市区町村から届く「還付」「高額療養費」「高額介護サービス費」の通知、準確定申告の還付、家賃・配当・給与の未収分です。亡くなる前の分の権利なら、受け取ったのが亡くなった後でも相続財産です。亡くなった日までに口座に入った分は残高に入っているので別に入れません。高額療養費は、入院費などの未払い分（債務）とは相殺せず、それぞれ入れます。未支給年金と葬祭費・埋葬料は、受け取る家族のお金なので入れません。",
+    receivables: true,
   },
   {
     id: "insuranceRights",
@@ -206,6 +220,8 @@ export interface ReviewState {
   /** コンパスくんとの話（画面に出すやりとり） */
   chat?: Partial<Record<TopicId, { role: "user" | "assistant"; text: string }[]>>;
   talk?: Partial<Record<TopicId, TalkResult>>;
+  /** 亡くなったあとに受け取るお金（1件ずつ） */
+  receivables?: ReceivableEntry[];
   /** 亡くなる前後の引き出し：引き出した額と、使い道が分かった額 */
   withdrawal?: { amount?: number; used?: number };
   /** 「財産に追加」を済ませた論点・選択肢（`topic` または `topic:choice`） */
@@ -234,7 +250,23 @@ export const cashFromWithdrawal = (w: ReviewState["withdrawal"]) => Math.max(0, 
 
 export const WITHDRAWAL_ADD: AddTemplate = { kind: "cash", label: "亡くなる前後に引き出した現金", pending: [] };
 
-export function topicStatus(t: Topic, s: ReviewState): TopicStatus {
+/** 受け取るお金1件を財産に足すときのひな型 */
+export function receivableTemplate(e: ReceivableEntry): AddTemplate {
+  const { type, receivedOn, basis, holder, amount } = e;
+  const receivable: Receivable = { type, ...(receivedOn ? { receivedOn } : {}), ...(basis ? { basis } : {}), ...(holder ? { holder } : {}) };
+  return {
+    kind: "other",
+    label: receivableType(e.type).assetLabel,
+    pending: amount && amount > 0 ? [] : ["受け取る金額"],
+    ...(amount && amount > 0 ? { amount } : {}),
+    receivable,
+  };
+}
+
+/**
+ * 論点のいまの状態。deathDate（亡くなった日）は、受け取るお金が相続財産になるかの判定に使う（ないと判定できず「まだ」のまま）。
+ */
+export function topicStatus(t: Topic, s: ReviewState, deathDate?: string): TopicStatus {
   const a = s.answers?.[t.id];
   if (!a) return { kind: "unanswered" };
   if (a === "no") return { kind: "clear" };
@@ -245,6 +277,18 @@ export function topicStatus(t: Topic, s: ReviewState): TopicStatus {
 
   if (t.consult) return consultOr([t.consult], { kind: "clear" });
   if (t.add) return added.has(t.id) ? { kind: "clear" } : { kind: "add", items: [{ key: t.id, template: t.add }] };
+  if (t.receivables) {
+    const rows = s.receivables ?? [];
+    // 以前の版で「未収金」をまとめて足した人は、それで済み
+    if (!rows.length) return added.has(t.id) ? { kind: "clear" } : { kind: "unanswered" };
+    const verdicts = rows.map((e) => ({ e, v: judgeReceivable(e, deathDate) }));
+    if (verdicts.some(({ v }) => v.kind === "incomplete")) return { kind: "unanswered" };
+    const reasons = [...new Set(verdicts.flatMap(({ v }) => (v.kind === "consult" ? [v.reason] : [])))];
+    const items = verdicts.flatMap(({ e, v }) =>
+      v.kind === "estate" && !added.has(`${t.id}:${e.id}`) ? [{ key: `${t.id}:${e.id}`, template: receivableTemplate(e) }] : [],
+    );
+    return consultOr(reasons, items.length ? { kind: "add", items } : { kind: "clear" });
+  }
   if (t.withdrawal) {
     if (added.has(t.id)) return { kind: "clear" };
     return { kind: "withdrawal" };
@@ -281,9 +325,9 @@ export interface ReviewSummary {
   consult: { id: TopicId; reasons: string[] }[];
 }
 
-export function reviewSummary(s: ReviewState | undefined): ReviewSummary {
+export function reviewSummary(s: ReviewState | undefined, deathDate?: string): ReviewSummary {
   const st = s ?? {};
-  const all = TOPICS.map((t) => ({ t, x: topicStatus(t, st) }));
+  const all = TOPICS.map((t) => ({ t, x: topicStatus(t, st, deathDate) }));
   const consult = all.flatMap(({ t, x }) => (x.kind === "consult" ? [{ id: t.id, reasons: x.reasons }] : []));
   return {
     confirmed: all.every(({ x }) => x.kind === "clear"),
@@ -299,18 +343,18 @@ export function reviewSummary(s: ReviewState | undefined): ReviewSummary {
 export const consultPrompt = (reason: string) => `${reason}です。税額が大きく変わる可能性があるため、税理士への相談をおすすめします。`;
 
 /** 申告書に「下書き」と入れる理由（確認が終わっていれば null） */
-export function draftReason(s: ReviewState | undefined): string | null {
-  const r = reviewSummary(s);
+export function draftReason(s: ReviewState | undefined, deathDate?: string): string | null {
+  const r = reviewSummary(s, deathDate);
   if (r.confirmed) return null;
   return r.answered < r.total ? "申告前の確認が終わっていません" : "申告前の確認に、未確認・相談の項目が残っています";
 }
 
 /** 相談メモに入れる行（申告前の確認の分） */
-export function reviewConsultLines(s: ReviewState | undefined): string[] {
+export function reviewConsultLines(s: ReviewState | undefined, deathDate?: string): string[] {
   const st = s ?? {};
   const out: string[] = [];
   for (const t of TOPICS) {
-    const x = topicStatus(t, st);
+    const x = topicStatus(t, st, deathDate);
     if (x.kind === "consult") {
       const talk = st.talk?.[t.id]?.summary;
       out.push(`${t.question}：${x.reasons.join("。")}。${talk ? `（聞き取り：${talk}）` : ""}`);

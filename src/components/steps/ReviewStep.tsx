@@ -3,11 +3,12 @@
 import { Check as CheckIcon, Send } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
-import { Button, Card, Check, Note, YenInput, fmt } from "@/components/ui";
+import { Button, Card, Check, Field, Note, YenInput, fmt } from "@/components/ui";
 import { ConsultRequest } from "@/components/compass/ConsultRequest";
 import { Bubble, CompassAvatar } from "@/components/compass/CompassKun";
 import {
   type AddTemplate,
+  type ReceivableEntry,
   type ReviewAnswer,
   type ReviewState,
   TOPICS,
@@ -22,7 +23,9 @@ import {
 } from "@/domain/review/topics";
 import type { Asset, Case } from "@/domain/types";
 import { newId, useCase } from "@/lib/store";
+import { receivableType } from "@/domain/review/receivables";
 import { blankAsset } from "./AssetsStep";
+import { ReceivableFields, VerdictLine } from "./ReceivableFields";
 
 const GROUPS: { id: Topic["group"]; title: string }[] = [
   { id: "assets", title: "見落としやすい財産" },
@@ -41,8 +44,15 @@ const OUTCOME_LABEL = { add: "財産に追加します", gift: "贈与として�
 /** ひな型から財産を作る（金額などは確認待ちにして、財産の画面で入れてもらう） */
 export function assetFromTemplate(t: AddTemplate, amount?: number): Asset {
   const a = blankAsset(t.kind) as Asset & { amount?: number };
-  const out = { ...a, id: newId(), label: t.label, ...(t.pending.length ? { pending: [...t.pending] } : {}) } as Asset;
-  if (amount !== undefined && "amount" in out) (out as { amount: number }).amount = amount;
+  const out = {
+    ...a,
+    id: newId(),
+    label: t.label,
+    ...(t.pending.length ? { pending: [...t.pending] } : {}),
+    ...(t.receivable ? { receivable: { ...t.receivable } } : {}),
+  } as Asset;
+  const amt = amount ?? t.amount;
+  if (amt !== undefined && "amount" in out) (out as { amount: number }).amount = amt;
   return out;
 }
 
@@ -83,7 +93,7 @@ const withReview = (c: Case, fn: (r: ReviewState) => ReviewState): Case => ({ ..
 export function ReviewStep() {
   const { data, update } = useCase();
   const review = data.review ?? {};
-  const sum = reviewSummary(review);
+  const sum = reviewSummary(review, data.decedent.deathDate);
   const set = (fn: (r: ReviewState) => ReviewState) => update((c) => withReview(c, fn));
   const consultReasons = sum.consult.flatMap((c) => c.reasons);
   const consultIds = sum.consult.map((c) => c.id);
@@ -135,9 +145,10 @@ export function ReviewStep() {
 }
 
 function TopicRow({ t, review, set }: { t: Topic; review: ReviewState; set: (fn: (r: ReviewState) => ReviewState) => void }) {
-  const { update } = useCase();
+  const { data, update } = useCase();
+  const deathDate = data.decedent.deathDate;
   const answer = review.answers?.[t.id];
-  const st = topicStatus(t, review);
+  const st = topicStatus(t, review, deathDate);
   const left = remainingNote(st, !!answer);
   // 答えを変えたら、前の答えで「相談して確かめた」にした印は外す（新しい事実は確かめていないため）
   const choose = (v: ReviewAnswer) => set((r) => ({ ...dropConsulted(r, t.id), answers: { ...r.answers, [t.id]: v } }));
@@ -183,6 +194,7 @@ function TopicRow({ t, review, set }: { t: Topic; review: ReviewState; set: (fn:
         <div className="mt-2 space-y-2 rounded-lg bg-stone-50 p-3 text-sm">
           {t.sub && <SubChoices t={t} review={review} set={set} />}
           {t.talk && <Talk t={t} review={review} set={set} />}
+          {t.receivables && <Receivables review={review} set={set} deathDate={deathDate} />}
           {t.withdrawal && (
             <Withdrawal
               review={review}
@@ -249,6 +261,49 @@ function SubChoices({ t, review, set }: { t: Topic; review: ReviewState; set: (f
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+function Receivables({ review, set, deathDate }: { review: ReviewState; set: (fn: (r: ReviewState) => ReviewState) => void; deathDate?: string }) {
+  const rows = review.receivables ?? [];
+  const added = new Set(review.added ?? []);
+  // 中身を変えたら、その行の「財産に追加済み」は外す（足した財産は財産の画面で直す）
+  const setRows = (fn: (rows: ReceivableEntry[]) => ReceivableEntry[], touched?: string) =>
+    set((r) => ({
+      ...dropConsulted(r, "receivables"),
+      receivables: fn(r.receivables ?? []),
+      ...(touched ? { added: (r.added ?? []).filter((k) => k !== `receivables:${touched}`) } : {}),
+    }));
+  const patch = (id: string, p: Partial<ReceivableEntry>) => setRows((xs) => xs.map((x) => (x.id === id ? { ...x, ...p } : x)), id);
+  return (
+    <div className="space-y-2">
+      {rows.map((e, i) => (
+        <div key={e.id} className="space-y-2 rounded-lg border border-stone-200 bg-white p-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-stone-500">{i + 1}件目</span>
+            <button type="button" onClick={() => setRows((xs) => xs.filter((x) => x.id !== e.id))} className="text-xs text-stone-500 underline">
+              削除
+            </button>
+          </div>
+          {added.has(`receivables:${e.id}`) ? (
+            <p className="text-sm text-stone-700">
+              {receivableType(e.type).label}：財産に追加しました（直すときは財産の画面で）
+            </p>
+          ) : (
+            <>
+              <ReceivableFields r={e} onChange={(r) => patch(e.id, { ...r, id: e.id, amount: e.amount })} />
+              <Field label="金額（分かれば）">
+                <YenInput value={e.amount} onChange={(v) => patch(e.id, { amount: v })} />
+              </Field>
+              <VerdictLine r={e} deathDate={deathDate} />
+            </>
+          )}
+        </div>
+      ))}
+      <Button variant="secondary" onClick={() => setRows((xs) => [...xs, { id: newId(), type: "kaigo" }])}>
+        ＋ 受け取るお金を1件入れる
+      </Button>
     </div>
   );
 }
