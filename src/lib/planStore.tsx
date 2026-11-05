@@ -6,6 +6,7 @@ import { blankInterview, demoInterview, type Interview } from "@/domain/procedur
 import { buildTasks } from "@/domain/procedures/rules";
 import { todayISO } from "@/domain/procedures/dates";
 import type { Account } from "./account";
+import { applyStatus } from "./linkStatus";
 
 const IV_KEY = "souzoku-compass:interview:v1";
 const DONE_KEY = "souzoku-compass:done:v1";
@@ -119,15 +120,17 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
   const statusOf = useCallback((id: string): ItemStatus => (done.includes(id) ? "done" : done.includes(naId(id)) ? "na" : "open"), [done]);
-  const setStatus = useCallback((id: string, st: ItemStatus) => {
-    setDone((cur) => {
-      const next = cur.filter((x) => x !== id && x !== naId(id));
-      if (st === "done") next.push(id);
-      if (st === "na") next.push(naId(id));
-      write(DONE_KEY, next);
-      return next;
-    });
-  }, []);
+  // やることリストと資料集めのチェックは連動させる（linkStatus.ts）
+  const setStatus = useCallback(
+    (id: string, st: ItemStatus) => {
+      setDone((cur) => {
+        const next = applyStatus(cur, id, st, iv);
+        write(DONE_KEY, next);
+        return next;
+      });
+    },
+    [iv],
+  );
   const setMemo = useCallback((id: string, text: string) => {
     setMemos((cur) => {
       const next = { ...cur };
