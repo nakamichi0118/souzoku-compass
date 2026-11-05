@@ -429,7 +429,7 @@ export function useExtract(hint?: () => { decedentName?: string; deathDate?: str
   }
   async function readSample(url: string, name: string) {
     const b = await (await fetch(url)).blob();
-    await read(new File([b], name, { type: b.type || "application/pdf" }));
+    return read(new File([b], name, { type: b.type || "application/pdf" }));
   }
   return { busy, err, res, file, read, readSample, reset: () => setRes(null) };
 }

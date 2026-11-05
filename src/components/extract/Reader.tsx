@@ -7,7 +7,8 @@ import { DocCamera } from "@/components/docs/DocCamera";
 import { guessDocId } from "@/domain/filing/submission";
 import { useDocFiles } from "@/lib/docFiles";
 import { fmt } from "@/components/ui";
-import { TARGET_LABEL, applyExtracted, destination, findSame, missingItems, refExists, useExtract, type ExtractedAsset, type Ref } from "@/lib/extract";
+import { TARGET_LABEL, applyExtracted, destination, findSame, missingItems, refExists, useExtract, type Extracted, type ExtractedAsset, type Ref } from "@/lib/extract";
+import type { Case } from "@/domain/types";
 import { useCase } from "@/lib/store";
 import { type Progress, ProgressBar } from "@/components/compass/ProgressBar";
 
@@ -55,16 +56,32 @@ export function Reader({ docId, onRegistered, file, save = true }: { docId?: str
   const [readId, setReadId] = useState(0);
   useEffect(() => setDone({}), [readId]);
   const sample = docId ? SAMPLE[docId] : undefined;
-  const register = (x: ExtractedAsset, i: number, replace?: Ref) => {
-    const r = applyExtracted(c, x, replace);
-    // どの財産の書類を読んだかを財産ごとに残す（同じ種類の書類でも、口座・土地ごとに「書類あり」を分ける）
-    const ref = r.ref;
-    const next =
-      ref.type === "asset" && ex.file
-        ? { ...r.next, assets: r.next.assets.map((a) => (a.id === ref.id ? { ...a, docFrom: ex.file!.slice(0, 200) } : a)) }
-        : r.next;
-    update(() => next);
-    setDone((d) => ({ ...d, [i]: r.ref }));
+  // 読み取りには時間がかかるので、登録は読み終わった時点の入力に足す
+  const latest = useRef(c);
+  latest.current = c;
+  const [undo, setUndo] = useState<{ before: Case; after: Case } | null>(null);
+  const [updated, setUpdated] = useState<Record<number, string>>({});
+  /** 読み取った候補を、確認の操作なしで財産・債務・贈与に登録する（同じものが登録済みなら、読み取った内容で更新） */
+  const autoRegister = (res: Extracted | null, fileName: string) => {
+    if (!res || res.assets.length === 0) return;
+    const before = latest.current;
+    let cur = before;
+    const refs: Record<number, Ref> = {};
+    const upd: Record<number, string> = {};
+    res.assets.forEach((x, i) => {
+      const same = findSame(x, cur);
+      if (same && "id" in same) upd[i] = (same.type === "asset" ? cur.assets.find((a) => a.id === same.id)?.label : cur.debts.find((d) => d.id === same.id)?.label) ?? "";
+      const r = applyExtracted(cur, x, same);
+      const ref = r.ref;
+      // どの財産の書類を読んだかを財産ごとに残す（同じ種類の書類でも、口座・土地ごとに「書類あり」を分ける）
+      cur = ref.type === "asset" ? { ...r.next, assets: r.next.assets.map((a) => (a.id === ref.id ? { ...a, docFrom: fileName.slice(0, 200) } : a)) } : r.next;
+      refs[i] = ref;
+    });
+    const after = cur;
+    update(() => after);
+    setDone(refs);
+    setUpdated(upd);
+    setUndo({ before, after });
     onRegistered?.();
   };
   const store = useDocFiles();
@@ -72,6 +89,7 @@ export function Reader({ docId, onRegistered, file, save = true }: { docId?: str
   const read = (f: File) => {
     setReadId((n) => n + 1);
     void ex.read(f).then((res) => {
+      autoRegister(res, f.name);
       if (!save) return;
       const id = docId ?? (res ? guessDocId(res.documentType) : null) ?? "otherDoc";
       void store.add(id, [f]);
@@ -124,7 +142,7 @@ export function Reader({ docId, onRegistered, file, save = true }: { docId?: str
             disabled={ex.busy}
             onClick={() => {
               setReadId((n) => n + 1);
-              void ex.readSample(sample.url, sample.name);
+              void ex.readSample(sample.url, sample.name).then((res) => autoRegister(res, sample.name));
             }}
             className="rounded-lg border border-teal-600 bg-white px-3 py-2 text-sm text-teal-800 hover:bg-teal-50"
           >
@@ -138,7 +156,7 @@ export function Reader({ docId, onRegistered, file, save = true }: { docId?: str
         )}
       </div>
       {ex.busy && <ProgressBar message="コンパスくんが読み取っています" progress={READ_WAIT} className="mt-3 text-sm text-teal-900" />}
-      <p className="mt-2 text-xs text-stone-500">登録する前に、必ず書類と見比べてください。</p>
+      <p className="mt-2 text-xs text-stone-500">読み取った内容は自動で登録します。書類と見比べて、違っていたら直してください。</p>
       {ex.err && <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800">{ex.err}</p>}
       {ex.res && (
         <div className="mt-3 space-y-2">
@@ -148,11 +166,9 @@ export function Reader({ docId, onRegistered, file, save = true }: { docId?: str
           </p>
           {ex.res.assets.length === 0 && <p className="text-sm text-stone-600">財産・債務の情報は見つかりませんでした。</p>}
           {ex.res.assets.map((x, i) => {
-            const same = findSame(x, c);
             const mine = done[i] && refExists(c, done[i]) ? done[i] : undefined;
             const missing = missingItems(x, c.persons);
             const dest = destination(x.kind);
-            const sameLabel = same && "id" in same ? (same.type === "asset" ? c.assets.find((a) => a.id === same.id)?.label : c.debts.find((d) => d.id === same.id)?.label) : "登録済みの贈与";
             return (
               <div key={`${readId}-${i}`} className="rounded-lg border border-stone-200 bg-white p-3 text-sm">
                 <p className="flex flex-wrap items-center gap-2 font-bold text-stone-900">
@@ -174,34 +190,9 @@ export function Reader({ docId, onRegistered, file, save = true }: { docId?: str
                   <p className="mt-1">「{x.evidence}」</p>
                 </details>
                 {missing.length > 0 && <p className="mt-1 text-xs text-orange-700">書類からは分からないため、登録後に入れてください：{missing.join("、")}。入れるまで「確認待ち」として扱い、税額は確定しません。</p>}
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  {mine ? (
-                    <span className="font-semibold text-emerald-700">✓ {dest}に登録しました</span>
-                  ) : same ? (
-                    <>
-                      <span className="text-stone-700">登録済みの「{sameLabel}」と同じもののようです。</span>
-                      <button type="button" onClick={() => register(x, i, same)} className="rounded-lg bg-sky-700 px-3 py-1.5 font-semibold text-white hover:bg-sky-800">
-                        読み取った内容で更新
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDone((d) => ({ ...d, [i]: same }));
-                          onRegistered?.();
-                        }}
-                        className="rounded-lg border border-stone-300 px-3 py-1.5 hover:bg-stone-50">
-                        内容は同じ（資料がそろったことにする）
-                      </button>
-                      <button type="button" onClick={() => register(x, i)} className="px-2 py-1.5 text-xs text-stone-600 underline">
-                        別のものとして追加
-                      </button>
-                    </>
-                  ) : (
-                    <button type="button" onClick={() => register(x, i)} className="rounded-lg bg-sky-700 px-3 py-1.5 font-semibold text-white hover:bg-sky-800">
-                      確認して{dest}に登録
-                    </button>
-                  )}
-                </div>
+                <p className="mt-2 font-semibold text-emerald-700">
+                  {mine ? `✓ ${dest}に${updated[i] ? `登録済みの「${updated[i]}」を更新しました` : "登録しました"}` : Object.keys(done).length ? "登録を取り消しました" : "登録しています…"}
+                </p>
               </div>
             );
           })}
@@ -211,7 +202,19 @@ export function Reader({ docId, onRegistered, file, save = true }: { docId?: str
             </p>
           ))}
           {Object.keys(done).length > 0 && (
-            <div className="flex flex-wrap gap-3 text-sm">
+            <div className="flex flex-wrap items-center gap-3 text-sm">
+              {undo && c === undo.after && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    update(() => undo.before);
+                    setUndo(null);
+                  }}
+                  className="rounded-lg border border-stone-300 px-3 py-1.5 hover:bg-stone-50"
+                >
+                  登録を取り消す
+                </button>
+              )}
               <Link href="/case/assets" className="text-sky-800 underline">
                 財産の一覧を見る ›
               </Link>
