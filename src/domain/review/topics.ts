@@ -6,6 +6,7 @@
  * - 相談に回すのは、ここに書いた論点・条件に当てはまるときだけ（Claude が自分で相談を増やすことはない）。
  */
 
+import type { Case } from "../types";
 import { type Receivable, judgeReceivable, receivableType } from "./receivables";
 
 export type TopicId =
@@ -347,6 +348,15 @@ export function draftReason(s: ReviewState | undefined, deathDate?: string): str
   const r = reviewSummary(s, deathDate);
   if (r.confirmed) return null;
   return r.answered < r.total ? "申告前の確認が終わっていません" : "申告前の確認に、未確認・相談の項目が残っています";
+}
+
+/**
+ * 申告書に「下書き」と入れる理由（相続全体）。申告前の確認のほか、本人には今すぐ決められない「分からない」答え
+ * （相続時精算課税の贈与があるか）が残っているときも、計算は止めずに下書きにする
+ */
+export function caseDraftReason(c: Pick<Case, "review" | "decedent">): string | null {
+  if (c.decedent.settlementGift === "unknown") return "相続時精算課税の贈与があるか確かめていません";
+  return draftReason(c.review, c.decedent.deathDate);
 }
 
 /** 相談メモに入れる行（申告前の確認の分） */

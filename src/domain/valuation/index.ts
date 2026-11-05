@@ -183,14 +183,51 @@ const CONDITION_BODY: Record<Exclude<Condition, "spouseResidence">, { text: stri
 const SPOUSE_RESIDENCE_MESSAGE =
   "配偶者居住権を設定した家と土地は、「配偶者居住権」「家の所有権」「土地を使う権利」「土地の所有権」の4つに分けて評価し、小規模宅地等の特例の計算も変わります。相続コンパスではこの計算をしていないため、税理士にご相談ください。";
 
+/** 減額しかない土地の事情（止めずに、減額しない評価額で計算する。相談するかは本人が選ぶ） */
+export type PendingReduction = "irregular" | "setback" | "largeLot";
+
+/**
+ * まだ減額を入れていない、評価を下げられる事情。補正率（路線価方式）か評価額（直接入力）を入れたら、もう出さない。
+ * 倍率方式の宅地の形は固定資産税評価額に入っているので、形がいびつでも出さない
+ */
+export function pendingReductions(a: LandAsset): PendingReduction[] {
+  const out: PendingReduction[] = [];
+  if (a.condition === "irregular" && !shapeInFixedAssetValue(a.method.type, a.landUse) && !advisorValued(a, "irregular")) out.push("irregular");
+  if (a.condition === "setback" && !advisorValued(a, "setback")) out.push("setback");
+  if (largeLotArea(a) != null && !advisorValued(a, "largeLot")) out.push("largeLot");
+  return out;
+}
+
+/**
+ * 減額をしていない事情について、税理士に相談するときの案内（何の補正を確認し、分かった値をどこに入れるか）。
+ * 土地の画面で「相談する」を選んだときに出す。減額していない事情がなければ null
+ */
+export function reductionAdvice(a: LandAsset): string | null {
+  const open = pendingReductions(a);
+  if (!open.length) return null;
+  const use = a.use ?? "self";
+  const big = open.includes("largeLot") ? (largeLotArea(a) ?? undefined) : undefined;
+  const cond = open.find((r): r is "irregular" | "setback" => r !== "largeLot");
+  if (cond) return conditionMessage(cond, a.method.type, { use, largeLotArea: big, landUse: a.landUse });
+  return largeLotMessage(big ?? 500, a.method.type, use);
+}
+
+/** 減額をしていない事情の、評価の説明に足す文 */
+function reductionStep(r: PendingReduction, a: LandAsset): string {
+  if (r === "setback") return SETBACK_STEP;
+  if (r === "irregular") return IRREGULAR_STEP;
+  return `${(largeLotArea(a) ?? 500).toLocaleString()}㎡以上の広い宅地ですが、地積規模の大きな宅地の減額はしていません（税理士に相談すると下がる可能性があります）`;
+}
+
+/** 形がいびつな土地で、不整形地の補正をしていないときの説明 */
+export const IRREGULAR_STEP = "形がいびつな土地ですが、不整形地の補正（減額）はしていません（税理士に相談すると下がる可能性があります）";
+
 /** セットバックの減額をしていないときの説明（止めずに、減額しない評価額で計算する） */
 export const SETBACK_STEP =
   "前の道路の幅が4m未満の可能性があります。セットバックの減額はしていません（税理士に相談すると下がる可能性があります）";
 
 const NOT_CALCULATED = "相続コンパスではこの計算をしていないため、税理士にご相談ください。";
 
-/** 古いデータなどで知らない事情が入っていても止まらないよう、知っている事情だけを扱う */
-const isCondition = (c: unknown): c is Condition => c === "irregular" || c === "setback" || c === "spouseResidence";
 
 /**
  * 評価に影響する土地の事情ごとの案内（相続コンパスでは評価しない）。
@@ -313,17 +350,12 @@ export function valueLand(a: LandAsset): Valuation {
   const quantity = `${a.areaSqm}㎡`;
   const consult = (needsConsultation: string): Valuation => ({ value: 0, quantity, steps: [], needsConsultation });
   const use = a.use ?? "self";
-  // 評価を下げる事情がある土地は、下げない評価額で確定させない。広い宅地にもあたりうるなら、その案内もいっしょに出す。
-  // 倍率方式の宅地は、形が固定資産税評価額に反映されているので、形がいびつでも止めない（広い宅地なら次で案内する）
-  const big = largeLotArea(a);
-  const shapeInFav = a.condition === "irregular" && shapeInFixedAssetValue(a.method.type, a.landUse);
-  // セットバックは評価を下げるだけなので止めない。減額しない（高めの）評価額で進め、相談するかは本人が選ぶ
-  const setbackOpen = a.condition === "setback" && !advisorValued(a, "setback");
-  if (isCondition(a.condition) && a.condition !== "setback" && !shapeInFav && !advisorValued(a, a.condition))
-    return consult(conditionMessage(a.condition, a.method.type, { use, largeLotArea: big ?? undefined, landUse: a.landUse }));
-  if (big != null && !advisorValued(a, "largeLot")) return consult(largeLotMessage(big, a.method.type, use));
+  // 配偶者居住権は評価のしかたそのものが変わるので、いつも相談を案内する（計算しない）
+  if (a.condition === "spouseResidence") return consult(conditionMessage(a.condition, a.method.type, { use, landUse: a.landUse }));
+  // 形がいびつ・セットバック・広い宅地は評価を下げるだけなので止めない。減額しない（高めの）評価額で進め、相談するかは本人が選ぶ
+  const open = pendingReductions(a);
   const { valuation: computed, notation } = selfUseLand(a);
-  const self = setbackOpen && !computed.needsConsultation ? { ...computed, steps: [...computed.steps, SETBACK_STEP] } : computed;
+  const self = open.length && !computed.needsConsultation ? { ...computed, steps: [...computed.steps, ...open.map((r) => reductionStep(r, a))] } : computed;
   if (self.needsConsultation || (a.method.type === "manual" && a.method.publicPrivateRoad)) return self;
   // 古いデータなどで知らない使い方が入っていても止まらないよう、自用地として扱う
   const label = use === "self" ? undefined : USE_LABEL[use];

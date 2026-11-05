@@ -790,10 +790,10 @@ export function expected(s: Scenario): Expected {
         // 倍率方式の宅地は 固定資産税評価額 × 倍率（評基通21-2）。形（不整形・間口狭小など）は固定資産税評価額に入っているので、
         // 不整形地でも重ねて補正しない（ふつうに計算できる）。セットバック・地積規模の大きな宅地（21-2 ただし書）・宅地以外は従来どおり
         const shapeInFav = it.needsReduction === "irregular" && vv.kind === "multiplier" && it.landUse === "宅地";
-        // セットバックは減額しかないので、本人が相談しないと選べば減額しない（高めの）評価額で申告する（相続コンパスの方針）
-        const setbackAsIs = it.needsReduction === "setback" && !advisorOk;
-        if (it.needsReduction && !advisorOk && !shapeInFav && !setbackAsIs) addOos("地積規模の大きな宅地・不整形地等の補正が必要な土地");
-        if (setbackAsIs) notes.push(`${it.label}：セットバックの減額はしない（本人が相談しないと選んだ評価額。高めになる）`);
+        // 不整形地・セットバック・地積規模の大きな宅地の補正は減額しかないので、本人が相談しないと選べば
+        // 減額しない（高めの）評価額で申告する（相続コンパスの方針。過少にはならない）
+        const reductionAsIs = !!it.needsReduction && !advisorOk && !shapeInFav;
+        if (reductionAsIs) notes.push(`${it.label}：${{ irregular: "不整形地", setback: "セットバック", largeLot: "地積規模の大きな宅地" }[it.needsReduction!]}の減額はしない（本人が相談しないと選んだ評価額。高めになる）`);
         if (shapeInFav) notes.push(`${it.label}：倍率方式の宅地なので、形がいびつでも 固定資産税評価額×倍率 のまま（評基通21-2）`);
         let selfUse = 0;
         let lease: Q | null = null;

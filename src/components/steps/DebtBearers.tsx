@@ -23,7 +23,7 @@ export function DebtBearers() {
           // 分け方が決まっていないときに負担額を入れなければ、法定相続分で負担したものとして計算する（合計が合わなくてもよい）
           const byLegalShare = !!data.undivided && borne === 0;
           return (
-            <li key={d.id} className="rounded-xl border border-stone-200 bg-white p-3">
+            <li key={d.id} data-focus={`debt-${d.id}`} className="rounded-xl border border-stone-200 bg-white p-3">
               <p className="mb-2 flex flex-wrap items-baseline justify-between gap-2 text-sm">
                 <span className="font-bold text-stone-800">
                   <span className="mr-1.5 rounded bg-stone-100 px-1.5 py-0.5 text-xs font-medium text-stone-600">{d.kind === "debt" ? "債務" : "葬式費用"}</span>

@@ -49,7 +49,7 @@ const bar = (p: { dateOk?: boolean; unanswered?: number }) => renderToStaticMark
 const phoneText = (html: string) =>
   html
     .replace(/<span class="hidden sm:inline">.*?<\/span>/g, "")
-    .replace(/<button[\s\S]*?<\/button>/g, "")
+    .replace(/<button id="hearing-finish"[\s\S]*?<\/button>/g, "")
     .replace(/<[^>]+>/g, "");
 const disabledBtn = /<button[^>]*\sdisabled=""/;
 
@@ -67,7 +67,7 @@ describe("画面の下の「次へ」の帯（FinishBar）", () => {
     expect(html).not.toContain("sm:hidden");
     expect(html).not.toContain("hidden sm:inline");
     const phone = phoneText(html);
-    expect(phone).toBe("選んでいない質問があと3問");
+    expect(phone).toBe("選んでいない質問があと3問 ›");
     expect(html).not.toContain("仮の答え");
   });
 
@@ -83,7 +83,7 @@ describe("画面の下の「次へ」の帯（FinishBar）", () => {
 
   it("10問以上でも数え方は「問」（「16つ」のようにならない）", () => {
     const html = bar({ unanswered: 16 });
-    expect(phoneText(html)).toBe("選んでいない質問があと16問");
+    expect(phoneText(html)).toBe("選んでいない質問があと16問 ›");
     expect(html).not.toMatch(/\d(<!-- -->)?つ/);
   });
 
@@ -93,11 +93,19 @@ describe("画面の下の「次へ」の帯（FinishBar）", () => {
     }
   });
 
-  it("亡くなった日がないときは押せず、その案内だけを出す", () => {
+  it("亡くなった日がないときも押せる（押すと亡くなった日の欄へ送る）。その案内だけを出す", () => {
     const html = bar({ dateOk: false, unanswered: 5 });
-    expect(html).toMatch(disabledBtn);
-    expect(phoneText(html)).toBe("亡くなった日を入力してください。");
+    expect(html).not.toMatch(disabledBtn);
+    expect(phoneText(html)).toBe("亡くなった日を入力してください");
     expect(html).not.toContain("まだ選んでいない質問");
+  });
+
+  it("選んでいない質問の数は、押すとその質問へ送るボタン。答えていない質問を見せたあとは「このまま進む」", () => {
+    const html = bar({ unanswered: 3 });
+    expect(html).toMatch(/<button type="button" class="[^"]*underline[^"]*">選んでいない質問があと/);
+    const after = renderToStaticMarkup(createElement(FinishBar, { dateOk: true, unanswered: 3, onFinish: () => {}, confirmSkip: true }));
+    expect(after).toContain("このまま進む →");
+    expect(bar({ unanswered: 0 })).toContain("マイページへ →");
   });
 
   it("全部答えたときは、あとから変えられることだけを出す", () => {

@@ -1237,6 +1237,10 @@ function compute(c: Case, opts: EngineOptions, valueOf: (a: Asset) => Valuation,
  * compute の前半：財産の評価と取得者への配分、小規模宅地等の特例の候補まで（限度面積の割り当てより前なので、割り当てによらない）。
  * calculate は割り当てを変えて何度も計算するので、この結果を1回だけ作り、computeRest に何度も渡す
  */
+/** 相続時精算課税の贈与があるか分からないときの案内（計算は止めない） */
+export const SETTLEMENT_UNKNOWN_WARNING =
+  "「相続時精算課税」を選んだ贈与があるか分かっていないため、ないものとして計算しています。入れ忘れると後で追加の納税になるため、税務署への開示請求（相続税法49条）か税理士への相談で確かめて、亡くなった方の画面で「はい」か「いいえ」を選んでください。それまで申告書には「下書き」と入ります。";
+
 function computeBase(c: Case, valueOf: (a: Asset) => Valuation) {
   const blockers: string[] = [];
   const warnings: string[] = [];
@@ -1290,9 +1294,8 @@ function computeBase(c: Case, valueOf: (a: Asset) => Valuation) {
     }
   }
   if (c.decedent.settlementGift === "unknown") {
-    blockers.push(
-      "「相続時精算課税」を選んだ贈与があるか分かっていません。入れ忘れると後で追加の納税になるため、税務署への開示請求（相続税法49条）か税理士への相談で確かめてから、亡くなった方の画面で「はい」か「いいえ」を選んでください。",
-    );
+    // 分からないことは本人には決められないので、計算は止めずに「ない」として出し、申告書には「下書き」と入れる（caseDraftReason）
+    warnings.push(SETTLEMENT_UNKNOWN_WARNING);
   } else if (c.decedent.settlementGift && !c.priorGifts.some((g) => g.settlement)) {
     blockers.push(
       "「相続時精算課税」を選んだ贈与があると選ばれていますが、その贈与がまだ入っていません。債務・葬式費用の画面の贈与の一覧にその贈与を加え、「相続時精算課税」にチェックを入れてください。",
@@ -1887,7 +1890,7 @@ function computeRest(c: Case, opts: EngineOptions, base: ComputeBase, srPlan?: S
   }
   if (debtsByInput.length) {
     warnings.push(
-      `「分け方がまだ決まっていない」にチェックがありますが、${debtsByInput.join("・")}は入力した人が負担するものとして計算しています。負担する人がまだ決まっていなければ、債務・葬式費用の画面で負担する人を×で外してください（法定相続分で計算します）。`,
+      `「分け方がまだ決まっていない」にチェックがありますが、${debtsByInput.join("・")}は入力した人が負担するものとして計算しています。負担する人がまだ決まっていなければ、遺産の分け方の画面で負担する人を×で外してください（法定相続分で計算します）。`,
     );
   }
 
@@ -2016,7 +2019,7 @@ function computeRest(c: Case, opts: EngineOptions, base: ComputeBase, srPlan?: S
           debtsUnsettled = 0;
         } else {
           blockers.push(
-            `${p.name || "相続人でない人"}さんは相続人ではないため、負担した債務・葬式費用は差し引けません。遺言で財産の全部または「3分の1」などの割合で受け取る人（包括受遺者）なら差し引けますが、相続コンパスでは扱えないので税理士にご相談ください。そうでなければ、債務・葬式費用の画面で${p.name || "この方"}さんの負担分を、金額と負担する人から外してください。`,
+            `${p.name || "相続人でない人"}さんは相続人ではないため、負担した債務・葬式費用は差し引けません。遺言で財産の全部または「3分の1」などの割合で受け取る人（包括受遺者）なら差し引けますが、相続コンパスでは扱えないので税理士にご相談ください。そうでなければ、遺産の分け方の画面で${p.name || "この方"}さんを負担する人から外してください。`,
           );
           debtOnly = 0;
           funeralOnly = 0;

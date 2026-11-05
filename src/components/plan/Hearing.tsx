@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Card, Note, TextInput } from "@/components/ui";
 import { AddressField } from "@/components/ui/AddressField";
-import { scrollBelowHeader, scrollToY } from "@/components/ui/scroll";
+import { focusFirstMissing, scrollBelowHeader, scrollToY } from "@/components/ui/scroll";
 import { Choice, Counter, ManYen, Q, YesNo } from "@/components/plan/inputs";
 import { isValidDate } from "@/domain/procedures/dates";
 import { estimate, familyFromInterview, heirBreakdown, type Interview } from "@/domain/procedures/interview";
@@ -59,15 +59,35 @@ function useHeight<E extends HTMLElement>() {
 }
 
 /** 画面の下に固定する「次へ」の帯。文は短くして、帯が後ろのボタンを隠さないよう低くする（理由は下の Tips に畳む） */
-export function FinishBar({ dateOk, unanswered, onFinish, barRef }: { dateOk: boolean; unanswered: number; onFinish: () => void; barRef?: React.Ref<HTMLDivElement> }) {
+export function FinishBar({
+  dateOk,
+  unanswered,
+  onFinish,
+  onMissing,
+  confirmSkip,
+  barRef,
+}: {
+  dateOk: boolean;
+  unanswered: number;
+  onFinish: () => void;
+  /** 答えていない質問へ送る */
+  onMissing?: () => void;
+  /** 答えていない質問を見せたあと（もう一度押すと、そのまま進む） */
+  confirmSkip?: boolean;
+  barRef?: React.Ref<HTMLDivElement>;
+}) {
   return (
     <div ref={barRef} className="fixed inset-x-0 bottom-0 z-30 border-t border-stone-200 bg-white/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
       <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
         <p className="min-w-0 flex-1 text-xs leading-snug text-stone-600 sm:text-sm">
           {!dateOk ? (
-            "亡くなった日を入力してください。"
+            <button type="button" onClick={onMissing} className="text-left font-semibold text-orange-800 underline">
+              亡くなった日を入力してください
+            </button>
           ) : unanswered > 0 ? (
-            `選んでいない質問があと${unanswered}問`
+            <button type="button" onClick={onMissing} className="text-left font-semibold text-orange-800 underline">
+              選んでいない質問があと{unanswered}問 ›
+            </button>
           ) : (
             "答えはあとから変えられます。"
           )}
@@ -75,11 +95,10 @@ export function FinishBar({ dateOk, unanswered, onFinish, barRef }: { dateOk: bo
         <button
           id="hearing-finish"
           type="button"
-          disabled={!dateOk}
           onClick={onFinish}
-          className="shrink-0 whitespace-nowrap rounded-lg bg-sky-700 px-4 py-3 font-semibold text-white hover:bg-sky-800 disabled:bg-stone-300 sm:px-6"
+          className="shrink-0 whitespace-nowrap rounded-lg bg-sky-700 px-4 py-3 font-semibold text-white hover:bg-sky-800 sm:px-6"
         >
-          マイページへ →
+          {dateOk && confirmSkip ? "このまま進む →" : "マイページへ →"}
         </button>
       </div>
     </div>
@@ -113,6 +132,8 @@ export function Hearing() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded]);
   const listRef = useRef<HTMLDivElement>(null);
+  /** 答えていない質問に印をつけるか（「未回答へ」か「マイページへ」を押したあと） */
+  const [showMissing, setShowMissing] = useState(false);
   /** いま押した質問（iPhone の Safari ではボタンを押してもフォーカスが移らないので、押した場所から探す） */
   const tappedQ = useRef<HTMLElement | null>(null);
   const [barH, barRef] = useHeight<HTMLDivElement>();
@@ -149,6 +170,11 @@ export function Hearing() {
   const noHeirs = est.heirCount === 0 && !iv.spouse;
 
   function finish() {
+    // 亡くなった日がない・答えていない質問があるときは、まずその場所へ送る（答えていない質問は、もう一度押せばそのまま進める）
+    if (!dateOk || (unanswered > 0 && !showMissing)) {
+      goMissing();
+      return;
+    }
     setHeard(true);
     // すでに済んでいる時期の手続きは、最初から完了にしておく（あとで戻せる）
     if (iv.stage === "funeralDone" || iv.stage === "after49") setDoneIds(["death-report", "funeral", "shonanoka"], true);
@@ -171,6 +197,15 @@ export function Hearing() {
   ];
   const choiceKeys: (keyof Interview)[] = ["stage", "myRelation", "spouse", ...familyKeys, "minorHeir", "heirAbroad", "will", "debts", ...(iv.homeValue > 0 ? (["homeToFamily"] as const) : []), "work", "pension", "health", "filedTaxReturn", "highMedical", "householdHead", "rentedHome", "car", "digital"];
   const unanswered = choiceKeys.filter((k) => !answered.includes(k)).length;
+  // 答えていない質問の印：飛ばした質問（あとの質問には答えている）はいつも、「未回答へ」を押したあとはすべて
+  const lastIdx = Math.max(-1, ...choiceKeys.map((k, i) => (answered.includes(k) ? i : -1)));
+  const m = (k: keyof Interview) => !answered.includes(k) && (showMissing || choiceKeys.indexOf(k) < lastIdx);
+  /** 答えていない質問へ送る（最初の1つ） */
+  const goMissing = () => {
+    setShowMissing(true);
+    // 印は次の描画で付くので、描き終わってから送る
+    window.setTimeout(() => focusFirstMissing(listRef.current ?? document), 50);
+  };
   return (
     <AppShell>
       <div className="mx-auto max-w-3xl">
@@ -184,7 +219,7 @@ export function Hearing() {
         }}
       >
         <Card title="1. 亡くなった方の情報">
-          <Q label="いまの状況にいちばん近いものは？" hint="済んだ時期の手続きは「完了」にしておきます。">
+          <Q missing={m("stage")} label="いまの状況にいちばん近いものは？" hint="済んだ時期の手続きは「完了」にしておきます。">
             <Choice
               value={a("stage")}
               onChange={(v) => pick("stage", v)}
@@ -198,22 +233,22 @@ export function Hearing() {
           <Q label="お名前（任意）">
             <TextInput value={iv.decedentName} onChange={(e) => set("decedentName", e.target.value)} placeholder="例：相続 太郎" />
           </Q>
-          <Q label="亡くなった方は、あなたから見て？">
+          <Q missing={m("myRelation")} label="亡くなった方は、あなたから見て？">
             <Choice value={a("myRelation")} onChange={(v) => pick("myRelation", v)} options={["父", "母", "夫", "妻", "祖父", "祖母", "その他"].map((x) => ({ value: x, label: x }))} />
           </Q>
           <Q label="亡くなった方の最後の住所" hint="役所・税務署を探すのに使います。">
             <AddressField address={iv.address} onAddress={(v) => set("address", v)} zip={iv.zip ?? ""} onZip={(v) => set("zip", v)} placeholder="例：東京都千代田区架空町一丁目2番3号" ariaLabel="亡くなった方の最後の住所" />
           </Q>
-          <Q label="亡くなった日" hint="期限はこの日から数えます。">
+          <Q missing={showMissing && !dateOk} label="亡くなった日" hint="期限はこの日から数えます。">
             <TextInput type="date" value={iv.deathDate} onChange={(e) => set("deathDate", e.target.value)} className="min-h-[42px] max-w-56 [&::-webkit-date-and-time-value]:text-left" />
           </Q>
         </Card>
 
         <Card title="2. ご家族">
-          <Q label="配偶者（夫・妻）はご存命ですか？">
+          <Q missing={m("spouse")} label="配偶者（夫・妻）はご存命ですか？">
             <YesNo value={a("spouse")} onChange={(v) => pick("spouse", v)} />
           </Q>
-          <Q label="お子さんはいますか？" hint="先に亡くなったお子さんも含めます。">
+          <Q missing={m("hasChildren")} label="お子さんはいますか？" hint="先に亡くなったお子さんも含めます。">
             <Choice
               value={a("hasChildren") || undefined}
               onChange={(v) => {
@@ -241,14 +276,14 @@ export function Hearing() {
               <Q label="先に亡くなったお子さんの子（孫）の人数" hint="いなければ0人のまま。">
                 <Counter value={iv.grandchildrenOfPredeceased} onChange={(v) => set("grandchildrenOfPredeceased", v)} />
               </Q>
-              <Q label="前の配偶者との子や、認知した子はいますか？">
+              <Q missing={m("exSpouseChild")} label="前の配偶者との子や、認知した子はいますか？">
                 <YesNo value={a("exSpouseChild")} onChange={(v) => pick("exSpouseChild", v)} />
               </Q>
               {iv.exSpouseChild && <Note tone="info">相続分は他の子と同じです。遺産分割には全員の同意が要ります。住所は戸籍の附票で調べられます。</Note>}
             </>
           )}
           {iv.hasChildren === "no" && (
-            <Q label="亡くなった方のご両親で、ご存命の方は？">
+            <Q missing={m("parentsAlive")} label="亡くなった方のご両親で、ご存命の方は？">
               <Choice
                 value={answered.includes("parentsAlive") ? String(iv.parentsAlive) : undefined}
                 onChange={(v) => pick("parentsAlive", Number(v))}
@@ -266,7 +301,7 @@ export function Hearing() {
                 <Counter value={iv.grandparentsAlive} onChange={(v) => set("grandparentsAlive", v)} max={4} />
               </Q>
               {iv.grandparentsAlive === 0 && (
-                <Q label="亡くなった方に兄弟姉妹はいますか？" hint="先に亡くなった兄弟姉妹も含めます。">
+                <Q missing={m("hasSiblings")} label="亡くなった方に兄弟姉妹はいますか？" hint="先に亡くなった兄弟姉妹も含めます。">
                   <Choice
                     value={a("hasSiblings") || undefined}
                     onChange={(v) => {
@@ -300,10 +335,10 @@ export function Hearing() {
               )}
             </>
           )}
-          <Q label="18歳未満の相続人はいますか？">
+          <Q missing={m("minorHeir")} label="18歳未満の相続人はいますか？">
             <YesNo value={a("minorHeir")} onChange={(v) => pick("minorHeir", v)} />
           </Q>
-          <Q label="海外に住む相続人はいますか？">
+          <Q missing={m("heirAbroad")} label="海外に住む相続人はいますか？">
             <YesNo value={a("heirAbroad")} onChange={(v) => pick("heirAbroad", v)} />
           </Q>
           {iv.heirAbroad && <Note tone="info">海外の相続人は、印鑑証明書の代わりに大使館でサイン証明・在留証明を取ります。相続税は税理士に相談してください。</Note>}
@@ -325,7 +360,7 @@ export function Hearing() {
         </Card>
 
         <Card title="3. 遺言書と借金">
-          <Q label="遺言書はありますか？">
+          <Q missing={m("will")} label="遺言書はありますか？">
             <Choice
               value={a("will")}
               onChange={(v) => pick("will", v)}
@@ -338,7 +373,7 @@ export function Hearing() {
               ]}
             />
           </Q>
-          <Q label="借金やローンはありますか？">
+          <Q missing={m("debts")} label="借金やローンはありますか？">
             <Choice
               value={a("debts")}
               onChange={(v) => pick("debts", v)}
@@ -382,7 +417,7 @@ export function Hearing() {
             </Q>
           </div>
           {iv.homeValue > 0 && (
-            <Q label="自宅は、配偶者か同居している家族が受け継ぎますか？" hint="受け継ぐと、土地の評価が最大80%下がることがあります。">
+            <Q missing={m("homeToFamily")} label="自宅は、配偶者か同居している家族が受け継ぎますか？" hint="受け継ぐと、土地の評価が最大80%下がることがあります。">
               <Choice
                 value={a("homeToFamily")}
                 onChange={(v) => pick("homeToFamily", v)}
@@ -401,7 +436,7 @@ export function Hearing() {
         </Card>
 
         <Card title="5. 暮らしのこと">
-          <Q label="亡くなった方のお仕事は？">
+          <Q missing={m("work")} label="亡くなった方のお仕事は？">
             <Choice
               value={a("work")}
               onChange={(v) => pick("work", v)}
@@ -413,7 +448,7 @@ export function Hearing() {
               ]}
             />
           </Q>
-          <Q label="亡くなった方は年金を受け取っていましたか？" hint="専業主婦（夫）だった方も国民年金を受け取っています。">
+          <Q missing={m("pension")} label="亡くなった方は年金を受け取っていましたか？" hint="専業主婦（夫）だった方も国民年金を受け取っています。">
             <Choice
               value={a("pension")}
               onChange={(v) => pick("pension", v)}
@@ -426,7 +461,7 @@ export function Hearing() {
               ]}
             />
           </Q>
-          <Q label="健康保険は？" hint="75歳以上なら後期高齢者医療です。">
+          <Q missing={m("health")} label="健康保険は？" hint="75歳以上なら後期高齢者医療です。">
             <Choice
               value={a("health")}
               onChange={(v) => pick("health", v)}
@@ -438,22 +473,22 @@ export function Hearing() {
               ]}
             />
           </Q>
-          <Q label="毎年、確定申告をしていましたか？" hint="不動産の賃貸収入や事業収入があった場合など。">
+          <Q missing={m("filedTaxReturn")} label="毎年、確定申告をしていましたか？" hint="不動産の賃貸収入や事業収入があった場合など。">
             <YesNo value={a("filedTaxReturn")} onChange={(v) => pick("filedTaxReturn", v)} />
           </Q>
-          <Q label="亡くなる前に、医療費が多くかかりましたか？">
+          <Q missing={m("highMedical")} label="亡くなる前に、医療費が多くかかりましたか？">
             <YesNo value={a("highMedical")} onChange={(v) => pick("highMedical", v)} />
           </Q>
-          <Q label="亡くなった方は世帯主で、同じ世帯に2人以上が残りますか？">
+          <Q missing={m("householdHead")} label="亡くなった方は世帯主で、同じ世帯に2人以上が残りますか？">
             <YesNo value={a("householdHead")} onChange={(v) => pick("householdHead", v)} />
           </Q>
-          <Q label="賃貸住宅に住んでいましたか？">
+          <Q missing={m("rentedHome")} label="賃貸住宅に住んでいましたか？">
             <YesNo value={a("rentedHome")} onChange={(v) => pick("rentedHome", v)} />
           </Q>
-          <Q label="自動車を持っていましたか？">
+          <Q missing={m("car")} label="自動車を持っていましたか？">
             <YesNo value={a("car")} onChange={(v) => pick("car", v)} />
           </Q>
-          <Q label="スマホやネット銀行を使っていましたか？">
+          <Q missing={m("digital")} label="スマホやネット銀行を使っていましたか？">
             <YesNo value={a("digital")} onChange={(v) => pick("digital", v)} />
           </Q>
         </Card>
@@ -462,7 +497,7 @@ export function Hearing() {
       {unanswered > 0 && <UnansweredTips />}
       {/* 下に固定した帯と同じ高さの余白（いちばん下の質問やボタンが帯に隠れないように） */}
       <div aria-hidden style={{ height: (barH ?? 96) + 16 }} />
-      <FinishBar dateOk={dateOk} unanswered={unanswered} onFinish={finish} barRef={barRef} />
+      <FinishBar dateOk={dateOk} unanswered={unanswered} onFinish={finish} onMissing={goMissing} confirmSkip={showMissing && unanswered > 0} barRef={barRef} />
       </div>
     </AppShell>
   );

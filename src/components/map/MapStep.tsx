@@ -1144,6 +1144,8 @@ function LandWizard() {
                   <Button onClick={applyRosenka} disabled={!(area > 0) || !roadsComplete} className="w-full py-3">
                     評価完了：財産の入力へ戻る
                   </Button>
+                  {/* 押せないときは、何を入れれば押せるかを1行で出す */}
+                  {!(area > 0) && <p className="text-sm font-semibold text-orange-800">上の「地積」を入れると反映できます。</p>}
                 </section>
               )}
             </div>

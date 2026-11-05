@@ -441,9 +441,15 @@ function toLand(
   }
 
   // 評価に影響する事情。地積規模の大きな宅地は、アプリが面積から自分で気づくので入れない
-  // （配偶者居住権のある土地には、シナリオで税理士の補正率を付けないので、不整形地・セットバックを先に選んでも止まり方は同じ）
-  const condition: LandAsset["condition"] =
-    it.needsReduction === "irregular" ? "irregular" : it.needsReduction === "setback" ? "setback" : it.spouseResidenceRight ? "spouseResidence" : undefined;
+  // 選べる事情は1つだけ。配偶者居住権は評価のしかたそのものが変わる（いつも相談）ので先に選ぶ。
+  // 不整形地・セットバックは減額しかないので、選ばなくても（選んで相談しなくても）評価額は高めになるだけ
+  const condition: LandAsset["condition"] = it.spouseResidenceRight
+    ? "spouseResidence"
+    : it.needsReduction === "irregular"
+      ? "irregular"
+      : it.needsReduction === "setback"
+        ? "setback"
+        : undefined;
 
   const land: LandAsset = {
     id: it.id,

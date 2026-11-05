@@ -6,7 +6,7 @@
  * - ui-3：自宅でも事業用でもないときの説明を、土地とマンションの部屋で画面の入力に合わせる
  */
 import { describe, expect, it } from "vitest";
-import { MULTIPLIER_SHAPE_STEP, conditionMessage, valueLand } from "../valuation";
+import { MULTIPLIER_SHAPE_STEP, conditionMessage, pendingReductions, reductionAdvice, valueLand } from "../valuation";
 import { type RoadInput, evaluateRoads } from "../valuation/roads";
 import { NOT_HOME_OR_BUSINESS_REASON, judgeSmallResidential } from "../valuation/smallResidential";
 import type { LandAsset, Person } from "../types";
@@ -93,24 +93,28 @@ describe("valuation-2：倍率方式の宅地は、形がいびつでも 固定�
     expect(v.value).toBe(9_020_000);
     expect(v.usage).toBe("貸家建付地");
   });
-  it("広い宅地（地積規模の大きな宅地。21-2 ただし書）は相談のまま。形を下げられるとは書かない", () => {
-    const v = valueLand(land({ location: "千葉県船橋市", areaSqm: 600, condition: "irregular", method: multiplier() }));
-    expect(v.value).toBe(0);
-    expect(v.needsConsultation).toContain("地積規模の大きな宅地");
-    expect(v.needsConsultation).toContain("評価額を直接入力");
-    expect(v.needsConsultation).not.toContain("形に合わせて評価を下げられます");
+  it("広い宅地（地積規模の大きな宅地。21-2 ただし書）は止めずに減額しない評価額で計算し、相談の案内では形を下げられるとは書かない", () => {
+    const a = land({ location: "千葉県船橋市", areaSqm: 600, condition: "irregular", method: multiplier() });
+    expect(valueLand(a).needsConsultation).toBeUndefined();
+    expect(pendingReductions(a)).toEqual(["largeLot"]);
+    const adv = reductionAdvice(a);
+    expect(adv).toContain("地積規模の大きな宅地");
+    expect(adv).toContain("評価額を直接入力");
+    expect(adv).not.toContain("形に合わせて評価を下げられます");
   });
   it("配偶者居住権は倍率方式でも相談のまま（セットバックは止めずに減額しない評価額で計算する）", () => {
     expect(valueLand(land({ condition: "setback", method: multiplier() })).needsConsultation).toBeUndefined();
     expect(valueLand(land({ condition: "spouseResidence", method: multiplier() })).needsConsultation).toContain("配偶者居住権");
   });
-  it("宅地以外（雑種地・田など）は、近くの宅地と比べて評価するときに形の補正をすることがあるので相談のまま", () => {
+  it("宅地以外（雑種地・田など）は、形の補正をすることがあるので、止めずに減額していないと書き、相談の案内を出せる", () => {
     for (const landUse of ["雑種地", "田", "畑", "山林", "その他"] as const) {
-      const v = valueLand(land({ landUse, condition: "irregular", method: multiplier() }));
-      expect(v.value).toBe(0);
-      expect(v.needsConsultation).toContain("宅地以外の土地");
-      expect(v.needsConsultation).toContain("ことがあります");
-      expect(v.needsConsultation).toContain("評価額を直接入力");
+      const a = land({ landUse, condition: "irregular", method: multiplier() });
+      expect(valueLand(a).needsConsultation).toBeUndefined();
+      expect(pendingReductions(a)).toEqual(["irregular"]);
+      const adv = reductionAdvice(a);
+      expect(adv).toContain("宅地以外の土地");
+      expect(adv).toContain("ことがあります");
+      expect(adv).toContain("評価額を直接入力");
     }
   });
   it("倍率方式の案内は、宅地なら形を下げられるとは書かない（路線価方式は今までどおり）", () => {
@@ -126,8 +130,11 @@ describe("valuation-2：倍率方式の宅地は、形がいびつでも 固定�
     expect(conditionMessage("irregular", "multiplier", { landUse: "雑種地" })).toContain("宅地以外の土地");
     expect(conditionMessage("irregular", "rosenka")).toContain("形に合わせて評価を下げられます");
   });
-  it("路線価方式の形がいびつな宅地は今までどおり相談（補正率を入れれば計算）", () => {
-    expect(valueLand(land({ condition: "irregular", method: rosenka([{ edge: 0, price: 200_000, depth: 30 }]) })).needsConsultation).toContain("形がいびつ");
+  it("路線価方式の形がいびつな宅地は、止めずに減額しない評価額で計算する（補正率を入れればその率で）", () => {
+    const a = land({ condition: "irregular", method: rosenka([{ edge: 0, price: 200_000, depth: 30 }]) });
+    expect(valueLand(a).needsConsultation).toBeUndefined();
+    expect(pendingReductions(a)).toEqual(["irregular"]);
+    expect(reductionAdvice(a)).toContain("形がいびつ");
   });
 });
 

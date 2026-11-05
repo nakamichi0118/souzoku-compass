@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { SR_MAX_PERMUTE, calculate } from "../tax/engine";
 import { consultPoints } from "@/lib/consult";
+import { caseDraftReason } from "../review/topics";
 import type { Asset, Case, Person } from "../types";
 import type { SmallResidentialCheck } from "../valuation/smallResidential";
 
@@ -397,10 +398,14 @@ describe("相次相続控除（相続税法20条・第7表）", () => {
 
 describe("10年以内の相続・相続時精算課税の「分からない」", () => {
   const one = (d: Partial<Case["decedent"]>) => calculate(mk([c1], [dep("預金", 80_000_000)], [all("預金", ["c1", 1, 1])], { decedent: { ...decedent, ...d } }));
-  it("精算課税が分からないときは、確かめるまで税額を出さず、開示請求か税理士への相談を案内する", () => {
-    const b = one({ settlementGift: "unknown" }).blockers.find((x) => x.includes("相続時精算課税"));
-    expect(b).toContain("開示請求");
-    expect(b).toContain("税理士");
+  it("精算課税が分からないときは、止めずに「ない」として計算し、開示請求か税理士への相談と、申告書が下書きになることを案内する", () => {
+    const r = one({ settlementGift: "unknown" });
+    expect(r.blockers).toEqual([]);
+    const w = r.warnings.find((x) => x.includes("相続時精算課税"));
+    expect(w).toContain("開示請求");
+    expect(w).toContain("税理士");
+    expect(w).toContain("下書き");
+    expect(caseDraftReason({ decedent: { ...decedent, settlementGift: "unknown" }, review: undefined })).toContain("相続時精算課税");
     expect(consultPoints({ ...mk([c1], [], []), decedent: { ...decedent, settlementGift: "unknown" } }, null).some((x) => x.includes("相続時精算課税"))).toBe(true);
   });
   it("10年以内の相続が分からないときは、控除を見込まずに計算する（止めない）", () => {

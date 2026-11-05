@@ -57,7 +57,7 @@ export function DebtsStep() {
       {data.debts.length > 0 && <p className="text-sm text-stone-600">誰が負担するかは「遺産の分け方」で決めます。</p>}
       {data.debts.map((d) => {
         return (
-          <div key={d.id} id={addedAnchor(d.id)}>
+          <div key={d.id} id={addedAnchor(d.id)} data-focus={`debt-${d.id}`} className="rounded-xl">
             <Card
               title={`${d.kind === "debt" ? "債務" : "葬式費用"}：${d.label || "（未入力）"}`}
               actions={
@@ -108,7 +108,7 @@ export function DebtsStep() {
           {data.priorGifts.map((g, i) => {
             const set = (p: Partial<typeof g>) => update((c) => ({ ...c, priorGifts: c.priorGifts.map((x, j) => (j === i ? { ...x, ...p } : x)) }));
             return (
-              <div key={i} className="grid items-end gap-2 rounded-lg border border-stone-200 p-2 sm:grid-cols-[1fr_10rem_1fr_1fr_auto]">
+              <div key={i} data-focus={`gift-${i}`} className="grid items-end gap-2 rounded-lg border border-stone-200 p-2 sm:grid-cols-[1fr_10rem_1fr_1fr_auto]">
                 <Field label="受け取った人" hint={g.personId && !isLiving(g.personId) ? "一覧にいないか、先に亡くなった人です。選び直してください" : undefined}>
                   <Select value={isLiving(g.personId) ? g.personId : ""} onChange={(v) => set({ personId: v })} options={[{ value: "", label: "選んでください" }, ...living.map((p) => ({ value: p.id, label: p.name || "（未入力）" }))]} />
                 </Field>

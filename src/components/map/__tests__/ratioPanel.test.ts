@@ -39,12 +39,13 @@ describe("倍率方式「3.」の評価と反映 ui-3", () => {
     expect(missingLease.valuation.needsConsultation).toContain("借地権割合");
     expect(missingLease.canApply).toBe(true);
     // 三大都市圏以外で1,000㎡以上の宅地（地積規模の大きな宅地）
+    // （減額しかないので止めず、減額しない評価額で計算する）
     const big = ratioStep3(land(), { fav: 30_000_000, multiplier: 1.1, area: 1_200 });
-    expect(big.valuation.needsConsultation).toContain("地積規模の大きな宅地");
+    expect(big.valuation.steps.join()).toContain("地積規模の大きな宅地の減額はしていません");
     expect(big.canApply).toBe(true);
-    // 形がいびつな雑種地は、近くの宅地と比べて形の補正をすることがあるので相談
+    // 形がいびつな雑種地は、近くの宅地と比べて形の補正をすることがある（止めずに、減額していないと書く）
     const irregular = ratioStep3(land({ condition: "irregular", landUse: "雑種地" }), { fav: 10_000_000, multiplier: 1.1, area: 200 });
-    expect(irregular.valuation.needsConsultation).toBeTruthy();
+    expect(irregular.valuation.steps.join()).toContain("不整形地の補正（減額）はしていません");
     expect(irregular.canApply).toBe(true);
   });
 

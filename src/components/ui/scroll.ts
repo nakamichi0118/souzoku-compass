@@ -42,3 +42,40 @@ export function centerCurrent(strip: Strip | null | undefined) {
   const left = strip.scrollLeft + offset - (strip.clientWidth - cur.offsetWidth) / 2;
   strip.scrollLeft = Math.max(0, Math.min(left, strip.scrollWidth - strip.clientWidth));
 }
+
+/** 目立たせる枠（直す場所・答えていない質問へ送ったとき） */
+const FLASH = ["ring-4", "ring-amber-300", "ring-offset-2"];
+
+/** 要素を画面の真ん中あたりへ送り、少しのあいだ枠で目立たせる */
+export function flashInto(el: HTMLElement) {
+  const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
+  el.classList.add(...FLASH);
+  window.setTimeout(() => el.classList.remove(...FLASH), 2500);
+}
+
+/**
+ * 印（data-focus="id"）のついた要素へ送って目立たせる。画面を描き終わる前でも見つかるまで少し待つ（最大およそ2秒）。
+ * 見つかったら true
+ */
+export function focusMark(id: string, tries = 20): Promise<boolean> {
+  return new Promise((resolve) => {
+    const tick = (n: number) => {
+      const el = document.querySelector<HTMLElement>(`[data-focus="${CSS.escape(id)}"]`);
+      if (el) {
+        flashInto(el);
+        resolve(true);
+      } else if (n <= 0) resolve(false);
+      else window.setTimeout(() => tick(n - 1), 100);
+    };
+    tick(tries);
+  });
+}
+
+/** 印（data-missing）のついた最初の要素（答えていない質問・入れていない欄）へ送る。なければ false */
+export function focusFirstMissing(root: ParentNode = document): boolean {
+  const el = root.querySelector<HTMLElement>("[data-missing]");
+  if (!el) return false;
+  flashInto(el);
+  return true;
+}
