@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { guessDocId, itemReady, submissionItems } from "../submission";
+import { NO_UPLOAD, guessDocId, itemReady, submissionItems } from "../submission";
+import { isDocId } from "@/server/files/limits";
 
 const base = { taxDocs: ["kosekiDecedent", "kosekiHeirs", "inkan", "balanceCert", "funeralReceipt"], smallLand: false, will: false };
 
@@ -50,5 +51,30 @@ describe("税務署に出す書類の一覧", () => {
     expect(guessDocId("固定資産税 課税明細書")).toBe("hyokaCert");
     expect(guessDocId("領収書")).toBe("funeralReceipt");
     expect(guessDocId("よくわからない紙")).toBeNull();
+  });
+});
+
+describe("マイナンバーの書類は預からない", () => {
+  const items = submissionItems({ taxDocs: [], smallLand: false, will: false });
+  const my = items.find((i) => i.id === "mynumber")!;
+
+  it("提出書類の欄には残すが、入れる書類の種類はなく「ご自身で用意」にする", () => {
+    expect(my.selfOnly).toBe(true);
+    expect(my.docIds).toEqual([]);
+    expect(itemReady(my, () => 0, false)).toBe(true);
+  });
+
+  it("どの欄の書類の種類にもマイナンバーは出てこない", () => {
+    expect(items.flatMap((i) => i.docIds).some((d) => NO_UPLOAD.has(d))).toBe(false);
+  });
+
+  it("サーバーは mynumber の種類で保存を受け付けない", () => {
+    expect(isDocId("mynumber")).toBe(false);
+    expect(isDocId("kosekiDecedent")).toBe(true);
+  });
+
+  it("読み取った書類の種類がマイナンバーなら、そうと分かる", () => {
+    expect(NO_UPLOAD.has(guessDocId("個人番号カード") ?? "")).toBe(true);
+    expect(NO_UPLOAD.has(guessDocId("通知カード") ?? "")).toBe(true);
   });
 });

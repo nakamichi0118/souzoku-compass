@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "./cloud";
+import { NO_UPLOAD, NO_UPLOAD_NOTE } from "@/domain/filing/submission";
 
 export interface DocFile {
   id: string;
@@ -166,7 +167,10 @@ const urlOf = (r: LocalRec) => {
 };
 const local = (owner: string): Backend => ({
   async list() {
-    return (await localList(owner)).map((r) => {
+    const recs = await localList(owner);
+    // 以前に入ってしまったマイナンバーの書類は、この端末からも消す
+    for (const r of recs.filter((x) => NO_UPLOAD.has(x.docId))) await tx("readwrite", (s) => s.delete(r.id));
+    return recs.filter((r) => !NO_UPLOAD.has(r.docId)).map((r) => {
       const src = urlOf(r);
       return { id: r.id, docId: r.docId, name: r.name, type: r.type, size: r.size, addedAt: r.addedAt, src, load: async () => r.blob };
     });
@@ -238,6 +242,10 @@ export function useDocFiles() {
     async (docId: string, list: File[]) => {
       setErr(null);
       const out: DocFile[] = [];
+      if (NO_UPLOAD.has(docId)) {
+        setErr(NO_UPLOAD_NOTE);
+        return out;
+      }
       try {
         for (const f of list) out.push(await backend().add(docId, await normalizeImage(f)));
       } catch (e) {

@@ -7,13 +7,16 @@
 import { CompassAvatar } from "@/components/compass/CompassKun";
 import { useState } from "react";
 import { Reader } from "@/components/extract/Reader";
-import { EXTRA_DOCS, docName } from "@/domain/filing/submission";
+import { EXTRA_DOCS, NO_UPLOAD, NO_UPLOAD_NOTE, docName } from "@/domain/filing/submission";
 import { DOCS } from "@/domain/procedures/documents";
 import { splitDuplicates, useDocFiles, type DocFile, type Duplicate } from "@/lib/docFiles";
 import { usePlan } from "@/lib/planStore";
 import { AddButtons, DupNote } from "./DocFiles";
 
-const CHOICES = [...Object.keys(DOCS), ...Object.keys(EXTRA_DOCS)];
+/** 仕分けの答えになりうる種類（マイナンバーも見分けるが、それは保存しない） */
+const KINDS = [...Object.keys(DOCS), ...Object.keys(EXTRA_DOCS)];
+/** 種類を直すときの選択肢（預からない書類は出さない） */
+const CHOICES = KINDS.filter((id) => !NO_UPLOAD.has(id));
 
 async function classify(f: File): Promise<string> {
   try {
@@ -21,7 +24,7 @@ async function classify(f: File): Promise<string> {
     fd.append("file", f);
     const r = await fetch("/api/classify", { method: "POST", body: fd });
     const j = await r.json().catch(() => ({}));
-    return r.ok && typeof j.docId === "string" && CHOICES.includes(j.docId) ? j.docId : "otherDoc";
+    return r.ok && typeof j.docId === "string" && KINDS.includes(j.docId) ? j.docId : "otherDoc";
   } catch {
     return "otherDoc";
   }
@@ -37,6 +40,8 @@ export function AutoSort() {
     if (DOCS[docId] && !DOCS[docId].readable) plan.setStatus(`doc:${docId}`, "done");
   };
   const [dups, setDups] = useState<Duplicate[]>([]);
+  // マイナンバーと分かって保存しなかった枚数
+  const [refused, setRefused] = useState(0);
   const add = async (picked: File[], force = false) => {
     // 保存済みと同じ書類は仕分けず、どこに入っているかを知らせる
     let list = picked;
@@ -48,6 +53,11 @@ export function AutoSort() {
     setBusy((n) => n + list.length);
     for (const f of list) {
       const docId = await classify(f);
+      if (NO_UPLOAD.has(docId)) {
+        setRefused((n) => n + 1);
+        setBusy((n) => n - 1);
+        continue;
+      }
       const [rec] = await store.add(docId, [f]);
       if (rec) {
         markDone(docId);
@@ -67,6 +77,12 @@ export function AutoSort() {
         <p className="flex items-center gap-2 text-sm text-teal-900">
           <CompassAvatar size={32} thinking />
           コンパスくんが仕分けています（残り{busy}枚）
+        </p>
+      )}
+      {refused > 0 && (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          {refused > 1 ? `${refused}枚：` : ""}
+          {NO_UPLOAD_NOTE}申告書にはご自身で写しを重ねてください。
         </p>
       )}
       {store.err && <p className="text-sm text-rose-700">{store.err}</p>}

@@ -4,6 +4,7 @@ import { currentUser, sameOrigin } from "@/server/auth/http";
 import { overLimit } from "@/server/limit";
 import { CHUNK, getFileDb } from "@/server/files/store";
 import { FILE_LIMITS, FILE_TYPES, isDocId } from "@/server/files/limits";
+import { NO_UPLOAD } from "@/domain/filing/submission";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,7 +14,12 @@ const view = (m: { id: string; docId: string; name: string; type: string; size: 
 export async function GET() {
   const user = await currentUser();
   if (!user) return NextResponse.json({ error: "ログインしてください。" }, { status: 401 });
-  const list = await (await getFileDb()).list(user.id);
+  const db = await getFileDb();
+  const all = await db.list(user.id);
+  // 以前に入ってしまったマイナンバーの書類は預からないので、ここで消す
+  const banned = all.filter((m) => NO_UPLOAD.has(m.docId));
+  for (const m of banned) await db.remove(user.id, m.id);
+  const list = all.filter((m) => !NO_UPLOAD.has(m.docId));
   return NextResponse.json({ items: list.map(view) }, { headers: { "cache-control": "no-store" } });
 }
 
