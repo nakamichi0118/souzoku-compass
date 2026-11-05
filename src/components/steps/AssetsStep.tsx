@@ -9,7 +9,7 @@ import { newId, useCase } from "@/lib/store";
 import { usePlan } from "@/lib/planStore";
 import { DOC_OF, assetHasDoc } from "@/lib/assetDocs";
 import { AssetIcon } from "@/components/my/icons";
-import { revealBelowHeader } from "@/components/ui/scroll";
+import { flashInto, revealBelowHeader } from "@/components/ui/scroll";
 import { type DivisionInput, LandEditor, LeaseRatioSelect, RentRatioField, SmallResidential, resetSmallOnKindChange } from "./LandEditor";
 import type { Interview } from "@/domain/procedures/interview";
 import { RECEIVABLE_TYPES, type Receivable } from "@/domain/review/receivables";
@@ -110,6 +110,7 @@ export function AssetsStep() {
   const [menu, setMenu] = useState(false);
   const [scrollTo, setScrollTo] = useState<string | null>(null);
   const refs = useRef<Record<string, HTMLLIElement | null>>({});
+  const fromLink = useRef(false);
   // 開いた・閉じた行。上の行が閉じて縮むと、押した行が画面のずっと上へ行くので、見える位置に戻す
   const toggled = useRef<string | null>(null);
   const toggle = (id: string, next: string | null) => {
@@ -126,6 +127,7 @@ export function AssetsStep() {
     const id = sp.get("asset");
     if (!id) return;
     setOpenId(id);
+    fromLink.current = true;
     setScrollTo(id);
     if (sp.get("applied")) {
       setApplied(id);
@@ -139,7 +141,10 @@ export function AssetsStep() {
     if (!scrollTo) return;
     const el = refs.current[scrollTo];
     if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      // 「直す」リンクや地図から来たときは、枠で目立たせる
+      if (fromLink.current) flashInto(el);
+      else el.scrollIntoView({ behavior: "smooth", block: "start" });
+      fromLink.current = false;
       el.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
       setScrollTo(null);
     }
@@ -256,6 +261,7 @@ export function AssetsStep() {
                 refs.current[a.id] = el;
               }}
               className={`scroll-mt-40 rounded-xl border bg-white ${open ? "border-sky-400 shadow-md" : "border-stone-200"}`}
+              data-focus={`asset-${a.id}`}
             >
               <button type="button" onClick={() => toggle(a.id, open ? null : a.id)} aria-expanded={open} className="flex w-full items-center gap-2 px-4 py-3 text-left sm:gap-3">
                 {/* スマートフォンでは種類を絵だけにして、名称に1行を使う */}
@@ -296,6 +302,12 @@ export function AssetsStep() {
                       </button>
                     </Note>
                   )}
+                  {/* 評価額を出せない理由は、長い入力欄の下ではなく、開いてすぐ見える上に出す */}
+                  {line?.valuation.needsConsultation && (
+                    <div data-missing>
+                      <Note tone="stop">{line.valuation.needsConsultation}</Note>
+                    </div>
+                  )}
                   {applied === a.id && <Note tone="ok">地図で入れた土地の形と路線価を反映しました。評価額は {line ? `${fmt(line.valuation.value)}円` : "計算中"} です。</Note>}
                   {missingRecipient && noHeirs && (
                     <Note tone="warn">
@@ -321,7 +333,6 @@ export function AssetsStep() {
                       </ul>
                     </details>
                   )}
-                  {line?.valuation.needsConsultation && <Note tone="stop">{line.valuation.needsConsultation}</Note>}
                   {a.foreign && <Note tone="stop">国外財産は自動で申告書を完成できません。税理士にご相談ください。</Note>}
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <Check checked={!!a.foreign} onChange={(v) => patch(a.id, { foreign: v })} label="国外にある財産" />

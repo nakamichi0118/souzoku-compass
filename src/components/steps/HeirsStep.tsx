@@ -124,7 +124,7 @@ export function HeirsStep() {
         // 亡くなった後に生まれた子は0歳（相続税の計算と同じ扱い）
         const age = rawAge == null ? undefined : Math.max(0, rawAge);
         return (
-          <div key={p.id} id={addedAnchor(p.id)}>
+          <div key={p.id} id={addedAnchor(p.id)} data-focus={`person-${p.id}`} className="rounded-xl">
             <Card
               title={
                 <span className="flex flex-wrap items-center gap-2">

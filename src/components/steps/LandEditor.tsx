@@ -9,6 +9,7 @@ import { Choice } from "@/components/plan/inputs";
 import { Button, Check, Field, Note, NumInput, OptionalNumInput, Select, TextInput, YenInput, fmt } from "@/components/ui";
 import type { Asset, Case, CondoAsset, LandAsset, LandUse, Person, SmallLandAcquirer, SmallLandKind, SmallLandRelief } from "@/domain/types";
 import { DISTRICTS, type District } from "@/domain/valuation/depth";
+import { type PendingReduction, pendingReductions, reductionAdvice } from "@/domain/valuation";
 import { LEASE_LETTERS, LEASE_RATIO_BY_LETTER, type LeaseLetter, leaseLetterOf, ratio4 } from "@/domain/valuation/lease";
 import { type Edge, type RoadInput, correctionRates, evaluateRoads } from "@/domain/valuation/roads";
 import { type Answer, SMALL_LAND_RULE, type SmallResidentialCheck, judgeSmallResidential, shouldApply, smallLandKind } from "@/domain/valuation/smallResidential";
@@ -250,10 +251,15 @@ export function recentAskedAt(kind: SmallLandKind, lot: SmallResidentialCheck, o
 /** 土地についての答えで、誰が取得しても特例を使えないと決まっているか（自宅でも、事業用でも、家族が住んでいた土地でもない） */
 const lotRuledOut = (kind: SmallLandKind, c: SmallResidentialCheck) => kind !== "rental" && c.ownHome === "no" && c.business === "no" && c.familyHome === "no";
 
-function Ask({ q, hint, value, onChange }: { q: string; hint?: string; value: Answer | undefined; onChange: (v: Answer) => void }) {
+function Ask({ q, hint, value, onChange, missing }: { q: string; hint?: string; value: Answer | undefined; onChange: (v: Answer) => void; missing?: boolean }) {
+  // missing：答え始めたのに、まだ答えていない質問（特例の判定がここで止まっている）
+  const miss = missing && value === undefined;
   return (
-    <div className="space-y-1">
-      <p className="text-sm font-medium text-stone-800">{q}</p>
+    <div className={`space-y-1 ${miss ? "-mx-2 rounded-md border-l-4 border-orange-400 bg-orange-50/70 px-2 py-1" : ""}`} data-missing={miss ? "" : undefined}>
+      <p className="text-sm font-medium text-stone-800">
+        {q}
+        {miss && <span className="ml-2 rounded-full bg-orange-100 px-2 py-0.5 align-middle text-[11px] font-bold text-orange-800">未回答</span>}
+      </p>
       {hint && <p className="text-xs text-stone-500">{hint}</p>}
       <Choice value={value} onChange={onChange} options={ANSWERS} />
     </div>
@@ -313,7 +319,10 @@ export function SmallResidential({
   };
   // 自宅の敷地か・事業に使っていたか・家族が住んでいたかを答え直したら、特例の種類や聞くことが変わるので、その先の答えは引き継がない
   const answer = (k: keyof SmallResidentialCheck, v: Answer) => set(answerFirstAcquirer(sr, k, v));
-  const ask = ({ key, q, hint }: Question) => <Ask q={q} hint={hint} value={check[key] as Answer | undefined} onChange={(v) => answer(key, v)} />;
+  // 答え始めたのに判定が決まらない（質問が残っている・取得する人を選んでいない）ときは、残っているところに印をつける
+  const started = !!sr.acquirerId || Object.values(check).some((v) => v !== undefined && v !== false);
+  const incomplete = started && j.result === "incomplete";
+  const ask = ({ key, q, hint }: Question) => <Ask q={q} hint={hint} value={check[key] as Answer | undefined} onChange={(v) => answer(key, v)} missing={incomplete} />;
   const isSpouse = acquirer?.relation === "spouse";
   const what = a.kind === "condo" ? "この部屋" : "この土地";
   const place = a.kind === "condo" ? "部屋" : "土地";
@@ -326,6 +335,8 @@ export function SmallResidential({
     <div className="space-y-3 rounded-lg bg-stone-50 p-3 sm:col-span-2">
       <p className="font-bold text-stone-800">小規模宅地等の特例（評価が最大80%下がる）</p>
       <p className="text-xs text-stone-500">分からないときは特例を使わずに計算します。</p>
+      {incomplete && <p className="text-sm font-semibold text-orange-800">あと少し：{j.reason}特例はまだ使っていません。</p>}
+      <div data-missing={incomplete && !acquirer ? "" : undefined} className={incomplete && !acquirer ? "-mx-2 rounded-md border-l-4 border-orange-400 bg-orange-50/70 px-2 py-1" : ""}>
       <Field label={`${what}を取得する人`}>
         <Select
           value={sr.acquirerId ?? ""}
@@ -334,6 +345,7 @@ export function SmallResidential({
           options={[{ value: "", label: "選んでください" }, ...living.map((p) => ({ value: p.id, label: `${p.name || "（未入力）"}（${p.relationLabel ?? ""}）` }))]}
         />
       </Field>
+      </div>
       {kind === "rental" ? (
         // 人に貸している土地・部屋（貸付事業用宅地等）：自宅かどうかは聞かない
         <>
@@ -734,17 +746,26 @@ function roadLetter(a: LandAsset): LeaseLetter | undefined {
   return leaseLetterOf(notation);
 }
 
+/** 減額していない事情ごとの、相談をすすめる理由の言い方 */
+const REDUCTION_REASON: Record<PendingReduction, (a: LandAsset) => string> = {
+  setback: () => "前の道路の幅が4m未満の可能性があり",
+  irregular: () => "形がいびつな土地で",
+  largeLot: (a) => `${a.areaSqm.toLocaleString()}㎡の広い宅地で`,
+};
+
 /**
- * セットバック：止めずに減額しない評価額で計算し、税理士に相談するかは本人が選ぶ（相談をすすめる）。
+ * 形がいびつ・セットバック・広い宅地：止めずに減額しない評価額で計算し、税理士に相談するかは本人が選ぶ（相談をすすめる）。
  * 相談して補正率が分かれば「補正率を修正」で入れる（倍率方式・直接入力なら評価額を直接入力）
  */
-function SetbackChoice({ a, patch }: { a: LandAsset; patch: (p: Partial<Asset>) => void }) {
+export function ReductionChoice({ a, patch }: { a: LandAsset; patch: (p: Partial<Asset>) => void }) {
+  const open = pendingReductions(a);
+  if (!open.length) return null;
   const pick = (v: boolean) => patch({ reductionConsult: v } as Partial<Asset>);
   const btn = (on: boolean) =>
     `min-h-10 flex-1 rounded-lg border px-3 py-1.5 text-sm font-semibold ${on ? "border-teal-700 bg-teal-700 text-white" : "border-stone-300 bg-white text-stone-700 hover:bg-stone-50"}`;
   return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm sm:col-span-2">
-      <p className="text-stone-800">前の道路の幅が4m未満の可能性があるため、税理士に相談すると評価額が下がる可能性があります（相談をおすすめします）。</p>
+    <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm sm:col-span-2" data-reduction={open.join(" ")}>
+      <p className="text-stone-800">{open.map((r) => REDUCTION_REASON[r](a)).join("、")}、税理士に相談すると評価額が下がる可能性があります（相談をおすすめします）。</p>
       <div className="mt-2 flex gap-2" role="group" aria-label="税理士に相談するか">
         <button type="button" aria-pressed={a.reductionConsult === true} onClick={() => pick(true)} className={btn(a.reductionConsult === true)}>
           相談する
@@ -756,7 +777,11 @@ function SetbackChoice({ a, patch }: { a: LandAsset; patch: (p: Partial<Asset>) 
       {a.reductionConsult === true && (
         <div className="mt-2 space-y-2 text-xs text-stone-700">
           <p>{a.method.type === "rosenka" ? "補正率が分かったら、下の「補正率を修正」で入れてください。" : "評価額が分かったら、評価方法を「評価額を直接入力」にして入れてください。"}それまでは減額しない評価額で計算します。</p>
-          <ConsultLink topic="セットバック" />
+          <details>
+            <summary className="tips-summary cursor-pointer py-1 font-medium text-teal-800">Tips：税理士に確認すること</summary>
+            <p className="leading-relaxed">{reductionAdvice(a)}</p>
+          </details>
+          <ConsultLink topic="土地の評価" />
         </div>
       )}
       {a.reductionConsult === false && <p className="mt-2 text-xs text-stone-600">減額しない評価額で計算します（申告額が高めになることがあります）。</p>}
@@ -830,7 +855,7 @@ export function LandEditor({
           <Select value={a.condition ?? ""} onChange={(v) => patch({ condition: (v || undefined) as LandAsset["condition"], reductionConsult: undefined })} options={CONDITION_OPTIONS} />
         </Field>
       )}
-      {a.condition === "setback" && <SetbackChoice a={a} patch={patch} />}
+      <ReductionChoice a={a} patch={patch} />
       <Field label="評価方法" hint="分からなければ「地図で評価する」で決まります">
         <Select
           value={m.type}

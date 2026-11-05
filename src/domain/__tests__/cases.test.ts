@@ -86,7 +86,8 @@ describe("シナリオをアプリの入力に写す（toCase）", () => {
         if (a.rentRatio !== (use === "rentedHouse" || use === "rentedLeasehold" ? it.rentRatio : undefined)) bad.push(`${s.id} ${it.id} 賃貸割合 ${a.rentRatio}`);
         const lease = it.valuation.kind === "multiplier" && use !== "self" ? it.valuation.leaseRatio : undefined;
         if (a.leaseRatio !== lease) bad.push(`${s.id} ${it.id} 借地権割合 ${a.leaseRatio}`);
-        const cond = it.needsReduction === "irregular" || it.needsReduction === "setback" ? it.needsReduction : it.spouseResidenceRight ? "spouseResidence" : undefined;
+        // 選べる事情は1つ。配偶者居住権（いつも相談）を先に選ぶ
+        const cond = it.spouseResidenceRight ? "spouseResidence" : it.needsReduction === "irregular" || it.needsReduction === "setback" ? it.needsReduction : undefined;
         if (a.condition !== cond) bad.push(`${s.id} ${it.id} 事情 ${a.condition}`);
         if (it.valuation.kind === "rosenka" && a.method.type === "rosenka") {
           const fr = [...it.valuation.roads.map((r) => r.frontage)].sort((x, y) => x - y);

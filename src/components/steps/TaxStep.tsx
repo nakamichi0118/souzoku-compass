@@ -10,6 +10,7 @@ import { Markdown } from "@/components/compass/Markdown";
 import { jpDate, monthsDeadline, nextOpenDay } from "@/domain/procedures/dates";
 import { relationLabel } from "@/forms/filing";
 import { unsettledAssets } from "@/lib/progress";
+import { BlockerList } from "./BlockerList";
 import { useCase } from "@/lib/store";
 import { summarizeForAssistant } from "@/lib/summary";
 
@@ -98,11 +99,7 @@ export function TaxStep() {
           </p>
           <p className="mt-1 text-xs">申告期限までに決まらないときは、分け方の画面で「分け方がまだ決まっていない」を選ぶと、法定相続分で計算します。</p>
         </Note>
-        {r.blockers.map((b, i) => (
-          <Note key={`${i}:${b}`} tone="warn">
-            {b}
-          </Note>
-        ))}
+        <BlockerList data={data} blockers={r.blockers} tone="warn" />
       </div>
     );
   }
@@ -124,11 +121,7 @@ export function TaxStep() {
           </ul>
         </Note>
       )}
-      {r.blockers.map((b, i) => (
-        <Note key={`${i}:${b}`} tone="stop">
-          {b}
-        </Note>
-      ))}
+      <BlockerList data={data} blockers={r.blockers} />
 
       {/* いちばん大事なこと：家族全体で、誰がいくら納めるか */}
       <section className="rounded-2xl border border-teal-200 bg-gradient-to-br from-teal-50 to-white p-5 shadow-sm">

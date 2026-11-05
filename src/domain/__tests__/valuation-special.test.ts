@@ -1,9 +1,9 @@
 /**
- * 評価を下げられるのに相続コンパスでは計算しない土地（地積規模の大きな宅地・形がいびつ・セットバック・配偶者居住権）は、
- * 確定させずに税理士への相談を案内する。
+ * 評価を下げられるのに相続コンパスでは計算しない土地（地積規模の大きな宅地・形がいびつ・セットバック）は、
+ * 止めずに減額しない評価額で計算し、減額していないことを説明に書く（相談するかは本人が選ぶ）。配偶者居住権は税理士への相談を案内する。
  */
 import { describe, expect, it } from "vitest";
-import { largeLotThreshold, prefectureOf, valueLand } from "../valuation";
+import { largeLotThreshold, pendingReductions, prefectureOf, valueLand } from "../valuation";
 import type { LandAsset } from "../types";
 
 const land = (p: Partial<LandAsset> = {}): LandAsset => ({
@@ -35,59 +35,66 @@ describe("都道府県と地積規模の大きな宅地の面積（財産評価�
   });
 });
 
-describe("地積規模の大きな宅地にあたりうる土地は確定しない", () => {
+/** 減額していない事情として評価の説明に書いたか */
+const noted = (v: ReturnType<typeof valueLand>, word: string) => v.steps.some((s) => s.includes(word) && s.includes("していません"));
+
+describe("地積規模の大きな宅地にあたりうる土地は止めず、減額しない評価額で計算する（相談するかは本人が選ぶ）", () => {
   it("千葉県の普通住宅地区（地区の指定なし）で500㎡以上", () => {
     const v = valueLand(land({ areaSqm: 500 }));
-    expect(v.value).toBe(0);
-    expect(v.needsConsultation).toContain("地積規模の大きな宅地");
-    expect(v.needsConsultation).toContain("500㎡以上");
-    expect(valueLand(land({ areaSqm: 499.99 })).needsConsultation).toBeUndefined();
+    expect(v.needsConsultation).toBeUndefined();
+    expect(v.value).toBe(100_000_000);
+    expect(noted(v, "500㎡以上の広い宅地")).toBe(true);
+    expect(pendingReductions(land({ areaSqm: 500 }))).toEqual(["largeLot"]);
+    expect(pendingReductions(land({ areaSqm: 499.99 }))).toEqual([]);
     expect(valueLand(land({ areaSqm: 499.99 })).value).toBe(99_998_000); // 200,000 × 499.99
   });
   it("三大都市圏以外は1,000㎡以上", () => {
-    expect(valueLand(land({ location: "北海道札幌市", areaSqm: 999.99 })).needsConsultation).toBeUndefined();
-    expect(valueLand(land({ location: "北海道札幌市", areaSqm: 1000 })).needsConsultation).toContain("1,000㎡以上");
+    expect(pendingReductions(land({ location: "北海道札幌市", areaSqm: 999.99 }))).toEqual([]);
+    expect(noted(valueLand(land({ location: "北海道札幌市", areaSqm: 1000 })), "1,000㎡以上")).toBe(true);
   });
   it("所在の都道府県が分からなければ500㎡以上", () => {
-    expect(valueLand(land({ location: "x", areaSqm: 500 })).needsConsultation).toContain("地積規模の大きな宅地");
+    expect(pendingReductions(land({ location: "x", areaSqm: 500 }))).toEqual(["largeLot"]);
   });
   it("普通商業・併用住宅地区、倍率方式の宅地も対象", () => {
-    expect(
-      valueLand(land({ areaSqm: 600, method: { type: "rosenka", routePrice: 200_000, depthCorrection: 1, district: "普通商業・併用住宅地区" } })).needsConsultation,
-    ).toContain("地積規模");
-    expect(valueLand(land({ areaSqm: 600, method: { type: "multiplier", fixedAssetValue: 10_000_000, multiplier: 1.1 } })).needsConsultation).toContain("地積規模");
+    expect(pendingReductions(land({ areaSqm: 600, method: { type: "rosenka", routePrice: 200_000, depthCorrection: 1, district: "普通商業・併用住宅地区" } }))).toEqual(["largeLot"]);
+    const m = valueLand(land({ areaSqm: 600, method: { type: "multiplier", fixedAssetValue: 10_000_000, multiplier: 1.1 } }));
+    expect(m.value).toBe(11_000_000);
+    expect(noted(m, "地積規模の大きな宅地")).toBe(true);
   });
   it("ほかの地区・宅地でない土地・評価額を直接入力した土地は対象外", () => {
     for (const district of ["ビル街地区", "高度商業地区", "繁華街地区", "中小工場地区", "大工場地区"] as const) {
-      expect(valueLand(land({ areaSqm: 2000, method: { type: "rosenka", routePrice: 200_000, depthCorrection: 1, district } })).needsConsultation).toBeUndefined();
+      expect(pendingReductions(land({ areaSqm: 2000, method: { type: "rosenka", routePrice: 200_000, depthCorrection: 1, district } }))).toEqual([]);
     }
-    expect(valueLand(land({ areaSqm: 2000, landUse: "畑", method: { type: "multiplier", fixedAssetValue: 1_000_000, multiplier: 1.1 } })).needsConsultation).toBeUndefined();
+    expect(pendingReductions(land({ areaSqm: 2000, landUse: "畑", method: { type: "multiplier", fixedAssetValue: 1_000_000, multiplier: 1.1 } }))).toEqual([]);
     expect(valueLand(land({ areaSqm: 2000, method: { type: "manual", value: 50_000_000 } })).value).toBe(50_000_000);
   });
-  it("人に貸している土地・借地権でも、自用地の評価が対象になるので確定しない", () => {
-    expect(valueLand(land({ areaSqm: 800, use: "leasehold", leaseRatio: 0.6 })).needsConsultation).toContain("地積規模");
+  it("人に貸している土地・借地権でも、自用地の評価が対象になるので減額していないと書く", () => {
+    const v = valueLand(land({ areaSqm: 800, use: "leasehold", leaseRatio: 0.6 }));
+    expect(v.needsConsultation).toBeUndefined();
+    expect(v.value).toBe(96_000_000); // 200,000 × 800 × 0.6
+    expect(noted(v, "地積規模の大きな宅地")).toBe(true);
   });
 });
 
 describe("評価に影響する土地の事情", () => {
-  it.each([
-    ["irregular", "形がいびつ"],
-    ["spouseResidence", "配偶者居住権"],
-  ] as const)("%s → 確定せず税理士へ（%s）", (condition, word) => {
-    const v = valueLand(land({ condition }));
+  it("配偶者居住権 → 確定せず税理士へ", () => {
+    const v = valueLand(land({ condition: "spouseResidence" }));
     expect(v.value).toBe(0);
-    expect(v.needsConsultation).toContain(word);
+    expect(v.needsConsultation).toContain("配偶者居住権");
     expect(v.needsConsultation).toContain("税理士");
   });
-  it("セットバックは止めず、減額しない評価額で計算して説明に書く（減額しかないので、相談するかは本人が選ぶ）", () => {
-    const v = valueLand(land({ condition: "setback" }));
+  it.each([
+    ["irregular", "不整形地の補正"],
+    ["setback", "セットバックの減額"],
+  ] as const)("%s は止めず、減額しない評価額で計算して説明に書く（減額しかないので、相談するかは本人が選ぶ）", (condition, word) => {
+    const v = valueLand(land({ condition }));
     expect(v.needsConsultation).toBeUndefined();
     expect(v.value).toBe(60_000_000);
-    expect(v.steps.some((s) => s.includes("セットバックの減額はしていません"))).toBe(true);
+    expect(noted(v, word)).toBe(true);
     // 補正率を入れたらその率で計算し、減額していないとは書かない
-    const r = valueLand(land({ condition: "setback", method: { type: "rosenka", routePrice: 200_000, depthCorrection: 1, otherCorrection: 0.9 } }));
+    const r = valueLand(land({ condition, method: { type: "rosenka", routePrice: 200_000, depthCorrection: 1, otherCorrection: 0.9 } }));
     expect(r.value).toBe(54_000_000);
-    expect(r.steps.some((s) => s.includes("セットバックの減額はしていません"))).toBe(false);
+    expect(noted(r, word)).toBe(false);
   });
   it("事情がなければ今までどおり（200,000 × 300㎡）", () => {
     expect(valueLand(land()).value).toBe(60_000_000);
@@ -97,17 +104,18 @@ describe("評価に影響する土地の事情", () => {
 describe("修正した補正率・評価額を入れた土地は計算する", () => {
   it("形がいびつ・セットバックでも、修正した補正率（0より大きく1以下）を入れれば、その補正率で計算する", () => {
     const m = { type: "rosenka" as const, routePrice: 200_000, depthCorrection: 1, otherCorrection: 0.9 };
-    expect(valueLand(land({ condition: "irregular" })).needsConsultation).toBeDefined();
+    expect(pendingReductions(land({ condition: "irregular" }))).toEqual(["irregular"]);
     expect(valueLand(land({ condition: "irregular", method: m })).value).toBe(54_000_000); // 20万×0.9×300㎡
-    expect(valueLand(land({ condition: "setback", method: m })).needsConsultation).toBeUndefined();
+    expect(pendingReductions(land({ condition: "irregular", method: m }))).toEqual([]);
     // 税理士に「減額なし」と確認した 1 も、確認した答えとして計算する
     expect(valueLand(land({ condition: "irregular", method: { ...m, otherCorrection: 1 } })).value).toBe(60_000_000);
     expect(valueLand(land({ condition: "setback", method: { ...m, otherCorrection: 1 } })).value).toBe(60_000_000);
-    // 1を超える・0以下の補正率は確認した答えにならない
-    for (const otherCorrection of [0, -0.5, 1.2, Number.NaN]) expect(valueLand(land({ condition: "irregular", method: { ...m, otherCorrection } })).needsConsultation).toContain("形がいびつ");
+    // 0以下の補正率は確認した答えにならない（減額しない評価額のまま）。1を超える補正率は直すよう止める
+    for (const otherCorrection of [0, -0.5, Number.NaN]) expect(pendingReductions(land({ condition: "irregular", method: { ...m, otherCorrection } }))).toEqual(["irregular"]);
+    expect(valueLand(land({ condition: "irregular", method: { ...m, otherCorrection: 1.2 } })).needsConsultation).toContain("1を超えています");
   });
-  it("広い土地も、修正した補正率か直接入力の評価額があれば計算する", () => {
-    expect(valueLand(land({ areaSqm: 600 })).needsConsultation).toContain("地積規模");
+  it("広い土地も、修正した補正率か直接入力の評価額があれば、その額で計算する", () => {
+    expect(pendingReductions(land({ areaSqm: 600 }))).toEqual(["largeLot"]);
     expect(valueLand(land({ areaSqm: 600, method: { type: "rosenka", routePrice: 200_000, depthCorrection: 1, otherCorrection: 0.8 } })).value).toBe(96_000_000);
     expect(valueLand(land({ areaSqm: 600, method: { type: "manual", value: 90_000_000 } })).value).toBe(90_000_000);
     // 「地積規模の大きな宅地にあたらない（減額なし）」と確認したら 1 を入れて計算できる

@@ -100,9 +100,11 @@ export function DecedentStep() {
           <Field label="生年月日" hint={wareki(d.birthDate)?.text}>
             <TextInput type="date" value={d.birthDate} onChange={(e) => set("birthDate", e.target.value)} />
           </Field>
-          <Field label="亡くなった日" hint={wareki(d.deathDate)?.text}>
-            <TextInput type="date" value={d.deathDate} onChange={(e) => set("deathDate", e.target.value)} />
-          </Field>
+          <div data-focus="deathDate" className="rounded-lg">
+            <Field label="亡くなった日" hint={wareki(d.deathDate)?.text}>
+              <TextInput type="date" value={d.deathDate} onChange={(e) => set("deathDate", e.target.value)} />
+            </Field>
+          </div>
           <div className="sm:col-span-2">
             <AddressField
               label="最後の住所"
@@ -130,6 +132,7 @@ export function DecedentStep() {
           </Field>
         </div>
       </Card>
+      <div data-focus="priorInheritance" className="rounded-xl">
       <Card title="10年以内の相続">
         <p className="text-sm text-stone-700">亡くなった方は、亡くなる前10年以内に、ほかの方の相続で相続税を納めましたか？</p>
         <p className="mt-1 text-xs text-stone-500">例：先に亡くなった配偶者から相続していた。今回の相続税が少なくなります。</p>
@@ -177,6 +180,8 @@ export function DecedentStep() {
           </div>
         )}
       </Card>
+      </div>
+      <div data-focus="settlementGift" className="rounded-xl">
       <Card title="相続時精算課税を選んだ贈与">
         <p className="text-sm text-stone-700">亡くなった方からの贈与で「相続時精算課税」を選んだ人はいますか？</p>
         <p className="mt-1 text-xs text-stone-500">「相続時精算課税選択届出書」を出した贈与のことです。</p>
@@ -196,7 +201,7 @@ export function DecedentStep() {
             <li>
               亡くなった方の最後の住所の税務署に<strong>「相続税法第49条第1項の開示請求」</strong>を出すと、精算課税の贈与と、亡くなる前の贈与税の申告分を教えてもらえます
             </li>
-            <li>入れ忘れは後で追加の納税になりやすいので、確かめるまで税額は出しません</li>
+            <li>確かめるまでは、ないものとして計算し、申告書に「下書き」と入れます</li>
           </HowToCheck>
         )}
         {d.settlementGift === true && (
@@ -209,6 +214,7 @@ export function DecedentStep() {
           </p>
         )}
       </Card>
+      </div>
       {outOfScope ? (
         <Note tone="stop">令和8年（2026年）中に亡くなった方だけが対象です（ほかの年は税制・様式が違うため）。</Note>
       ) : (

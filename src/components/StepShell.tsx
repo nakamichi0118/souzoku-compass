@@ -15,6 +15,7 @@ import { DocumentsStep } from "./steps/DocumentsStep";
 import { STEPS, stepIndex } from "@/lib/steps";
 import { useCase } from "@/lib/store";
 import { markCompleted, visibleSteps } from "@/lib/progress";
+import { useFocusParam } from "./ui/useFocusParam";
 
 const COMPONENTS: Record<string, React.ComponentType> = {
   decedent: DecedentStep,
@@ -36,6 +37,8 @@ export function StepShell({ step }: { step: string }) {
   const at = shown.findIndex((s) => s.slug === step);
   const prev = at >= 0 ? shown[at - 1] : STEPS[idx - 1];
   const next = at >= 0 ? shown[at + 1] : STEPS[idx + 1];
+  // 「直す」リンクから来たときは、その行まで送って目立たせる
+  useFocusParam(loaded);
   return (
     <div className="min-h-screen bg-gradient-to-b from-sky-50/70 to-stone-50">
       <AppHeader />

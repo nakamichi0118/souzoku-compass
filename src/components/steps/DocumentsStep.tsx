@@ -14,9 +14,10 @@ import { formsUpToDate, markFormsCreated, soleHeirId } from "@/lib/progress";
 import { usePlan } from "@/lib/planStore";
 import { FilingGuide, shortFormName } from "./FilingGuide";
 import { SubmissionBundle } from "./SubmissionBundle";
+import { BlockerList } from "./BlockerList";
 import { saveBlob } from "@/lib/download";
 import Link from "next/link";
-import { draftReason, reviewSummary } from "@/domain/review/topics";
+import { caseDraftReason, reviewSummary } from "@/domain/review/topics";
 import { Check } from "@/components/ui";
 
 async function fetchPdf(url: string, body: unknown): Promise<Blob> {
@@ -77,7 +78,17 @@ export function DocumentsStep() {
       const cur = c.review?.consent ?? { terms: false, responsibility: false, at: "" };
       return { ...c, review: { ...c.review, consent: { ...cur, [k]: v, at: new Date().toISOString() } } };
     });
-  const draft = draftReason(data.review, data.decedent.deathDate);
+  const blocked = !!result && result.blockers.length > 0;
+  const noAssets = data.assets.length === 0;
+  const formsHint = noAssets
+    ? "先に「財産」を入れてください。"
+    : blocked
+      ? "ページ上の事項を直すと作れます。"
+      : !agreed
+        ? `上の${!consent?.terms && !consent?.responsibility ? "2つの" : ""}チェックを入れると作れます。`
+        : null;
+  const draft = caseDraftReason(data);
+  const settlementUnknown = data.decedent.settlementGift === "unknown";
   const review = reviewSummary(data.review, data.decedent.deathDate);
   const division = (() => {
     if (noDivisionDoc) return { warnings: [] };
@@ -107,9 +118,12 @@ export function DocumentsStep() {
 
   return (
     <div className="space-y-5">
-      {result?.blockers.length ? (
-        <Note tone="stop">自動では書類を完成できない事項があります。「税額の確認」で内容を確認し、税理士にご相談ください。</Note>
-      ) : null}
+      {blocked && (
+        <div className="space-y-2">
+          <p className="font-semibold text-red-900">次の事項を直すと、申告書を作れます。</p>
+          <BlockerList data={data} blockers={result!.blockers} />
+        </div>
+      )}
       <Card title="相続税の申告書（国税庁 令和8年分様式）">
         <p className="text-sm text-stone-600">国税庁の正式様式に、計算結果を記入したPDFを作ります。</p>
         <details className="mb-3 text-xs text-stone-600">
@@ -142,8 +156,9 @@ export function DocumentsStep() {
         {draft && (
           <div className="mb-3">
             <Note tone="warn">
-              申告前の確認が残り{review.open.length}件です。このまま作ると、各ページに「下書き」と入ります。
-              <Link href="/case/review" className="ml-2 font-semibold underline">
+              {settlementUnknown ? "相続時精算課税の贈与があるか確かめていません。" : `申告前の確認が残り${review.open.length}件です。`}
+              このまま作ると、各ページに「下書き」と入ります。
+              <Link href={settlementUnknown ? "/case/decedent?focus=settlementGift" : "/case/review"} className="ml-2 font-semibold underline">
                 確認する ›
               </Link>
             </Note>
@@ -160,9 +175,11 @@ export function DocumentsStep() {
             利用規約を読む
           </Link>
         </div>
-        <Button onClick={() => run("tax", "/api/forms", "相続税申告書_令和8年分.pdf")} disabled={busy !== null || !agreed}>
+        <Button onClick={() => run("tax", "/api/forms", "相続税申告書_令和8年分.pdf")} disabled={busy !== null || !agreed || blocked || noAssets}>
           {busy === "tax" ? "作成中…" : "申告書PDFをダウンロード"}
         </Button>
+        {/* 押せないときは、何をすれば押せるかを1行で出す */}
+        {formsHint && <p className="mt-2 text-sm font-semibold text-orange-800">{formsHint}</p>}
         {data.progress?.formsKey && !formsUpToDate(data) && (
           <div className="mt-3">
             <Note tone="warn">申告書PDFを作ったあとに入力が変わりました。もう一度ダウンロードしてください。</Note>

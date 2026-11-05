@@ -184,7 +184,7 @@ function AssetChoice({ no, assetId, heirs, evenHeirs }: { no: number; assetId: s
   };
 
   return (
-    <li className="rounded-xl border border-stone-200 bg-white p-4 shadow-sm">
+    <li data-focus={`asset-${assetId}`} className="rounded-xl border border-stone-200 bg-white p-4 shadow-sm">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <p className="font-bold text-stone-900">
           <span className="mr-2 text-sm text-stone-400">{no}</span>
@@ -281,7 +281,7 @@ function CompensationList({ living }: { living: Person[] }) {
       <div className="mt-3 space-y-2">
         <p className="text-xs text-stone-500">払う人の財産から引き、受け取る人の財産に足して計算します。</p>
         {rows.map((x, i) => (
-          <div key={i} className="grid items-end gap-2 rounded-lg border border-stone-200 p-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+          <div key={i} data-focus={`comp-${i}`} className="grid items-end gap-2 rounded-lg border border-stone-200 p-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
             <Field label="払う人">
               <Select value={isLiving(x.fromId) ? x.fromId : ""} onChange={(v) => set(i, { fromId: v })} options={options} />
             </Field>
