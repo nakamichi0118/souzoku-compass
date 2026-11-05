@@ -112,7 +112,7 @@ function DocCard({ item, address, open, onOpen, focus }: { item: DocItem; addres
           )}
           {doc.readable ? (
             <>
-              <Reader docId={item.id} onRegistered={() => setStatus(key, "done")} />
+              <Reader docId={item.id} onRegistered={(all) => setStatus(key, all ? "done" : "open")} />
               <DocFiles docId={item.id} buttons={false} />
             </>
           ) : (

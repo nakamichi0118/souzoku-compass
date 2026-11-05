@@ -15,7 +15,7 @@ export const docsToUpload = (task: Pick<Task, "docs">, done: string[]) => task.d
  * 画面の下に固定するので、案内と同じ高さの余白をページの下に足して、後ろに隠れたボタンも上へ送れば押せるようにする。
  * 開いて長くなっても上の見出しには重ならず、案内の中で上下に動かせる
  */
-export function UploadPrompt({ docs, open, onOpen, onClose, onRegistered }: { docs: string[]; open: boolean; onOpen: () => void; onClose: () => void; onRegistered: (doc: string) => void }) {
+export function UploadPrompt({ docs, open, onOpen, onClose, onRegistered }: { docs: string[]; open: boolean; onOpen: () => void; onClose: () => void; onRegistered: (doc: string, all?: boolean) => void }) {
   const names = docs.map((d) => DOCS[d].name.replace(/（.*?）/g, ""));
   const [h, setH] = useState(0);
   const card = useCallback((el: HTMLDivElement | null) => {
@@ -63,7 +63,7 @@ export function UploadPrompt({ docs, open, onOpen, onClose, onRegistered }: { do
             {docs.map((d) => (
               <div key={d}>
                 <p className="mb-1 text-sm font-semibold text-stone-700">{DOCS[d].name}</p>
-                {DOCS[d].readable ? <Reader docId={d} onRegistered={() => onRegistered(d)} /> : <DocFiles docId={d} onAdded={() => onRegistered(d)} />}
+                {DOCS[d].readable ? <Reader docId={d} onRegistered={(all) => onRegistered(d, all)} /> : <DocFiles docId={d} onAdded={() => onRegistered(d)} />}
               </div>
             ))}
           </div>
