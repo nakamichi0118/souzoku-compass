@@ -1,4 +1,4 @@
-import type { Case } from "@/domain/types";
+import type { Case, SmallLandRelief } from "@/domain/types";
 
 /** 小規模宅地等の特例の計算に使う、遺産の分け方の入力 */
 export type DivisionInput = Pick<Case, "undivided" | "allocations">;
@@ -29,6 +29,9 @@ export function wholeTaker(division: DivisionInput | undefined, assetId: string)
   return valid[0].personId;
 }
 
+/** 特例を一緒に使う2人目以降の人に、その人が入っているか */
+export const inOthers = (sr: SmallLandRelief | undefined, id: string) => (Array.isArray(sr?.others) ? sr.others : []).some((o) => o?.acquirerId === id);
+
 /**
  * 小規模宅地等の特例の欄に答え始めたのに「取得する人」が空のまま、その土地（部屋）を受け継ぐ人が1人に決まっているときは、その人を入れる。
  * 相続人が1人のとき（分け方の入力を省いて、その人が全部受け継ぐ）や、遺産の分け方でその土地を1人が受け継ぐと決めたとき。
@@ -40,7 +43,9 @@ export function withSmallLandAcquirers(c: Case): Case {
   for (const a of c.assets) {
     if ((a.kind !== "land" && a.kind !== "condo") || !a.smallResidential || a.smallResidential.acquirerId) continue;
     const id = wholeTaker(c, a.id);
-    if (id && c.persons.some((p) => p.id === id && !p.predeceased)) fill.set(a.id, id);
+    // その人がすでに「一緒に取得する人」に入っているときは、その行の答え（同居・住み続けるか など）で計算されるので入れない
+    // （1人目にも入れると同じ人が2回になり、答えのない1人目の行だけが判定される）
+    if (id && c.persons.some((p) => p.id === id && !p.predeceased) && !inOthers(a.smallResidential, id)) fill.set(a.id, id);
   }
   if (fill.size === 0) return c;
   return {

@@ -129,6 +129,22 @@ describe("特例の取得する人が決まっていれば入れる", () => {
     expect(withSmallLandAcquirers(other)).toBe(other);
   });
 
+  it("その人がすでに「一緒に取得する人」に入っているときは、1人目に重ねて入れない（その行の答えで特例が効いたまま）", () => {
+    const c = clone();
+    const child = c.persons.find((p) => p.relation === "child" && !p.predeceased)!;
+    c.allocations = c.allocations.map((al) => (al.assetId === "home-land" ? { ...al, shares: [{ personId: child.id, numerator: 1, denominator: 1 }] } : al));
+    land(c).smallResidential = {
+      applies: false,
+      check: { ownHome: "yes", special: "no" },
+      others: [{ acquirerId: child.id, check: { livedTogether: "yes", keep: "yes" } }],
+    };
+    const before = calculate(c).assets.find((l) => l.asset.id === "home-land")!.reduction;
+    expect(before).toBeGreaterThan(0);
+    const n = withSmallLandAcquirers(c);
+    expect(n).toBe(c);
+    expect(calculate(n).assets.find((l) => l.asset.id === "home-land")!.reduction).toBe(before);
+  });
+
   it("何人かで分けるとき・分け方がまだのとき・特例の欄に触っていないときは入れない", () => {
     const c = clone();
     land(c).smallResidential = { applies: false, check: { ownHome: "yes", special: "no" } };

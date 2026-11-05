@@ -13,7 +13,7 @@ import { type PendingReduction, pendingReductions, reductionAdvice } from "@/dom
 import { LEASE_LETTERS, LEASE_RATIO_BY_LETTER, type LeaseLetter, leaseLetterOf, ratio4 } from "@/domain/valuation/lease";
 import { type Edge, type RoadInput, correctionRates, evaluateRoads } from "@/domain/valuation/roads";
 import { type Answer, SMALL_LAND_RULE, type SmallResidentialCheck, judgeSmallResidential, shouldApply, smallLandKind } from "@/domain/valuation/smallResidential";
-import { type DivisionInput, smallLandDivisionGap, wholeTaker } from "@/lib/smallLand";
+import { type DivisionInput, inOthers, smallLandDivisionGap, wholeTaker } from "@/lib/smallLand";
 
 const ANSWERS: { value: Answer; label: string }[] = [
   { value: "yes", label: "はい" },
@@ -287,7 +287,7 @@ export function SmallResidential({
   const rule = SMALL_LAND_RULE[kind];
   // 相続人が1人のときや、遺産の分け方でこの土地を1人が受け継ぐと決めたときは、その人が取得する人（答え始めると保存される。withSmallLandAcquirers）
   const taker = wholeTaker(division, a.id);
-  const fixedTaker = taker && living.some((p) => p.id === taker) && (!sr.acquirerId || sr.acquirerId === taker) ? taker : undefined;
+  const fixedTaker = taker && living.some((p) => p.id === taker) && (!sr.acquirerId || sr.acquirerId === taker) && !inOthers(sr, taker) ? taker : undefined;
   const acquirerId = sr.acquirerId || fixedTaker;
   const acquirer = living.find((p) => p.id === acquirerId);
   // マンションの部屋では、説明の文を部屋の画面の入力（「家賃をもらって人に貸している」のチェック）に合わせる
