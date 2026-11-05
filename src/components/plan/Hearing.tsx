@@ -12,6 +12,8 @@ import { estimate, familyFromInterview, heirBreakdown, type Interview } from "@/
 import { AppShell, PageHead } from "@/components/shell/AppShell";
 import { useCase } from "@/lib/store";
 import Link from "next/link";
+import { CircleCheck } from "lucide-react";
+import { CompassAvatar } from "@/components/compass/CompassKun";
 import type { Person } from "@/domain/types";
 import { usePlan } from "@/lib/planStore";
 
@@ -76,6 +78,7 @@ export function FinishBar({
   confirmSkip?: boolean;
   barRef?: React.Ref<HTMLDivElement>;
 }) {
+  const done = dateOk && unanswered === 0;
   return (
     <div ref={barRef} className="fixed inset-x-0 bottom-0 z-30 border-t border-stone-200 bg-white/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
       <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
@@ -89,19 +92,44 @@ export function FinishBar({
               選んでいない質問があと{unanswered}問 ›
             </button>
           ) : (
-            "答えはあとから変えられます。"
+            <span className="flex items-center gap-1.5 text-sm font-bold text-emerald-800 sm:text-base">
+              <CircleCheck className="h-5 w-5 shrink-0 text-brand" aria-hidden />
+              <span className="sm:hidden">入力完了！</span>
+              <span className="hidden sm:inline">すべて入力できました！</span>
+            </span>
           )}
         </p>
         <button
           id="hearing-finish"
           type="button"
           onClick={onFinish}
-          className="shrink-0 whitespace-nowrap rounded-lg bg-sky-700 px-4 py-3 font-semibold text-white hover:bg-sky-800 sm:px-6"
+          className={`shrink-0 whitespace-nowrap rounded-lg px-4 py-3 font-semibold text-white sm:px-6 ${done ? "bg-brand shadow-lg ring-4 ring-brand/25 hover:bg-emerald-700" : "bg-sky-700 hover:bg-sky-800"}`}
         >
-          {dateOk && confirmSkip ? "このまま進む →" : "マイページへ →"}
+          {dateOk && confirmSkip ? "このまま進む →" : done ? "マイページへ進む →" : "マイページへ →"}
         </button>
       </div>
     </div>
+  );
+}
+
+/** すべて答え終わったときの案内（答え終えたその場で、ここまで画面を送る） */
+export function DoneCard({ onFinish, announce }: { onFinish: () => void; announce: boolean }) {
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!announce) return;
+    // 次の質問へ送る動きのあとに、この案内を真ん中に出す
+    const t = window.setTimeout(() => ref.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 300);
+    return () => window.clearTimeout(t);
+  }, [announce]);
+  return (
+    <section ref={ref} id="hearing-done" className="flex flex-col items-center gap-3 rounded-2xl border-2 border-brand/40 bg-brand-soft p-6 text-center">
+      <CompassAvatar size={56} />
+      <h2 className="text-xl font-bold text-sky-950">すべて入力できました！</h2>
+      <p className="text-sm text-stone-700">マイページで、必要な手続きと期限を見てみましょう。</p>
+      <button type="button" onClick={onFinish} className="min-h-12 rounded-full bg-brand px-8 py-3 text-base font-bold text-white shadow-md hover:bg-emerald-700">
+        マイページへ進む →
+      </button>
+    </section>
   );
 }
 
@@ -137,6 +165,8 @@ export function Hearing() {
   /** いま押した質問（iPhone の Safari ではボタンを押してもフォーカスが移らないので、押した場所から探す） */
   const tappedQ = useRef<HTMLElement | null>(null);
   const [barH, barRef] = useHeight<HTMLDivElement>();
+  /** この画面で質問に答えた（すべて答え終えたら、完了の案内まで送る） */
+  const [touched, setTouched] = useState(false);
   /** 選んだ質問の次の質問へ、画面をゆっくり送る */
   const scrollNext = () => {
     const tapped = tappedQ.current;
@@ -159,6 +189,7 @@ export function Hearing() {
     const next = [...new Set([...(answered ?? []), k])];
     setAnswered(next);
     kvSet(ANS_KEY, JSON.stringify(next));
+    setTouched(true);
     scrollNext();
   };
   const pick = <K extends keyof Interview>(k: K, v: Interview[K]) => {
@@ -494,7 +525,7 @@ export function Hearing() {
         </Card>
       </div>
 
-      {unanswered > 0 && <UnansweredTips />}
+      {unanswered > 0 ? <UnansweredTips /> : dateOk && <div className="mt-6"><DoneCard onFinish={finish} announce={touched} /></div>}
       {/* 下に固定した帯と同じ高さの余白（いちばん下の質問やボタンが帯に隠れないように） */}
       <div aria-hidden style={{ height: (barH ?? 96) + 16 }} />
       <FinishBar dateOk={dateOk} unanswered={unanswered} onFinish={finish} onMissing={goMissing} confirmSkip={showMissing && unanswered > 0} barRef={barRef} />

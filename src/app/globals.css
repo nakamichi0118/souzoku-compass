@@ -112,8 +112,12 @@ body {
 .kun-sprite { display: inline-block; background-repeat: no-repeat; background-size: 800% 100%; background-position: 0 0; }
 .kun-typing { animation: kun-frames 0.8s steps(8) infinite; }
 .kun-blink { animation: kun-frames 1.6s steps(8) infinite; }
+/* 操作ガイド：別の画面の説明のとき、上のメニューの「ここを押す」を脈打たせる */
+@keyframes tour-nav { 50% { outline: 4px solid rgb(251 191 36 / 0.5); outline-offset: 6px; } }
+.tour-nav-ring { outline: 0 solid transparent; outline-offset: 0; animation: tour-nav 1.4s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
   .kun-sprite { animation: none; }
+  .tour-nav-ring { animation: none; }
 }
 
 /* 「Tips」の開閉：控えめに目立たせる（電球の印と、少し離した下線） */
