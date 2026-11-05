@@ -42,7 +42,8 @@ export function AutoSort() {
       const [rec] = await store.add(docId, [f]);
       if (rec) {
         markDone(docId);
-        setRows((r) => [{ rec, file: f }, ...r]);
+        // 金額を読める書類は、続けて読み取って登録する
+        setRows((r) => [{ rec, file: f, read: !!DOCS[docId]?.readable }, ...r]);
       }
       setBusy((n) => n - 1);
     }
@@ -68,7 +69,7 @@ export function AutoSort() {
                     const docId = e.target.value;
                     void store.move(rec, docId);
                     markDone(docId);
-                    setRows((r) => r.map((x) => (x.rec.id === rec.id ? { ...x, rec: { ...rec, docId } } : x)));
+                    setRows((r) => r.map((x) => (x.rec.id === rec.id ? { ...x, rec: { ...rec, docId }, read: x.read || !!DOCS[docId]?.readable } : x)));
                   }}
                   className="max-w-full rounded border border-stone-300 bg-white px-2 py-1 text-base font-semibold text-stone-900 sm:text-sm"
                 >
