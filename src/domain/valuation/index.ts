@@ -5,8 +5,9 @@
  * 土地は、まず自分で使っている土地（自用地）としての評価額を出し（路線価方式・倍率方式・直接入力）、
  * そのあと土地の使い方で、貸家建付地・貸宅地・借地権・貸家建付借地権の評価にする（財産評価基本通達25〜28）。
  * 家屋・マンションの部屋は、人に貸していれば貸家として評価する（通達93）。
- * 形がいびつ・セットバックが必要・地積規模の大きな宅地（通達20-2）にあたる土地は、評価を下げる計算をしていないため、
- * 税理士への相談を案内する（修正した補正率・評価額を入れれば計算する）。配偶者居住権を設定した土地は、いつも税理士への相談を案内する。
+ * 形がいびつ・地積規模の大きな宅地（通達20-2）にあたる土地は、評価を下げる計算をしていないため、
+ * 税理士への相談を案内する（修正した補正率・評価額を入れれば計算する）。セットバックが必要な土地は止めず、減額しない評価額で計算し、
+ * 相談するかは本人が選ぶ（減額しかないので、相談しなくても過少にはならない）。配偶者居住権を設定した土地は、いつも税理士への相談を案内する。
  * ただし倍率方式の宅地は、固定資産税評価額 × 倍率で評価し（通達21-2）、土地の形は固定資産税評価額に反映されているため、
  * 形がいびつでも形による補正はせず、そのまま計算する（地積規模の大きな宅地は21-2のただし書で比べるため、相談を案内する）。
  */
@@ -182,6 +183,10 @@ const CONDITION_BODY: Record<Exclude<Condition, "spouseResidence">, { text: stri
 const SPOUSE_RESIDENCE_MESSAGE =
   "配偶者居住権を設定した家と土地は、「配偶者居住権」「家の所有権」「土地を使う権利」「土地の所有権」の4つに分けて評価し、小規模宅地等の特例の計算も変わります。相続コンパスではこの計算をしていないため、税理士にご相談ください。";
 
+/** セットバックの減額をしていないときの説明（止めずに、減額しない評価額で計算する） */
+export const SETBACK_STEP =
+  "前の道路の幅が4m未満の可能性があります。セットバックの減額はしていません（税理士に相談すると下がる可能性があります）";
+
 const NOT_CALCULATED = "相続コンパスではこの計算をしていないため、税理士にご相談ください。";
 
 /** 古いデータなどで知らない事情が入っていても止まらないよう、知っている事情だけを扱う */
@@ -312,10 +317,13 @@ export function valueLand(a: LandAsset): Valuation {
   // 倍率方式の宅地は、形が固定資産税評価額に反映されているので、形がいびつでも止めない（広い宅地なら次で案内する）
   const big = largeLotArea(a);
   const shapeInFav = a.condition === "irregular" && shapeInFixedAssetValue(a.method.type, a.landUse);
-  if (isCondition(a.condition) && !shapeInFav && !advisorValued(a, a.condition))
+  // セットバックは評価を下げるだけなので止めない。減額しない（高めの）評価額で進め、相談するかは本人が選ぶ
+  const setbackOpen = a.condition === "setback" && !advisorValued(a, "setback");
+  if (isCondition(a.condition) && a.condition !== "setback" && !shapeInFav && !advisorValued(a, a.condition))
     return consult(conditionMessage(a.condition, a.method.type, { use, largeLotArea: big ?? undefined, landUse: a.landUse }));
   if (big != null && !advisorValued(a, "largeLot")) return consult(largeLotMessage(big, a.method.type, use));
-  const { valuation: self, notation } = selfUseLand(a);
+  const { valuation: computed, notation } = selfUseLand(a);
+  const self = setbackOpen && !computed.needsConsultation ? { ...computed, steps: [...computed.steps, SETBACK_STEP] } : computed;
   if (self.needsConsultation || (a.method.type === "manual" && a.method.publicPrivateRoad)) return self;
   // 古いデータなどで知らない使い方が入っていても止まらないよう、自用地として扱う
   const label = use === "self" ? undefined : USE_LABEL[use];

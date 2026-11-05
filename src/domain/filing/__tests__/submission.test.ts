@@ -8,6 +8,11 @@ describe("税務署に出す書類の一覧", () => {
     expect(submissionItems(base).map((i) => i.id)).toEqual(["forms", "family", "division", "inkan", "mynumber", "assets"]);
   });
 
+  it("相続人が1人なら協議書と印鑑証明書は出さない（遺言書があれば写しだけ）", () => {
+    expect(submissionItems({ ...base, soleHeir: true }).map((i) => i.id)).toEqual(["forms", "family", "mynumber", "assets"]);
+    expect(submissionItems({ ...base, soleHeir: true, will: true }).find((i) => i.id === "division")?.label).toBe("遺言書の写し");
+  });
+
   it("印鑑証明書は原本を出す", () => {
     const inkan = submissionItems(base).find((i) => i.id === "inkan")!;
     expect(inkan.original).toBe(true);

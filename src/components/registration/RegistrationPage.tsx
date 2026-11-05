@@ -12,6 +12,7 @@ import { registrationDue } from "@/domain/procedures/rules";
 import { areaOf } from "@/domain/procedures/offices";
 import { buildRegistrations } from "@/domain/registration";
 import type { Asset, RegistryInfo } from "@/domain/types";
+import { soleHeirId } from "@/lib/progress";
 import { useCase } from "@/lib/store";
 import { saveBlob } from "@/lib/download";
 
@@ -193,7 +194,8 @@ export function RegistrationPage() {
 
         <Card title="3. そろえる書類">
           <ul className="space-y-2 text-sm">
-            {DOCS.map(([n, note]) => (
+            {/* 相続人が1人なら協議書は要らない（印鑑証明書もこのためのものなので出さない） */}
+            {DOCS.filter(([n]) => !(soleHeirId(data) && n.startsWith("遺産分割協議書"))).map(([n, note]) => (
               <li key={n} className="flex gap-2">
                 <FileText className="mt-0.5 h-4 w-4 shrink-0 text-brand" aria-hidden />
                 <span>

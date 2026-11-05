@@ -72,13 +72,22 @@ describe("地積規模の大きな宅地にあたりうる土地は確定しな�
 describe("評価に影響する土地の事情", () => {
   it.each([
     ["irregular", "形がいびつ"],
-    ["setback", "セットバック"],
     ["spouseResidence", "配偶者居住権"],
   ] as const)("%s → 確定せず税理士へ（%s）", (condition, word) => {
     const v = valueLand(land({ condition }));
     expect(v.value).toBe(0);
     expect(v.needsConsultation).toContain(word);
     expect(v.needsConsultation).toContain("税理士");
+  });
+  it("セットバックは止めず、減額しない評価額で計算して説明に書く（減額しかないので、相談するかは本人が選ぶ）", () => {
+    const v = valueLand(land({ condition: "setback" }));
+    expect(v.needsConsultation).toBeUndefined();
+    expect(v.value).toBe(60_000_000);
+    expect(v.steps.some((s) => s.includes("セットバックの減額はしていません"))).toBe(true);
+    // 補正率を入れたらその率で計算し、減額していないとは書かない
+    const r = valueLand(land({ condition: "setback", method: { type: "rosenka", routePrice: 200_000, depthCorrection: 1, otherCorrection: 0.9 } }));
+    expect(r.value).toBe(54_000_000);
+    expect(r.steps.some((s) => s.includes("セットバックの減額はしていません"))).toBe(false);
   });
   it("事情がなければ今までどおり（200,000 × 300㎡）", () => {
     expect(valueLand(land()).value).toBe(60_000_000);

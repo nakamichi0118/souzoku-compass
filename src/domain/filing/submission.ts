@@ -36,6 +36,8 @@ export interface SubmitInput {
   smallLand: boolean;
   /** 遺言書がある */
   will: boolean;
+  /** 相続人が1人（遺産分割協議書も、そのための印鑑証明書も要らない） */
+  soleHeir?: boolean;
 }
 
 const ASSET_DOCS = ["balanceCert", "securitiesCert", "touki", "hyokaCert", "nayose", "insurancePay", "funeralReceipt"];
@@ -50,13 +52,19 @@ export function submissionItems(x: SubmitInput): SubmitItem[] {
       docIds: ["houteiJoho", "kosekiDecedent", "kosekiHeirs"],
       note: "亡くなった日から10日を過ぎて取ったもの",
     },
-    {
-      id: "division",
-      label: x.will ? "遺言書の写し・遺産分割協議書の写し" : "遺産分割協議書の写し",
-      docIds: x.will ? ["willCopy", "divisionSigned"] : ["divisionSigned"],
-      note: "全員が署名・実印を押したもの",
-    },
-    { id: "inkan", label: "相続人全員の印鑑証明書", docIds: ["inkan"], original: true, note: "原本を出します（コピー不可）" },
+    ...(x.soleHeir
+      ? x.will
+        ? [{ id: "division", label: "遺言書の写し", docIds: ["willCopy"] }]
+        : []
+      : [
+          {
+            id: "division",
+            label: x.will ? "遺言書の写し・遺産分割協議書の写し" : "遺産分割協議書の写し",
+            docIds: x.will ? ["willCopy", "divisionSigned"] : ["divisionSigned"],
+            note: "全員が署名・実印を押したもの",
+          },
+          { id: "inkan", label: "相続人全員の印鑑証明書", docIds: ["inkan"], original: true, note: "原本を出します（コピー不可）" },
+        ]),
     { id: "mynumber", label: "マイナンバーの確認書類の写し", docIds: ["mynumber"], note: "カードの表と裏（なければ通知カード＋免許証など）" },
     ...(x.smallLand ? [{ id: "smallLand", label: "小規模宅地等の特例の書類", docIds: ["juminhyoHeir"], note: "住民票の写しなど" }] : []),
     { id: "assets", label: "財産・債務の資料の写し", docIds: [...assets, "otherDoc"], optional: true, note: "残高証明書・評価証明書など" },

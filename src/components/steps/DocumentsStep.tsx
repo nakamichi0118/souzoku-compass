@@ -10,7 +10,7 @@ import { smallLines } from "@/forms/attachments";
 import { formsNotGenerated } from "@/forms/filing";
 import { divisionStatus, siteRightRatio } from "@/forms/schedule11";
 import { useCase } from "@/lib/store";
-import { formsUpToDate, markFormsCreated } from "@/lib/progress";
+import { formsUpToDate, markFormsCreated, soleHeirId } from "@/lib/progress";
 import { usePlan } from "@/lib/planStore";
 import { FilingGuide, shortFormName } from "./FilingGuide";
 import { SubmissionBundle } from "./SubmissionBundle";
@@ -172,6 +172,8 @@ export function DocumentsStep() {
         {!guide && <p className="mt-3 text-sm text-stone-600">手書きする欄：{blanks.join("、")}</p>}
         <p className="mt-3 text-sm text-stone-600">相続コンパスは税理士による確認の代わりにはなりません。</p>
       </Card>
+      {/* 相続人が1人なら協議は要らないので出さない */}
+      {!soleHeirId(data) && (
       <Card title="遺産分割協議書">
         <p className="mb-3 text-sm text-stone-600">「遺産の分け方」の内容で文案を作ります。日付・本籍を書き、相続人全員が署名して実印を押します（印鑑証明書を添付）。</p>
         {division.warnings.map((w, i) => (
@@ -184,6 +186,7 @@ export function DocumentsStep() {
         </Button>
         {noDivisionDoc && <p className="mt-2 text-xs text-stone-600">{noDivisionDoc}</p>}
       </Card>
+      )}
       {err && <Note tone="stop">{err}</Note>}
       <SubmissionBundle
         formsReady={agreed && !!result && data.assets.length > 0 && result.blockers.length === 0}

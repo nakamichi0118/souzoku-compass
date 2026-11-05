@@ -14,7 +14,7 @@ import { TaxStep } from "./steps/TaxStep";
 import { DocumentsStep } from "./steps/DocumentsStep";
 import { STEPS, stepIndex } from "@/lib/steps";
 import { useCase } from "@/lib/store";
-import { markCompleted } from "@/lib/progress";
+import { markCompleted, visibleSteps } from "@/lib/progress";
 
 const COMPONENTS: Record<string, React.ComponentType> = {
   decedent: DecedentStep,
@@ -28,11 +28,14 @@ const COMPONENTS: Record<string, React.ComponentType> = {
 };
 
 export function StepShell({ step }: { step: string }) {
-  const { loaded, update } = useCase();
+  const { data, loaded, update } = useCase();
   const idx = stepIndex(step);
   const Comp = COMPONENTS[step];
-  const prev = STEPS[idx - 1];
-  const next = STEPS[idx + 1];
+  // 相続人が1人なら「遺産の分け方」を飛ばして前後をつなぐ
+  const shown = visibleSteps(data);
+  const at = shown.findIndex((s) => s.slug === step);
+  const prev = at >= 0 ? shown[at - 1] : STEPS[idx - 1];
+  const next = at >= 0 ? shown[at + 1] : STEPS[idx + 1];
   return (
     <div className="min-h-screen bg-gradient-to-b from-sky-50/70 to-stone-50">
       <AppHeader />

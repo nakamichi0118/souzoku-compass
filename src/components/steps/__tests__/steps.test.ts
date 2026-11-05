@@ -16,6 +16,7 @@ vi.mock("@/lib/planStore", () => ({ usePlan: () => ({ setStatus: () => {}, statu
 
 const { DivisionStep, legalShareDivision, CompensationBasis } = await import("../DivisionStep");
 const { DebtsStep, newDebt, withDebtAmount } = await import("../DebtsStep");
+const { DebtBearers } = await import("../DebtBearers");
 const { HeirsStep, priorCreditKinds, removePerson } = await import("../HeirsStep");
 const { TaxStep, filingMessage, filingNeeded, refundOnlyFiling, SUPPORTER_TIP, ROUNDING_TIP } = await import("../TaxStep");
 const { DocumentsStep, handFilledBlanks, divisionDocUnavailable } = await import("../DocumentsStep");
@@ -131,7 +132,7 @@ describe("代償金：特定の財産の時価をもとに決めた（forms-5）
   });
 });
 
-describe("債務・葬式費用：分け方が決まっていないとき（ui-8）", () => {
+describe("債務・葬式費用の負担者（遺産の分け方）：分け方が決まっていないとき（ui-8）", () => {
   it("新しい債務は、未分割なら負担する人を空けておく", () => {
     const c = clone();
     expect(newDebt(c, "debt", "d1").bearers).toEqual([{ personId: "hanako", amount: 0 }]);
@@ -149,11 +150,11 @@ describe("債務・葬式費用：分け方が決まっていないとき（ui-8
     const c = clone();
     c.debts = [{ id: "d", kind: "debt", label: "借入金", amount: 1_000_000, bearers: [] }];
     const line = "負担する人が決まっていなければ、×で外して空欄にしてください（法定相続分で計算します）。";
-    const divided = render(DebtsStep, c);
+    const divided = render(DebtBearers, c);
     expect(divided).not.toContain(line);
     expect(divided).toContain("一致していません");
     c.undivided = true;
-    const html = render(DebtsStep, c);
+    const html = render(DebtBearers, c);
     expect(html).toContain(line);
     expect(html).not.toContain("一致していません");
   });
@@ -163,15 +164,15 @@ describe("債務・葬式費用：分け方が決まっていないとき（ui-8
     const c = clone();
     // 分け方が決まっていないにチェックする前に作った債務（最初の人が負担する人として入っている）で、金額は後から入れた
     c.debts = [{ id: "d", kind: "debt", label: "借入金", amount: 1_000_000, bearers: [{ personId: "hanako", amount: 0 }] }];
-    expect(render(DebtsStep, c)).not.toContain(note);
+    expect(render(DebtBearers, c)).not.toContain(note);
     c.undivided = true;
-    expect(render(DebtsStep, c)).toContain(note);
+    expect(render(DebtBearers, c)).toContain(note);
     // 負担する人を空にしても同じ
-    expect(render(DebtsStep, { ...c, debts: [{ ...c.debts[0], bearers: [] }] })).toContain(note);
+    expect(render(DebtBearers, { ...c, debts: [{ ...c.debts[0], bearers: [] }] })).toContain(note);
     // 負担額を入れた債務は、入れた人が負担する（法定相続分とは言わない）
-    expect(render(DebtsStep, { ...c, debts: [{ ...c.debts[0], bearers: [{ personId: "hanako", amount: 1_000_000 }] }] })).not.toContain(note);
+    expect(render(DebtBearers, { ...c, debts: [{ ...c.debts[0], bearers: [{ personId: "hanako", amount: 1_000_000 }] }] })).not.toContain(note);
     // 金額が0の債務には出さない
-    expect(render(DebtsStep, { ...c, debts: [{ ...c.debts[0], amount: 0 }] })).not.toContain(note);
+    expect(render(DebtBearers, { ...c, debts: [{ ...c.debts[0], amount: 0 }] })).not.toContain(note);
   });
 });
 

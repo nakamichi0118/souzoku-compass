@@ -4,9 +4,10 @@ import { useState } from "react";
 import { Button, Card, Check, Field, Note, Select, YenInput, fmt } from "@/components/ui";
 import { civilHeirIds, determineHeirs } from "@/domain/heirs";
 import type { Allocation, Case, Compensation, Person } from "@/domain/types";
-import { divisibleAssets, isAllocated, unsettledAssets } from "@/lib/progress";
+import { divisibleAssets, hasRenounced, isAllocated, soleHeirId, unsettledAssets } from "@/lib/progress";
 import { useCase } from "@/lib/store";
 import { kindLabel } from "./AssetsStep";
+import { DebtBearers } from "./DebtBearers";
 
 function parseShare(s: string): { n: number; d: number } | null {
   // 全角の数字や「／」で入力されても読めるように、半角にそろえる
@@ -49,6 +50,25 @@ function ShareCell({ value, onCommit }: { value: string; onCommit: (v: string) =
 }
 
 export function DivisionStep() {
+  const { data } = useCase();
+  const sole = soleHeirId(data);
+  if (sole) {
+    const name = data.persons.find((p) => p.id === sole)?.name || "相続人";
+    const renounced = hasRenounced(data) && data.debts.some((d) => d.kind === "funeral");
+    return (
+      <div className="space-y-5">
+        <Note tone="info">
+          相続人が{name}さん1人なので、財産はすべて{name}さんが受け取り、債務{renounced ? "" : "・葬式費用"}も{name}さんが負担します。分け方を決める必要も、遺産分割協議書も要りません。
+        </Note>
+        {/* 相続を放棄した人が葬式費用を払ったときは、その人が引けるので負担者を選べるようにする */}
+        {renounced && <DebtBearers />}
+      </div>
+    );
+  }
+  return <DivisionEditor />;
+}
+
+function DivisionEditor() {
   const { data, update, result } = useCase();
   const heirs = data.persons.filter((p) => !p.predeceased);
   // 取得する人が決まっていない財産は計算に入らないので、そのあいだは税額を出さない
@@ -86,6 +106,7 @@ export function DivisionStep() {
         ))}
       </ol>
       {heirs.length > 0 && <CompensationList living={heirs} />}
+      <DebtBearers />
 
       {result && unsettled.length > 0 && (
         <Note tone="warn">
