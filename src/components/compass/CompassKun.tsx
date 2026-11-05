@@ -5,14 +5,29 @@ export function CompassKun({ className = "" }: { className?: string }) {
 }
 
 /** thinking：待っている間、首をかしげながら小さく揺れる（動きを減らす設定では動かさない） */
-export function CompassAvatar({ size = 40, thinking = false }: { size?: number; thinking?: boolean }) {
+/**
+ * コンパスくんの顔。thinking のときは動くコンパスくん（8コマ）にする。
+ * true / "typing" = パソコンで作業中（読み込み・探す・読み取りなど）、"blink" = まばたきしながら考え中（回答を書いているとき）
+ */
+export function CompassAvatar({ size = 40, thinking = false }: { size?: number; thinking?: boolean | "typing" | "blink" }) {
+  if (thinking) {
+    const kind = thinking === "blink" ? "blink" : "typing";
+    return (
+      <span
+        role="img"
+        aria-label="コンパスくん（作業中）"
+        className={`kun-sprite kun-${kind} shrink-0`}
+        style={{ width: size, height: size, backgroundImage: `url(/brand/kun-${kind}.webp)` }}
+      />
+    );
+  }
   return (
     <img
       src="/brand/mascot-chat-reference.png"
       alt="コンパスくん"
       width={size}
       height={size}
-      className={`shrink-0 rounded-full border-2 border-white bg-sky-50 object-cover object-top shadow-sm${thinking ? " kun-thinking" : ""}`}
+      className="shrink-0 rounded-full border-2 border-white bg-sky-50 object-cover object-top shadow-sm"
       style={{ width: size, height: size }}
     />
   );

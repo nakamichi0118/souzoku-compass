@@ -365,7 +365,7 @@ export function TaxStep() {
         </Button>
         {busy && (
           <p className="flex items-center gap-2 text-sm text-teal-900">
-            <CompassAvatar size={32} thinking />
+            <CompassAvatar size={32} thinking="blink" />
             計算の結果を読んで、説明を書いています…
           </p>
         )}
