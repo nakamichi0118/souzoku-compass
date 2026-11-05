@@ -3,7 +3,6 @@
 import { X } from "lucide-react";
 import { useCallback, useState } from "react";
 import { Reader } from "@/components/extract/Reader";
-import { DocFiles } from "@/components/docs/DocFiles";
 import { DOCS } from "@/domain/procedures/documents";
 import type { Task } from "@/domain/procedures/rules";
 
@@ -63,7 +62,7 @@ export function UploadPrompt({ docs, open, onOpen, onClose, onRegistered }: { do
             {docs.map((d) => (
               <div key={d}>
                 <p className="mb-1 text-sm font-semibold text-stone-700">{DOCS[d].name}</p>
-                {DOCS[d].readable ? <Reader docId={d} onRegistered={(all) => onRegistered(d, all)} /> : <DocFiles docId={d} onAdded={() => onRegistered(d)} />}
+                <Reader docId={d} read={!!DOCS[d].readable} onRegistered={(all) => onRegistered(d, all)} />
               </div>
             ))}
           </div>
