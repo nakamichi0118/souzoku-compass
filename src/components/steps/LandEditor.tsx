@@ -737,8 +737,8 @@ function roadLetter(a: LandAsset): LeaseLetter | undefined {
 /** 土地の入力の区切り（2列の並びをまたいで、番号つきの見出しを出す） */
 function Part({ n, title }: { n: number; title: string }) {
   return (
-    <h3 className="mt-3 flex items-center gap-2 border-b-2 border-amber-200 pb-1.5 text-sm font-bold text-stone-900 sm:col-span-2">
-      <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-amber-400 text-[11px] text-white">{n}</span>
+    <h3 className="mt-3 flex items-center gap-2 border-b border-stone-200 pb-1.5 text-sm font-bold text-stone-900 sm:col-span-2">
+      <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-sky-800 text-[11px] text-white">{n}</span>
       {title}
     </h3>
   );
