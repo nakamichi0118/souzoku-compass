@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { revealBelowHeader } from "@/components/ui/scroll";
+import { headerBottom, scrollBelowHeader } from "@/components/ui/scroll";
 import { Bubble, CompassAvatar } from "./CompassKun";
 import { FAQS, type Faq } from "./faq";
 import { Markdown } from "./Markdown";
@@ -64,13 +64,23 @@ export function AskCompass({ state, placeholder = "質問を入力", lead, id, f
   const faqs = FAQS[state.step] ?? [];
   const answerRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
-  /** 新しい答えの頭が画面の上（見出しの下）に隠れていたら、見える所まで戻す。答えは下へ伸びるので、頭が見えていれば動かさない */
+  /**
+   * 答えは想定質問の下に出す。新しい答えの頭が見えていなければ、見える所まで送る。
+   * パソコンの横の欄（中で動かす欄）では欄の中だけを送り、画面全体は動かさない
+   */
   const showAnswer = () =>
     requestAnimationFrame(() => {
-      // 欄の中で動かしているときは、答えの頭（いちばん上）まで戻す
-      if (bodyRef.current) bodyRef.current.scrollTop = 0;
-      if (answerRef.current) revealBelowHeader(answerRef.current);
+      const el = answerRef.current;
+      const body = bodyRef.current;
+      if (!el) return;
+      if (body && body.scrollHeight > body.clientHeight + 1) {
+        body.scrollTop += el.getBoundingClientRect().top - body.getBoundingClientRect().top - 8;
+        return;
+      }
+      const top = el.getBoundingClientRect().top;
+      if (top < headerBottom() + 4 || top > window.innerHeight - 120) scrollBelowHeader(el);
     });
+  const showIntro = !asked && !busy && intro;
   return (
     <section id={id} className={`space-y-3 rounded-2xl border border-sky-200 bg-gradient-to-b from-sky-50 to-emerald-50/60 p-3 sm:p-5${fill ? " lg:flex lg:min-h-0 lg:flex-1 lg:flex-col" : ""}`}>
       <div ref={bodyRef} className={fill ? "space-y-3 lg:-mx-1 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain lg:px-1" : "space-y-3"}>
@@ -79,19 +89,14 @@ export function AskCompass({ state, placeholder = "質問を入力", lead, id, f
           <span className="hidden sm:block">
             <CompassAvatar size={52} />
           </span>
-          <div ref={answerRef} className="min-w-0 flex-1 space-y-2">
+          <div className="min-w-0 flex-1 space-y-2">
             <p className="flex items-center gap-2 font-bold text-sky-900">
               <span className="sm:hidden">
                 <CompassAvatar size={32} />
               </span>
               コンパスくんに相談
             </p>
-            {asked && <p className="text-sm text-stone-600">「{asked}」</p>}
-            {(busy || answer || intro) && (
-              <Bubble>
-                {busy ? "ちょっと調べています…" : answer ? <div className="text-sm text-stone-800"><Markdown text={answer} /></div> : intro}
-              </Bubble>
-            )}
+            {showIntro && <Bubble>{intro}</Bubble>}
           </div>
         </div>
         {faqs.length > 0 && (
@@ -109,6 +114,13 @@ export function AskCompass({ state, placeholder = "質問を入力", lead, id, f
                 {f.q}
               </button>
             ))}
+          </div>
+        )}
+        {/* 質問と答えは、想定質問の下に（上から 質問を選ぶ → 答え の順に読めるように） */}
+        {(asked || busy || answer) && (
+          <div ref={answerRef} className="space-y-2" aria-live="polite">
+            {asked && <p className="text-sm font-medium text-stone-600">Q.「{asked}」</p>}
+            <Bubble>{busy ? "ちょっと調べています…" : answer ? <div className="text-sm text-stone-800"><Markdown text={answer} /></div> : null}</Bubble>
           </div>
         )}
       </div>

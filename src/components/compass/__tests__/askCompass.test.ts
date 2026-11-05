@@ -21,6 +21,8 @@ describe("コンパスくんに相談（スマホ）", () => {
     expect(html).toMatch(/<span class="hidden sm:block"><img [^>]*width="52"/);
     expect(html).toMatch(/<span class="sm:hidden"><img [^>]*width="32"[^>]*\/><\/span>コンパスくんに相談/);
     expect(html).toContain("「期限を過ぎてしまったらどうなる？」");
+    // 答えは想定質問の下に出す
+    expect(html.indexOf("答え")).toBeGreaterThan(html.lastIndexOf("rounded-full border px-3"));
   });
 });
 

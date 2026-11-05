@@ -8,7 +8,7 @@ import { CompassAvatar } from "@/components/compass/CompassKun";
 import { ProgressBar } from "@/components/compass/ProgressBar";
 import { OFFICE_LABEL, areaOf, cityOf, isTokyoWard, type OfficeKind } from "@/domain/procedures/offices";
 
-interface Office {
+export interface Office {
   found: boolean;
   name: string;
   dept: string;
@@ -29,6 +29,23 @@ const readCache = (): Record<string, Office> => {
     return {};
   }
 };
+
+/** 窓口を調べる（このブラウザ・アカウントに覚えた結果があればそれを使う） */
+export async function findOffice(kind: OfficeKind, address: string, dept?: string): Promise<Office> {
+  const { pref, city } = cityOf(address);
+  const k = `${kind}|${kind === "city" ? pref + city : areaOf(address)}|${dept ?? ""}`;
+  const hit = readCache()[k];
+  if (hit) return hit;
+  const res = await fetch("/api/offices", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kind, address, dept }),
+  });
+  const j = await res.json();
+  if (!res.ok) throw new Error(j.error ?? "調べられませんでした。");
+  kvSet(KEY, JSON.stringify({ ...readCache(), [k]: j }));
+  return j;
+}
 
 /** 提出先の窓口：種類はルールで決まり、住所から具体的な窓口と連絡先をコンパスくんが調べる */
 export function OfficeLookup({ kind, dept, address, forProperty }: { kind: OfficeKind; dept?: string; address: string; forProperty?: boolean }) {
@@ -64,15 +81,8 @@ export function OfficeLookup({ kind, dept, address, forProperty }: { kind: Offic
     setBusyKey(k);
     setErr(null);
     try {
-      const res = await fetch("/api/offices", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ kind: actual, address, dept }),
-      });
-      const j = await res.json();
-      if (!res.ok) throw new Error(j.error ?? "調べられませんでした。");
       // 結果はその窓口の key で保存し、いま表示している窓口と同じときだけ画面に出す
-      kvSet(KEY, JSON.stringify({ ...readCache(), [k]: j }));
+      const j = await findOffice(actual, address, dept);
       if (current.current === k) setOffice(j);
     } catch (e) {
       setErr({ key: k, text: e instanceof Error ? e.message : String(e) });

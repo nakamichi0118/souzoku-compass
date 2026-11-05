@@ -14,6 +14,8 @@ export const demoCase: Case = {
     deathDate: "2026-03-15",
     address: "東京都千代田区架空町一丁目2番3号",
     occupation: "無職",
+    priorInheritanceTax: false,
+    settlementGift: false,
   },
   persons: [
     {

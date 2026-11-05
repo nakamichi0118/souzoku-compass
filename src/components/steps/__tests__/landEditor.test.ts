@@ -191,10 +191,13 @@ describe("路線価方式の Tips と補正率の欄 ui-15", () => {
 
   it("補正率の欄は畳み、案内は短くし、不整形地補正率・規模格差補正率・1 の入れ方は Tips で説明する", () => {
     const h = rosenka();
-    // 税理士に確認したときだけ使う欄なので、まだ入れていなければ閉じておく（見出しは評価の案内と同じ「税理士に確認した補正率」）
-    expect(h).toMatch(/<details class="[^"]*"><summary [^>]*>税理士に確認した補正率（任意）<\/summary>/);
-    expect(h).toContain("例：0.92（減額なしなら 1。空欄なら補正なしで計算します）");
-    expect(h).toContain("下の「税理士に確認した補正率」を開いて入れる");
+    // 自分で直すときだけ使う欄なので、まだ入れていなければ閉じておく（見出しは評価の案内と同じ「補正率を修正」）
+    expect(h).toMatch(/<details class="[^"]*"><summary [^>]*>補正率を修正<\/summary>/);
+    expect(h).toContain("例：0.92。上の計算に、さらに掛けます");
+    expect(h).not.toContain("税理士に確認した補正率");
+    // 計算に使った補正率を出す
+    expect(h).toMatch(/<dt>奥行価格補正率（正面）<\/dt><dd[^>]*>[\d.]+<\/dd>/);
+    expect(h).toContain("下の「補正率を修正」を開いて入れる");
     expect(h).not.toContain("間口を空欄にしてください");
     expect(h).toContain("最後の不整形地補正率（間口が狭い・奥行が長い分も含めた率）");
     expect(h).toContain("規模格差補正率");
@@ -206,7 +209,7 @@ describe("路線価方式の Tips と補正率の欄 ui-15", () => {
     expect(rosenka()).toContain("1㎡あたり 160,740円");
     const h = rosenka({ condition: "irregular", method: { type: "rosenka", routePrice: 0, depthCorrection: 1, otherCorrection: 0.81, roads: [{ edge: 0, price: 200_000, depth: 30, frontage: 5 }] } });
     expect(h).toContain("1㎡あたり 190,000円");
-    expect(h).toContain("間口が狭い・奥行が長い補正はせず、税理士に確認した補正率を使います");
+    expect(h).toContain("間口が狭い・奥行が長い補正はせず、修正した補正率を使います");
     // 補正率をまだ入れていなければ、ふつうどおり
     expect(rosenka({ condition: "irregular" })).toContain("1㎡あたり 160,740円");
   });
@@ -222,8 +225,8 @@ describe("路線価方式の Tips と補正率の欄 ui-15", () => {
   it("補正率を入れてある土地（1を超える古い値も）は、補正率の欄を開いておく", () => {
     const open = (otherCorrection: number) =>
       rosenka({ method: { type: "rosenka", routePrice: 0, depthCorrection: 1, otherCorrection, roads: [{ edge: 0, price: 200_000, depth: 30, frontage: 5 }] } });
-    expect(open(0.9)).toMatch(/<details class="[^"]*" open=""><summary [^>]*>税理士に確認した補正率（任意）/);
-    expect(open(1.2)).toMatch(/<details class="[^"]*" open=""><summary [^>]*>税理士に確認した補正率（任意）/);
+    expect(open(0.9)).toMatch(/<details class="[^"]*" open=""><summary [^>]*>補正率を修正/);
+    expect(open(1.2)).toMatch(/<details class="[^"]*" open=""><summary [^>]*>補正率を修正/);
     expect(open(1.2)).toContain("以前に入れた値が1を超えているため");
   });
 

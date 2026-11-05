@@ -5,7 +5,7 @@ import { VACANT_HOME_LAST_SALE, blueFilerDue, blueReturnDue, buildTasks, newBusi
 import { googleEventUrl, icsStamp, toICS } from "../procedures/calendar";
 import { decodeFeed, decodeInterview, encodeInterview } from "../procedures/share";
 import { DOCS } from "../procedures/documents";
-import { areaOf, cityOf, isTokyoWard } from "../procedures/offices";
+import { areaOf, cityOf, isTokyoWard, taxOfficeShortName } from "../procedures/offices";
 
 const iv = (p: Partial<Interview>): Interview => ({ ...blankInterview(), deathDate: "2026-01-06", ...p });
 
@@ -301,5 +301,27 @@ describe("相続登記の期限（不動産登記法76条の2、改正法附則5
     expect(registrationDue("2023-06-10")).toBe("2027-03-31");
     expect(registrationDue("2024-03-31")).toBe("2027-03-31");
     expect(registrationDue("2010-01-05")).toBe("2027-03-31");
+  });
+});
+
+describe("年金の受給停止（亡くなった方が受けていた年金の種類）", () => {
+  const stop = (pension: Interview["pension"]) => buildTasks(iv({ pension })).tasks.find((t) => t.id === "pension-stop");
+  it("国民年金だけなら14日以内、厚生年金・遺族年金・分からないは10日以内", () => {
+    expect(stop("national")?.date).toBe(withinDays("2026-01-06", 14));
+    for (const p of ["employees", "survivor", "unknown"] as const) expect(stop(p)?.date).toBe(withinDays("2026-01-06", 10));
+    expect(stop("survivor")?.title).toContain("遺族年金");
+    expect(stop("none")).toBeUndefined();
+  });
+  it("分からないときは、確かめ方を案内する", () => {
+    expect(stop("unknown")?.what).toContain("年金事務所に問い合わせ");
+  });
+});
+
+describe("提出先の税務署の名前", () => {
+  it("正式名称から、申告書に書く部分だけを取り出す", () => {
+    expect(taxOfficeShortName("麹町税務署")).toBe("麹町");
+    expect(taxOfficeShortName("東京国税局 麹町税務署")).toBe("麹町");
+    expect(taxOfficeShortName("博多税務署（福岡国税局）")).toBe("博多");
+    expect(taxOfficeShortName("福岡市役所")).toBe("");
   });
 });

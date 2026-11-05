@@ -395,6 +395,22 @@ describe("相次相続控除（相続税法20条・第7表）", () => {
   });
 });
 
+describe("10年以内の相続・相続時精算課税の「分からない」", () => {
+  const one = (d: Partial<Case["decedent"]>) => calculate(mk([c1], [dep("預金", 80_000_000)], [all("預金", ["c1", 1, 1])], { decedent: { ...decedent, ...d } }));
+  it("精算課税が分からないときは、確かめるまで税額を出さず、開示請求か税理士への相談を案内する", () => {
+    const b = one({ settlementGift: "unknown" }).blockers.find((x) => x.includes("相続時精算課税"));
+    expect(b).toContain("開示請求");
+    expect(b).toContain("税理士");
+    expect(consultPoints({ ...mk([c1], [], []), decedent: { ...decedent, settlementGift: "unknown" } }, null).some((x) => x.includes("相続時精算課税"))).toBe(true);
+  });
+  it("10年以内の相続が分からないときは、控除を見込まずに計算する（止めない）", () => {
+    const r = one({ priorInheritanceTax: "unknown" });
+    expect(r.blockers).toEqual([]);
+    expect(r.successive).toBeUndefined();
+    expect(consultPoints({ ...mk([c1], [], []), decedent: { ...decedent, priorInheritanceTax: "unknown" } }, null).some((x) => x.includes("10年以内"))).toBe(true);
+  });
+});
+
 describe("扶養義務者の相続税額から引く未成年者控除・障害者控除（相続税法19条の3第2項・19条の4第3項）", () => {
   it("引ききれない分を、ほかの家族の相続税額の割合で引く。残りの1円は切り捨てた端数が大きい人に配る", () => {
     // 長男6,000万・長女3,000万・次男（9歳）1,000万。課税遺産総額 5,200万 → 1,733.3万×15%−50万 = 2,099,950 ×3 → 総額 6,299,800

@@ -9,6 +9,15 @@ import { addDays, addYears, earlier, jpDate, monthsDeadline, nextOpenDay, within
 import type { OfficeKind } from "./offices";
 import { estimate, needsFinalReturn, type Estimate, type Interview, type Verdict } from "./interview";
 
+/** 年金の受給停止の手続き名に出す年金の種類（国民年金だけ14日以内、それ以外は10日以内） */
+const PENSION_LABEL: Record<Interview["pension"], string> = {
+  none: "",
+  employees: "厚生年金",
+  national: "国民年金",
+  survivor: "遺族年金",
+  unknown: "受けていたか確認",
+};
+
 export type Category = "届出" | "葬儀・法要" | "調べる・決める" | "お金の受け取り" | "税金" | "名義変更・解約" | "不動産";
 
 export interface Ctx {
@@ -161,12 +170,14 @@ export const RULES: Rule[] = [
     id: "pension-stop",
     office: "pension",
     docs: ["pensionCert", "deathCert"],
-    title: ({ iv }) => (iv.pension === "employees" ? "年金の受給停止（厚生年金）" : "年金の受給停止（国民年金）"),
+    title: ({ iv }) => `年金の受給停止（${PENSION_LABEL[iv.pension]}）`,
     category: "届出",
-    due: (death, { iv }) => withinDays(death, iv.pension === "employees" ? 10 : 14),
+    due: (death, { iv }) => withinDays(death, iv.pension === "national" ? 14 : 10),
     hard: true,
     applies: ({ iv }) => iv.pension !== "none",
-    what: "年金を受けていた方が亡くなったときは「受給権者死亡届」を出します。日本年金機構にマイナンバーが登録されている場合は省略できることがあります。亡くなった月の分までの年金で受け取っていないもの（未支給年金）は、同じ窓口で請求できます。",
+    what: ({ iv }) =>
+      (iv.pension === "unknown" ? "年金を受けていたか分からないときは、年金証書・振込通知書・通帳の「年金」の入金で確かめるか、年金事務所に問い合わせます。" : "") +
+      "年金を受けていた方が亡くなったときは「受給権者死亡届」を出します。日本年金機構にマイナンバーが登録されている場合は省略できることがあります。亡くなった月の分までの年金で受け取っていないもの（未支給年金）は、同じ窓口で請求できます。",
     where: "年金事務所・街角の年金相談センター（国民年金のみの場合は市区町村役場でも可）",
     bring: ["年金証書", "死亡の事実が分かる書類（死亡診断書のコピー等）"],
     law: "厚生年金は10日以内、国民年金は14日以内（各法の施行規則）",

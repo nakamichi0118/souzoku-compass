@@ -3,14 +3,14 @@
 /** 土地の入力（評価方法・面している道路と路線価・土地の使い方）と、小規模宅地等の特例の確認 */
 import { MapPin } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { ConsultLink } from "@/components/compass/ConsultLink";
 import { Choice } from "@/components/plan/inputs";
 import { Button, Check, Field, Note, NumInput, OptionalNumInput, Select, TextInput, YenInput, fmt } from "@/components/ui";
 import type { Asset, Case, CondoAsset, LandAsset, LandUse, Person, SmallLandAcquirer, SmallLandKind, SmallLandRelief } from "@/domain/types";
 import { DISTRICTS, type District } from "@/domain/valuation/depth";
 import { LEASE_LETTERS, LEASE_RATIO_BY_LETTER, type LeaseLetter, leaseLetterOf, ratio4 } from "@/domain/valuation/lease";
-import { type Edge, type RoadInput, evaluateRoads } from "@/domain/valuation/roads";
+import { type Edge, type RoadInput, correctionRates, evaluateRoads } from "@/domain/valuation/roads";
 import { type Answer, SMALL_LAND_RULE, type SmallResidentialCheck, judgeSmallResidential, shouldApply, smallLandKind } from "@/domain/valuation/smallResidential";
 
 const ANSWERS: { value: Answer; label: string }[] = [
@@ -546,7 +546,7 @@ function RoadsEditor({ a, m, patch }: { a: LandAsset; m: RosenkaMethod; patch: (
   const district: District = m.district ?? "普通住宅地区";
   // 以前の入力（道路が1つ・奥行価格補正率を直接入力）は、正面の道路1つとして見せる
   const roads: RoadInput[] = m.roads?.length ? m.roads : [{ edge: 0, price: m.routePrice, depth: m.lot?.depth ?? 0 }];
-  // 形がいびつな土地で税理士に確認した補正率（不整形地補正率）が1未満なら、間口が狭い・奥行が長い補正をしない（評価の計算と同じ）。
+  // 形がいびつな土地で修正した補正率（不整形地補正率）が1未満なら、間口が狭い・奥行が長い補正をしない（評価の計算と同じ）。
   // 1（減額なし）のときは、間口が狭い・奥行が長い補正はふつうどおりする（付表5（注）3）
   const irregular = a.condition === "irregular" && m.otherCorrection != null && m.otherCorrection > 0 && m.otherCorrection < 1;
   const save = (next: RoadInput[], d = district) => {
@@ -611,11 +611,20 @@ function RoadsEditor({ a, m, patch }: { a: LandAsset; m: RosenkaMethod; patch: (
         <div className="rounded-lg bg-teal-50 p-3 text-sm text-teal-950">
           <p className="font-semibold">1㎡あたり {fmt(ev.perSqm)}円</p>
           {ev.lines.length > 1 && <p className="text-xs">正面は、路線価×奥行価格補正率がいちばん高い道路です。</p>}
+          {/* 計算に使った補正率（自分で直した率があれば、それも） */}
+          <dl className="mt-2 grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 text-xs">
+            {correctionRates(ev, m.otherCorrection).map(([k, v]) => (
+              <Fragment key={k}>
+                <dt>{k}</dt>
+                <dd className="text-right font-semibold tabular-nums">{v}</dd>
+              </Fragment>
+            ))}
+          </dl>
         </div>
       )}
       <Note tone="info">
         {irregular
-          ? "形がいびつな土地なので、間口が狭い・奥行が長い補正はせず、税理士に確認した補正率を使います。"
+          ? "形がいびつな土地なので、間口が狭い・奥行が長い補正はせず、修正した補正率を使います。"
           : "間口を入れると、間口が狭い・奥行が長い分も減額します。"}
         がけ地などの減額はしていません（高めに出ることがあります）。
         <span className="mt-2 block">
@@ -630,17 +639,17 @@ function RoadsEditor({ a, m, patch }: { a: LandAsset; m: RosenkaMethod; patch: (
           <li>角地は、一方が行き止まりの道路の角（準角地）かどうかを区別せず、加算の大きい角地として計算します。</li>
           <li>横や裏の道路に一部しか接していない場合も、全部接しているものとして計算します。</li>
           <li>形がいびつな土地（不整形地）、がけ地、道路に接していない土地、都市計画道路の予定地などの減額はしていません。形がいびつな土地は、上の「この土地に当てはまること」で選んでください。</li>
-          <li>税理士に補正率を確認した場合は、下の「税理士に確認した補正率」を開いて入れると計算に使います。</li>
-          <li>形がいびつな土地は、税理士に確認した最後の不整形地補正率（間口が狭い・奥行が長い分も含めた率）を入れてください。このときは間口による補正はしません（二重に下げないため）。</li>
+          <li>補正率を自分で直すときは、下の「補正率を修正」を開いて入れると計算に使います。</li>
+          <li>形がいびつな土地は、最後の不整形地補正率（間口が狭い・奥行が長い分も含めた率）を入れてください。このときは間口による補正はしません（二重に下げないため）。</li>
           <li>広い土地（地積規模の大きな宅地）にもあたるときは、その補正（規模格差補正率）も掛け合わせた率を入れてください。</li>
-          <li>税理士に確認して、減額にならない（当てはまらない）と分かったときは 1 を入れてください。形による補正なしで計算します（間口が狭い・奥行が長い補正はふつうどおりします）。</li>
+          <li>減額にならない（当てはまらない）と分かったときは 1 を入れてください。形による補正なしで計算します（間口が狭い・奥行が長い補正はふつうどおりします）。</li>
         </ul>
       </details>
-      {/* 税理士に確認したときだけ使う欄なので畳む。入れてあれば（1を超える古い値も）開いておく */}
+      {/* 自分で直すときだけ使う欄なので畳む。入れてあれば（1を超える古い値も）開いておく */}
       <details className={detailsCls} open={correctionOpen}>
-        <summary className={summaryCls}>税理士に確認した補正率（任意）</summary>
+        <summary className={summaryCls}>補正率を修正</summary>
         <div className="mt-2">
-          <Field label="補正率" hint="例：0.92（減額なしなら 1。空欄なら補正なしで計算します）">
+          <Field label="補正率" hint="例：0.92。上の計算に、さらに掛けます（空欄なら上の計算どおり）">
             <OptionalNumInput
               value={m.otherCorrection}
               accept={(v) => v > 0 && v <= 1}

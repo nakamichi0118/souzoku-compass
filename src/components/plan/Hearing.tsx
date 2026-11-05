@@ -155,9 +155,9 @@ export function Hearing() {
     if (iv.stage === "after49") setDoneIds(["shijuku"], true);
     // まだ何も入っていない相続税申告には、亡くなった方と家族構成の下書きを入れておく
     if (c.persons.length === 0 && c.assets.length === 0) {
-      replace({ ...c, title: `${iv.decedentName || ""}さんの相続`, decedent: { ...c.decedent, name: iv.decedentName, deathDate: iv.deathDate, address: iv.address }, persons: seedPersons(iv) });
+      replace({ ...c, title: `${iv.decedentName || ""}さんの相続`, decedent: { ...c.decedent, name: iv.decedentName, deathDate: iv.deathDate, address: iv.address, zip: iv.zip }, persons: seedPersons(iv) });
     } else if (c.decedent.deathDate !== iv.deathDate && c.persons.length === 0) {
-      replace({ ...c, decedent: { ...c.decedent, name: iv.decedentName, deathDate: iv.deathDate, address: iv.address } });
+      replace({ ...c, decedent: { ...c.decedent, name: iv.decedentName, deathDate: iv.deathDate, address: iv.address, zip: iv.zip } });
     }
     router.push("/my");
   }
@@ -202,7 +202,7 @@ export function Hearing() {
             <Choice value={a("myRelation")} onChange={(v) => pick("myRelation", v)} options={["父", "母", "夫", "妻", "祖父", "祖母", "その他"].map((x) => ({ value: x, label: x }))} />
           </Q>
           <Q label="亡くなった方の最後の住所" hint="役所・税務署を探すのに使います。">
-            <AddressField address={iv.address} onAddress={(v) => set("address", v)} placeholder="例：東京都千代田区架空町一丁目2番3号" ariaLabel="亡くなった方の最後の住所" />
+            <AddressField address={iv.address} onAddress={(v) => set("address", v)} zip={iv.zip ?? ""} onZip={(v) => set("zip", v)} placeholder="例：東京都千代田区架空町一丁目2番3号" ariaLabel="亡くなった方の最後の住所" />
           </Q>
           <Q label="亡くなった日" hint="期限はこの日から数えます。">
             <TextInput type="date" value={iv.deathDate} onChange={(e) => set("deathDate", e.target.value)} className="min-h-[42px] max-w-56 [&::-webkit-date-and-time-value]:text-left" />
@@ -413,14 +413,16 @@ export function Hearing() {
               ]}
             />
           </Q>
-          <Q label="年金を受け取っていましたか？">
+          <Q label="亡くなった方は年金を受け取っていましたか？" hint="専業主婦（夫）だった方も国民年金を受け取っています。">
             <Choice
               value={a("pension")}
               onChange={(v) => pick("pension", v)}
               options={[
-                { value: "employees", label: "厚生年金（会社員だった）" },
-                { value: "national", label: "国民年金だけ" },
+                { value: "employees", label: "厚生年金（会社員・公務員の時期あり）" },
+                { value: "national", label: "国民年金だけ（自営業・専業主婦など）" },
+                { value: "survivor", label: "遺族年金（先に亡くした夫や妻の年金）" },
                 { value: "none", label: "受け取っていない" },
+                { value: "unknown", label: "分からない" },
               ]}
             />
           </Q>

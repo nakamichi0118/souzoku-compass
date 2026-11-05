@@ -85,8 +85,8 @@ describe("評価に影響する土地の事情", () => {
   });
 });
 
-describe("税理士に確認した補正率・評価額を入れた土地は計算する", () => {
-  it("形がいびつ・セットバックでも、税理士に確認した補正率（0より大きく1以下）を入れれば、その補正率で計算する", () => {
+describe("修正した補正率・評価額を入れた土地は計算する", () => {
+  it("形がいびつ・セットバックでも、修正した補正率（0より大きく1以下）を入れれば、その補正率で計算する", () => {
     const m = { type: "rosenka" as const, routePrice: 200_000, depthCorrection: 1, otherCorrection: 0.9 };
     expect(valueLand(land({ condition: "irregular" })).needsConsultation).toBeDefined();
     expect(valueLand(land({ condition: "irregular", method: m })).value).toBe(54_000_000); // 20万×0.9×300㎡
@@ -97,7 +97,7 @@ describe("税理士に確認した補正率・評価額を入れた土地は計�
     // 1を超える・0以下の補正率は確認した答えにならない
     for (const otherCorrection of [0, -0.5, 1.2, Number.NaN]) expect(valueLand(land({ condition: "irregular", method: { ...m, otherCorrection } })).needsConsultation).toContain("形がいびつ");
   });
-  it("広い土地も、税理士に確認した補正率か直接入力の評価額があれば計算する", () => {
+  it("広い土地も、修正した補正率か直接入力の評価額があれば計算する", () => {
     expect(valueLand(land({ areaSqm: 600 })).needsConsultation).toContain("地積規模");
     expect(valueLand(land({ areaSqm: 600, method: { type: "rosenka", routePrice: 200_000, depthCorrection: 1, otherCorrection: 0.8 } })).value).toBe(96_000_000);
     expect(valueLand(land({ areaSqm: 600, method: { type: "manual", value: 90_000_000 } })).value).toBe(90_000_000);

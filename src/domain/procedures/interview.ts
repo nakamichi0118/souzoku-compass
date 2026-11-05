@@ -12,7 +12,8 @@ import type { Person } from "../types";
 export type WillKind = "none" | "notarized" | "handwritten" | "handwrittenStored" | "unknown";
 export type DebtLevel = "none" | "some" | "large" | "unknown";
 export type Work = "pension" | "employee" | "selfEmployed" | "none";
-export type PensionKind = "none" | "national" | "employees";
+/** 亡くなった方が受けていた年金（survivor＝遺族年金、unknown＝分からない。分からないときは厚生年金とみなして早いほうの期限で案内する） */
+export type PensionKind = "none" | "national" | "employees" | "survivor" | "unknown";
 export type HealthInsurance = "kokuho" | "kouki" | "shaho" | "unknown";
 
 export interface Interview {
@@ -22,6 +23,8 @@ export interface Interview {
   decedentName: string;
   /** 亡くなった方の最後の住所（提出先の案内に使う） */
   address: string;
+  /** 亡くなった方の最後の住所の郵便番号（相続税申告の「亡くなった方」にも引き継ぐ） */
+  zip: string;
   /** あなたから見た亡くなった方（例：父・母・夫・妻）。窓口への連絡の文例に使う */
   myRelation: string;
   // 家族
@@ -82,6 +85,7 @@ export const blankInterview = (): Interview => ({
   stage: "",
   decedentName: "",
   address: "",
+  zip: "",
   myRelation: "",
   spouse: false,
   hasChildren: "",

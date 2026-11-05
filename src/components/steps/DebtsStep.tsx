@@ -41,7 +41,7 @@ export function DebtsStep() {
   };
   const patch = (id: string, p: Partial<Debt>) => update((c) => ({ ...c, debts: c.debts.map((d) => (d.id === id ? { ...d, ...p } : d)) }));
   // 相続時精算課税を選んだ贈与があるときだけ、贈与ごとの「相続時精算課税」の印を出す（印を付けた贈与があるときも出したままにする）
-  const settlement = !!data.decedent.settlementGift || data.priorGifts.some((g) => g.settlement);
+  const settlement = data.decedent.settlementGift === true || data.priorGifts.some((g) => g.settlement);
 
   return (
     <div className="space-y-5">

@@ -51,7 +51,11 @@ export function consultPoints(c: Case, r: TaxResult | null): string[] {
   // 相次相続控除・相続時精算課税・扶養義務者からの控除・未分割・代償金は相続コンパスが計算する。
   // 相次相続控除は、前の相続の内容がそろわない（申告書の控えが見つからないなど）ときだけ相談の項目にする
   const pi = c.decedent.priorInheritance;
-  if (c.decedent.priorInheritanceTax && !(isValidISODate(pi?.date) && Number(pi?.prevTax) > 0 && Number(pi?.prevAcquired) > 0))
+  if (c.decedent.priorInheritanceTax === "unknown")
+    out.push("亡くなった方が10年以内の相続で相続税を納めたか分からない（相次相続控除を使えるか確かめたい）。");
+  if (c.decedent.settlementGift === "unknown")
+    out.push("亡くなった方からの贈与で、相続時精算課税を選んだ人がいるか分からない。");
+  if (c.decedent.priorInheritanceTax === true && !(isValidISODate(pi?.date) && Number(pi?.prevTax) > 0 && Number(pi?.prevAcquired) > 0))
     out.push("亡くなった方が10年以内の相続で相続税を納めている。相次相続控除に使う前の相続の内容（相続の日・納めた相続税額・取得した財産の価額）を確かめたい。");
   if (c.persons.length > 0 && r && r.heirsCivil.slots.length === 0)
     out.push("相続人がいない（全員が相続を放棄した、または相続人になる家族がいない）。相続財産清算人・特別縁故者の手続きと相続税の申告について相談したい。");

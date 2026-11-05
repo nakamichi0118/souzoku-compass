@@ -13,20 +13,21 @@ import { Check as CheckIcon, MapPin, Shapes, Map as MapIcon, Route as RouteIcon,
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { StepBar } from "@/components/StepBar";
 import { ConsultLink } from "@/components/compass/ConsultLink";
 import { type Progress, ProgressBar, QUICK, within } from "@/components/compass/ProgressBar";
+import { BusyOverlay } from "./BusyOverlay";
 import { AppHeader } from "@/components/shell/AppShell";
 import { scrollBelowHeader } from "@/components/ui/scroll";
 import { Button, Check, Field, Note, NumInput, Select, TextInput, fmt } from "@/components/ui";
 import { type Frame, DEFAULT_PAPER, frameCorners, framePairs } from "@/domain/geo/frame";
 import { type LatLng, type Road, fitLot, lotCorners } from "@/domain/geo/lot";
 import { depthFor, directionLabel, edgeClasses, edgeTouches, frontagesOf, polygonAreaSqm, rectangle } from "@/domain/geo/polygon";
-import type { LandAsset } from "@/domain/types";
+import type { LandAsset, MapDraft } from "@/domain/types";
 import { DISTRICTS, type District } from "@/domain/valuation/depth";
 import { leaseLetterOf } from "@/domain/valuation/lease";
-import { type RoadInput, evaluateRoads } from "@/domain/valuation/roads";
+import { type RoadInput, correctionRates, evaluateRoads } from "@/domain/valuation/roads";
 import { parseRouteNotation } from "@/domain/valuation/rosenka";
 import { useCase } from "@/lib/store";
 import type { FindResult, SheetLayoutItem } from "@/server/rosenkaIndex";
@@ -46,6 +47,7 @@ const READ_PROGRESS: Progress = { at: 0, until: 1, expectSec: 15 };
 const SHAPE_OPS = ["● 角をドラッグで移動", "＋ 辺の真ん中で角を増やす", "角をダブルクリックで消す", "✥ 全体を移動"];
 
 type Route = "rosenka" | "ratio";
+const CANCELLED = "キャンセルしました。もう一度、土地の場所をクリックしてください。";
 interface ReadResult {
   candidates: ReadCandidate[];
   districtSymbol: string | null;
@@ -101,15 +103,6 @@ function LandWizard() {
   const api = useRef<MapApi | null>(null);
   const asideRef = useRef<HTMLElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
-  // 上に固定した見出しの高さ。スマートフォンで、待ちの案内をそのすぐ下に留める（見出しの高さは画面の幅で変わる）
-  const [headH, setHeadH] = useState(0);
-  useEffect(() => {
-    const head = document.querySelector("header");
-    if (!head || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => setHeadH(Math.ceil(head.getBoundingClientRect().height)));
-    ro.observe(head);
-    return () => ro.disconnect();
-  }, []);
   const pdfCache = useRef(new Map<string, ArrayBuffer>());
   const [step, setStep] = useState(1);
   const [route, setRoute] = useState<Route | null>(null);
@@ -162,6 +155,8 @@ function LandWizard() {
   const [ratioReady, setRatioReady] = useState(false);
   /** 土地や場所を変えるたびに増やす。前の土地・場所への問い合わせの答えが後から届いても使わない */
   const gen = useRef(0);
+  /** 途中から続けるときに、路線価図を読み込んだら進むステップ */
+  const resumeTo = useRef<number | null>(null);
   /** 開き直した土地の形と、本人が選んだ「道路に接している辺」（形を直すまでそのまま使う） */
   const keepEdges = useRef<{ shape: LatLng[]; on: boolean[] } | null>(null);
   /** 開き直した土地の、確かめて保存した道路ごとの路線価（道路の情報がそろったら欄に戻す） */
@@ -183,17 +178,38 @@ function LandWizard() {
     setProg({ ...p, since: Date.now() });
   }
 
+  /** 待ちの番号。キャンセルしたあとに前の待ちが終わっても、次の待ちの案内を消さないように */
+  const busyTok = useRef(0);
   async function run<T>(label: string, f: () => Promise<T>, p: Progress = QUICK): Promise<T | undefined> {
+    const tok = ++busyTok.current;
     wait(label, p);
     setError(null);
     try {
       return await f();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (tok === busyTok.current) setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(null);
-      setProg(null);
+      if (tok === busyTok.current) {
+        setBusy(null);
+        setProg(null);
+      }
     }
+  }
+
+  /** 待っている間の「キャンセル」：届いた答えは使わず（gen を進める）、操作できる状態に戻す */
+  const [ratioKey, setRatioKey] = useState(0);
+  function cancelWait() {
+    gen.current++;
+    busyTok.current++;
+    setBusy(null);
+    setProg(null);
+    setFinding(false);
+    if (ratioWait) {
+      // 評価倍率表は表の欄が自分で調べているので、欄を作り直して止める
+      setRatioWait(null);
+      setRatioKey((k) => k + 1);
+    }
+    setNotice(CANCELLED);
   }
 
   // 土地を切り替えたら、保存してある内容から始め直す
@@ -201,12 +217,19 @@ function LandWizard() {
     if (!land) return;
     const g = ++gen.current;
     const m = land.method.type === "rosenka" ? land.method : undefined;
-    const saved = land.rosenkaSheet;
     const geo: LatLng | undefined = land.geo ? [land.geo.lat, land.geo.lng] : undefined;
-    const restored = m?.shape ?? (m?.lot ? lotCorners(m.lot) : null);
+    // 途中まで進めていたら、その内容から続ける（場所が選んであるときだけ）
+    const draft = geo ? land.mapDraft : undefined;
+    const saved = draft?.sheet ?? land.rosenkaSheet;
+    const restored = draft?.shape ?? m?.shape ?? (m?.lot ? lotCorners(m.lot) : null);
     setShape(restored);
     // 評価を終えた土地を開き直したときは、本人が選んだ辺と確かめた路線価をそのまま使う（読み直さない）
-    keepEdges.current = m?.shape && m.edgeOn?.length === m.shape.length ? { shape: m.shape, on: m.edgeOn } : null;
+    keepEdges.current =
+      draft?.shape && draft.edgeOn?.length === draft.shape.length
+        ? { shape: draft.shape, on: draft.edgeOn }
+        : m?.shape && m.edgeOn?.length === m.shape.length
+          ? { shape: m.shape, on: m.edgeOn }
+          : null;
     seed.current =
       restored && m?.roads?.length
         ? { shape: restored, roads: m.roads, ctx: readingContext({ property: geo, sheetId: saved?.url ?? "", page: saved?.page ?? 1, pairs: saved?.points ?? [], frame: saved?.frame ?? null }) }
@@ -223,8 +246,9 @@ function LandWizard() {
     setTown(null);
     setRoads(null);
     setFinding(false);
-    setDistrict(m?.district ?? "普通住宅地区");
-    setDistrictTouched(!!m?.district);
+    const dist = (draft?.district as District | undefined) ?? m?.district;
+    setDistrict(dist ?? "普通住宅地区");
+    setDistrictTouched(!!dist);
     setArea(land.areaSqm);
     setReadings(EMPTY_NOTES);
     setRoadsAnswer(null);
@@ -236,10 +260,13 @@ function LandWizard() {
     setAlignOpen(false);
     setError(null);
     // 書類から読んだだけの仮の方法などで、路線価地域か倍率地域かが決まっていなければ、場所から調べて決める
-    const decided = savedRoute(land.method);
+    const decided = draft?.route ?? savedRoute(land.method);
     setRoute(decided);
     setRatioReady(land.method.type === "multiplier" && land.method.multiplier > 0);
-    setStep(1);
+    // 途中のステップから続ける。3. 4. は路線価図を読み込んでから（4. は読み込めたら進む）
+    const resume = !draft || !decided ? 1 : decided === "ratio" ? Math.min(draft.step, 2) : restored ? Math.min(draft.step, 3) : 1;
+    resumeTo.current = decided === "rosenka" && restored && draft?.step === 4 && saved?.url ? 4 : null;
+    setStep(resume);
     if (geo) {
       api.current?.flyTo(geo, 18);
       void loadRoads(geo, g).then((rs) => {
@@ -333,6 +360,7 @@ function LandWizard() {
     patchLand({
       geo: { lat: ll[0], lng: ll[1] },
       rosenkaSheet: undefined,
+      mapDraft: undefined,
       ...(m?.type === "rosenka" && (m.shape || m.lot || m.edgeOn) ? { method: { ...m, shape: undefined, lot: undefined, edgeOn: undefined } } : {}),
     });
     keepEdges.current = null;
@@ -415,7 +443,7 @@ function LandWizard() {
     const frontage = Math.round(f.frontage * 100) / 100;
     return [{ edge: e, price: parseRouteNotation(n)?.routePrice ?? 0, depth: depthFor(f, areaForDepth), notation: n || undefined, ...(frontage > 0 ? { frontage } : {}) }];
   });
-  // 形がいびつな土地で税理士に確認した補正率（不整形地補正率）が1未満なら、間口が狭い・奥行が長い補正はしない（土地の画面・評価の計算と同じ）
+  // 形がいびつな土地で修正した補正率（不整形地補正率）が1未満なら、間口が狭い・奥行が長い補正はしない（土地の画面・評価の計算と同じ）
   const prevRate = land?.method.type === "rosenka" ? land.method.otherCorrection : undefined;
   const irregularRate = land?.condition === "irregular" && prevRate != null && prevRate > 0 && prevRate < 1;
   const evaluation = evaluateRoads(district, roadInputs, { irregular: irregularRate });
@@ -523,7 +551,8 @@ function LandWizard() {
   // 3. に入ったら：保存した図があれば読み込み、なければコンパスくんに探してもらう
   useEffect(() => {
     if (step !== 3 || route !== "rosenka" || sheet || busy) return;
-    if (land?.rosenkaSheet?.url) void loadFromUrl(land.rosenkaSheet.url, true);
+    const url = sheetUrl || land?.rosenkaSheet?.url;
+    if (url) void loadFromUrl(url, true);
     else if (found?.sheets.length) void identify(found.sheets.map((s) => ({ no: s.no, pdfUrl: s.pdfUrl })));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, route, found]);
@@ -571,6 +600,44 @@ function LandWizard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, readKey, sheet]);
 
+  // 路線価図を読み込めたら、途中だった 4. へ進む
+  useEffect(() => {
+    if (sheet && resumeTo.current === 4 && step === 3) {
+      resumeTo.current = null;
+      setStep(4);
+    }
+  }, [sheet, step]);
+
+  // ---------------------------------------------------------------- 途中の保存
+
+  /** 評価を反映したあとは、途中の内容を保存しない */
+  const applied = useRef(false);
+  useEffect(() => {
+    applied.current = false;
+  }, [assetId]);
+  // 進めた内容を少し待ってから保存する（開き直したら、このステップから続けられるように）
+  useEffect(() => {
+    if (!land || !property || !route || applied.current) return;
+    const id = land.id;
+    const t = setTimeout(() => {
+      const draft: MapDraft = {
+        step,
+        route,
+        shape: shape ?? undefined,
+        edgeOn: edgeOn.length && shape && edgeOn.length === shape.length ? edgeOn : undefined,
+        district: districtTouched ? district : undefined,
+        sheet: sheetUrl || pairs.length || frame ? { url: sheetUrl || undefined, page: pdfData ? pageNo : undefined, points: pairs, frame: frame ?? undefined } : undefined,
+      };
+      if (applied.current) return;
+      // 開いただけ（1. のまま）なら残さない。前と同じ内容なら書かない
+      if (step === 1 && !land.mapDraft) return;
+      if (JSON.stringify(land.mapDraft ?? null) === JSON.stringify(draft)) return;
+      update((c) => ({ ...c, assets: c.assets.map((a) => (a.id === id && a.kind === "land" && a.geo ? { ...a, mapDraft: draft } : a)) }));
+    }, 800);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, route, shape, edgeOn, district, districtTouched, sheetUrl, pageNo, pairs, frame, property]);
+
   // ---------------------------------------------------------------- 反映
 
   function applyRosenka() {
@@ -595,7 +662,9 @@ function LandWizard() {
         edgeOn: edgeOn.length === shape.length ? edgeOn : undefined,
       },
       rosenkaSheet: { url: sheetUrl || undefined, page: pdfData ? pageNo : undefined, points: pairs, frame: frame ?? undefined, notation: evaluation.front.notation },
+      mapDraft: undefined,
     });
+    applied.current = true;
     router.push(`/case/assets?asset=${land.id}&applied=1`);
   }
 
@@ -668,6 +737,8 @@ function LandWizard() {
         </Link>
       </div>
 
+      {/* 待っている間は画面全体を覆い、キャンセルだけ押せるようにする */}
+      {waiting && <BusyOverlay message={waiting.message} progress={waiting.progress} onCancel={cancelWait} />}
       <div ref={wrapRef} className="relative isolate">
         <MapView
           className="h-[60vh] min-h-[360px] w-full rounded-xl border border-stone-300 lg:h-[calc(100vh-12rem)] lg:min-h-[560px]"
@@ -698,8 +769,7 @@ function LandWizard() {
 
         {/* 地図の上：案内・状態 */}
         <div className={`pointer-events-none absolute left-14 right-3 top-3 z-[1000] space-y-2 sm:left-1/2 sm:right-auto sm:w-[min(36rem,80%)] sm:-translate-x-1/2 ${wide ? "lg:left-[calc((100%-41rem)/2)] lg:w-[min(30rem,40%)]" : "lg:left-[calc((100%-26rem)/2)]"}`}>
-          {step === 1 && !property && <p className="rounded-lg bg-amber-50/95 px-3 py-2 text-center text-sm font-semibold text-amber-950 shadow">{notice ?? "地図で、評価する土地をクリックしてください。"}</p>}
-          {waiting && <ProgressBar quiet message={waiting.message} progress={waiting.progress} className="rounded-lg bg-white/95 px-3 py-2 text-center text-sm text-teal-900 shadow" />}
+          {step === 1 && (!property || notice === CANCELLED) && <p className="rounded-lg bg-amber-50/95 px-3 py-2 text-center text-sm font-semibold text-amber-950 shadow">{notice ?? "地図で、評価する土地をクリックしてください。"}</p>}
           {error && <p className="pointer-events-auto rounded-lg bg-rose-50/95 px-3 py-2 text-sm text-rose-900 shadow">{error}</p>}
         </div>
 
@@ -709,11 +779,6 @@ function LandWizard() {
           className={`mt-3 rounded-xl bg-white p-4 shadow-xl ring-1 ring-stone-200 lg:absolute lg:bottom-3 lg:right-3 lg:top-3 lg:z-[1000] lg:mt-0 lg:overflow-y-auto lg:bg-white/97 ${wide ? "lg:w-[min(40rem,calc(100%-1.5rem))]" : "lg:w-[25rem]"}`}
         >
           {/* 待っている間の案内。手順の上に出し、スマートフォンではスクロールしても画面の上に留める（ボタンを押した場所から見えるように） */}
-          {busy && (
-            <div className="pointer-events-none sticky top-[var(--head,5.5rem)] z-20 mb-3 lg:top-0" style={headH ? ({ "--head": `${headH + 4}px` } as React.CSSProperties) : undefined}>
-              <ProgressBar message={busy} progress={prog} className="rounded-lg bg-white/95 px-3 py-2 text-sm text-teal-900 shadow-md ring-1 ring-teal-100" />
-            </div>
-          )}
           <p className="mb-3 text-xs text-stone-500">
             {land.label || "（名称未入力）"}　{land.location}
             {land.areaSqm > 0 ? `　地積 ${land.areaSqm}㎡` : ""}
@@ -1050,6 +1115,15 @@ function LandWizard() {
                         {x}
                       </p>
                     ))}
+                    {/* 計算に使った補正率 */}
+                    <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 pt-1 text-xs">
+                      {correctionRates(evaluation, land.method.type === "rosenka" ? land.method.otherCorrection : undefined).map(([k, v]) => (
+                        <Fragment key={k}>
+                          <dt>{k}</dt>
+                          <dd className="text-right font-semibold tabular-nums">{v}</dd>
+                        </Fragment>
+                      ))}
+                    </dl>
                     <p className="pt-1 text-base font-bold">1㎡あたり {fmt(evaluation.perSqm)}円</p>
                     {area > 0 && (
                       <p className="font-semibold">
@@ -1059,7 +1133,7 @@ function LandWizard() {
                   </div>
                   <Note tone="info">
                     {irregularRate
-                      ? "形がいびつな土地なので、土地の画面で入れた税理士に確認した補正率を使います。がけ地などの減額はしていません（高めに出ることがあります）。"
+                      ? "形がいびつな土地なので、土地の画面で修正した補正率を使います。がけ地などの減額はしていません（高めに出ることがあります）。"
                       : "形がいびつ・がけ地などの減額はしていません（高めに出ることがあります）。"}
                     <span className="mt-2 block">
                       <ConsultLink topic="土地の評価" />
@@ -1082,6 +1156,7 @@ function LandWizard() {
               cache={pdfCache.current}
               ratioUrl={found?.ratioUrl}
               onReady={setRatioReady}
+              key={ratioKey}
               onWait={setRatioWait}
               onUseRosenka={() => {
                 setRoute("rosenka");
@@ -1092,7 +1167,8 @@ function LandWizard() {
                 const rest = land.pending?.filter((x) => !/路線価|奥行|倍率|固定資産税評価額/.test(x) && !(/地積/.test(x) && areaSqm > 0));
                 // 評価倍率表の行を確かめて借地権割合が読めたときは、その割合を使う。読めない行なら、土地の画面で選んだ割合をそのまま使う
                 // （「3.」の評価も同じ割合で見せている。ratioStep3）
-                patchLand({ method, areaSqm, pending: rest?.length ? rest : undefined, ...(lease?.ratio != null ? { leaseRatio: lease.ratio } : {}) });
+                patchLand({ method, areaSqm, pending: rest?.length ? rest : undefined, mapDraft: undefined, ...(lease?.ratio != null ? { leaseRatio: lease.ratio } : {}) });
+                applied.current = true;
                 router.push(`/case/assets?asset=${land.id}&applied=1`);
               }}
             />

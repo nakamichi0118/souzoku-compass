@@ -6,11 +6,65 @@ import { AddressField } from "@/components/ui/AddressField";
 import { isValidDate, monthsDeadline, nextOpenDay } from "@/domain/procedures/dates";
 import type { Decedent } from "@/domain/types";
 import { useCase } from "@/lib/store";
+import { usePlan } from "@/lib/planStore";
 import { Choice } from "@/components/plan/inputs";
+import { ConsultLink } from "@/components/compass/ConsultLink";
 import { wareki } from "@/forms/format";
+import { useEffect, useState } from "react";
+import { findOffice } from "@/components/plan/OfficeLookup";
+import { areaOf, cityOf, taxOfficeShortName } from "@/domain/procedures/offices";
+
+const YES_NO_UNKNOWN: { value: boolean | "unknown"; label: string }[] = [
+  { value: true, label: "はい" },
+  { value: false, label: "いいえ" },
+  { value: "unknown", label: "分からない" },
+];
+
+/** 「分からない」を選んだときの確かめ方と、税理士への相談の入り口 */
+function HowToCheck({ topic, stop, children }: { topic: string; stop?: boolean; children: React.ReactNode }) {
+  return (
+    <div className={`mt-3 rounded-xl border p-3 text-sm ${stop ? "border-amber-300 bg-amber-50 text-amber-950" : "border-sky-200 bg-sky-50 text-sky-950"}`}>
+      <p className="font-semibold">確かめ方</p>
+      <ul className="mt-1 list-disc space-y-1 pl-5">{children}</ul>
+      <ConsultLink topic={topic} className="mt-3" />
+    </div>
+  );
+}
+
+/**
+ * 提出先の税務署を、亡くなった方の最後の住所から自動で入れる（コンパスくんが国税庁のサイトで調べる）。
+ * 空欄のとき、または前に自動で入れたあと住所（番地より前）が変わったときだけ調べる。自分で入れた名前は書き換えない
+ */
+function useTaxOfficeLookup(): "idle" | "busy" | "failed" {
+  const { data, update } = useCase();
+  const address = data.decedent.address;
+  const area = areaOf(address);
+  const { city } = cityOf(address);
+  const f = data.filing;
+  const need = !!city && (!f?.taxOffice?.trim() || (!!f?.taxOfficeFrom && f.taxOfficeFrom !== area));
+  const [state, setState] = useState<{ area: string; st: "busy" | "failed" } | null>(null);
+  useEffect(() => {
+    if (!need || state?.area === area) return;
+    // 住所を打っている途中で何度も調べないよう、少し待ってから
+    const t = setTimeout(() => {
+      setState({ area, st: "busy" });
+      findOffice("taxOffice", address)
+        .then((o) => {
+          const name = o.found ? taxOfficeShortName(o.name) : "";
+          if (!name) throw new Error("not found");
+          update((c) => (areaOf(c.decedent.address) === area ? { ...c, filing: { ...c.filing, taxOffice: name, taxOfficeFrom: area } } : c));
+          setState(null);
+        })
+        .catch(() => setState({ area, st: "failed" }));
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [need, area, address, state?.area, update]);
+  return state?.area === area ? state.st : "idle";
+}
 
 export function DecedentStep() {
   const { data, update, result } = useCase();
+  const plan = usePlan();
   const d = data.decedent;
   const set = (k: keyof typeof d, v: string) => update((c) => ({ ...c, decedent: { ...c.decedent, [k]: v } }));
   const pi = d.priorInheritance ?? {};
@@ -22,6 +76,15 @@ export function DecedentStep() {
   // やることリスト・カレンダーと同じ計算（応当日がなければ月末、休みの日なら次の開いている日）
   const deadline = d.deathDate && isValidDate(d.deathDate) ? nextOpenDay(monthsDeadline(d.deathDate, 10)) : null;
   const outOfScope = d.deathDate && !d.deathDate.startsWith("2026");
+  const taxLookup = useTaxOfficeLookup();
+  const taxHint =
+    taxLookup === "busy"
+      ? "コンパスくんが住所から調べています…"
+      : taxLookup === "failed"
+        ? "自動で調べられませんでした。国税庁の「税務署の所在地などを知りたい方」で確かめてください"
+        : data.filing?.taxOfficeFrom
+          ? "住所から調べて入れました。違うときは直してください"
+          : "最後の住所を担当する税務署";
 
   return (
     <div className="space-y-5">
@@ -41,17 +104,25 @@ export function DecedentStep() {
             <TextInput type="date" value={d.deathDate} onChange={(e) => set("deathDate", e.target.value)} />
           </Field>
           <div className="sm:col-span-2">
-            <AddressField label="最後の住所" address={d.address} onAddress={(v) => set("address", v)} />
+            <AddressField
+              label="最後の住所"
+              address={d.address}
+              onAddress={(v) => set("address", v)}
+              // 聞き取りで入れた郵便番号を引き継ぐ（同じ住所のときだけ）
+              zip={d.zip ?? (d.address && d.address === plan.iv.address ? (plan.iv.zip ?? "") : "")}
+              onZip={(v) => set("zip", v)}
+            />
           </div>
           <Field label="職業">
             <TextInput value={d.occupation ?? ""} onChange={(e) => set("occupation", e.target.value)} placeholder="無職" />
           </Field>
-          <Field label="提出先の税務署" hint="最後の住所を担当する税務署">
+          <Field label="提出先の税務署" hint={taxHint}>
             {/* 「税務署」は欄の右に出しておき、名前だけ入れてもらう */}
             <span className="flex items-center gap-2">
               <TextInput
                 value={data.filing?.taxOffice ?? ""}
-                onChange={(e) => update((c) => ({ ...c, filing: { ...c.filing, taxOffice: e.target.value } }))}
+                // 自分で直したら、住所が変わっても自動では書き換えない
+                onChange={(e) => update((c) => ({ ...c, filing: { ...c.filing, taxOffice: e.target.value, taxOfficeFrom: undefined } }))}
                 placeholder="例：麹町"
               />
               <span className="shrink-0 text-sm text-stone-600">税務署</span>
@@ -64,15 +135,19 @@ export function DecedentStep() {
         <p className="mt-1 text-xs text-stone-500">例：先に亡くなった配偶者から相続していた。今回の相続税が少なくなります。</p>
         <div className="mt-3">
           <Choice
-            value={d.priorInheritanceTax ?? false}
+            value={d.priorInheritanceTax}
             onChange={(v) => update((c) => ({ ...c, decedent: { ...c.decedent, priorInheritanceTax: v } }))}
-            options={[
-              { value: false, label: "いいえ・分からない" },
-              { value: true, label: "はい" },
-            ]}
+            options={YES_NO_UNKNOWN}
           />
         </div>
-        {d.priorInheritanceTax && (
+        {d.priorInheritanceTax === "unknown" && (
+          <HowToCheck topic="相次相続控除">
+            <li>先に亡くなった家族（例：配偶者）の相続税の申告書の控えを探す</li>
+            <li>見つからなければ、そのとき申告した税務署で申告書の閲覧を申し込む</li>
+            <li>分からないままなら「いいえ」と同じ扱いで計算します（控除は使いません）</li>
+          </HowToCheck>
+        )}
+        {d.priorInheritanceTax === true && (
           <div className="mt-4 space-y-3">
             <div className="grid gap-4 sm:grid-cols-3">
               <Field label="前の相続があった日" hint={wareki(pi.date)?.text ?? "前に亡くなった方が亡くなった日"}>
@@ -111,15 +186,20 @@ export function DecedentStep() {
         </details>
         <div className="mt-3">
           <Choice
-            value={d.settlementGift ?? false}
+            value={d.settlementGift}
             onChange={(v) => update((c) => ({ ...c, decedent: { ...c.decedent, settlementGift: v } }))}
-            options={[
-              { value: false, label: "いいえ・分からない" },
-              { value: true, label: "はい" },
-            ]}
+            options={YES_NO_UNKNOWN}
           />
         </div>
-        {d.settlementGift && (
+        {d.settlementGift === "unknown" && (
+          <HowToCheck topic="相続時精算課税" stop>
+            <li>
+              亡くなった方の最後の住所の税務署に<strong>「相続税法第49条第1項の開示請求」</strong>を出すと、精算課税の贈与と、亡くなる前の贈与税の申告分を教えてもらえます
+            </li>
+            <li>入れ忘れは後で追加の納税になりやすいので、確かめるまで税額は出しません</li>
+          </HowToCheck>
+        )}
+        {d.settlementGift === true && (
           <p className="mt-3 text-sm text-stone-700">
             贈与は
             <Link href="/case/debts" className="mx-1 font-semibold underline">

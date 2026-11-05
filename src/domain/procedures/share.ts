@@ -41,7 +41,7 @@ export interface Feed {
 export function encodeInterview(iv: Interview, extra: FeedExtras = {}): string {
   const base = blankInterview() as unknown as Record<string, unknown>;
   const diff: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(iv)) if (k !== "decedentName" && k !== "address" && k !== "myRelation" && base[k] !== v) diff[k] = v;
+  for (const [k, v] of Object.entries(iv)) if (k !== "decedentName" && k !== "address" && k !== "zip" && k !== "myRelation" && base[k] !== v) diff[k] = v;
   if (extra.verdict && isVerdict(extra.verdict)) diff.$v = extra.verdict;
   const skip = [...new Set(extra.skip ?? [])].filter((id) => TASK_ID.test(id)).slice(0, MAX_SKIP);
   if (skip.length) diff.$x = skip;

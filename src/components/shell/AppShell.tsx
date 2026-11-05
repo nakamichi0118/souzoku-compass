@@ -7,6 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { LogoMark } from "@/components/compass/CompassKun";
 import { centerCurrent } from "@/components/ui/scroll";
+import { HelpButton } from "./HelpButton";
 import { NoticeBell } from "./Notices";
 import { useOutsideClose } from "./useOutsideClose";
 import { useOverall } from "@/lib/overall";
@@ -16,16 +17,30 @@ export const NAV: { href: string; label: string; Icon: LucideIcon; match: (p: st
   { href: "/my/tasks", label: "やることリスト", Icon: ListChecks, match: (p) => p.startsWith("/my/tasks"), count: "tasks" },
   { href: "/my/calendar", label: "カレンダー", Icon: CalendarDays, match: (p) => p.startsWith("/my/calendar") },
   { href: "/my/docs", label: "資料集め", Icon: FileText, match: (p) => p.startsWith("/my/docs"), count: "docs" },
-  { href: "/case/assets", label: "財産と相続税", Icon: Calculator, match: (p) => p.startsWith("/case/") && p !== "/case/registration" },
+  { href: "/case/decedent", label: "財産と相続税", Icon: Calculator, match: (p) => p.startsWith("/case/") && p !== "/case/registration" },
   { href: "/my/papers", label: "書類・帳票", Icon: Printer, match: (p) => p.startsWith("/my/papers") || p === "/case/registration" },
 ];
 
 /** メニューの項目（横並びのメニューと、スマホで ▾ から開くメニューの両方で使う） */
-export function NavLinks({ path, left, className, onPick }: { path: string; left: { tasks: number; docs: number } | null; className: string; onPick?: () => void }) {
+export function NavLinks({
+  path,
+  left,
+  className,
+  onPick,
+  caseHref,
+}: {
+  path: string;
+  left: { tasks: number; docs: number } | null;
+  className: string;
+  onPick?: () => void;
+  /** 「財産と相続税」の行き先（まだ終わっていない最初のステップ。はじめは ①亡くなった方） */
+  caseHref?: string;
+}) {
   return NAV.map((n) => {
     const on = n.match(path);
+    const href = n.href === "/case/decedent" && caseHref ? caseHref : n.href;
     return (
-      <Link key={n.href} href={n.href} onClick={onPick} aria-current={on ? "page" : undefined} className={`${className} ${on ? "bg-sky-100 text-sky-900" : "text-stone-600 hover:bg-stone-100"}`}>
+      <Link key={n.href} href={href} onClick={onPick} aria-current={on ? "page" : undefined} className={`${className} ${on ? "bg-sky-100 text-sky-900" : "text-stone-600 hover:bg-stone-100"}`}>
         <n.Icon className={`h-4 w-4 shrink-0 ${on ? "text-brand" : "text-brand/80"}`} aria-hidden />
         {n.label}
         {n.count && left && left[n.count] > 0 && (
@@ -48,6 +63,9 @@ export function AppHeader() {
   const navRef = useRef<HTMLElement>(null);
   useOutsideClose(menu, menuRef, setMenu);
   // まだ終わっていない件数（不要にしたものは数えない）
+  // 「財産と相続税」は ①亡くなった方 から順に。途中まで進めた人は、まだ終わっていない最初のステップへ
+  const firstOpen = o.steps?.find((s) => !s.done);
+  const caseHref = `/case/${firstOpen?.slug ?? "decedent"}`;
   const left = o.valid && o.heard ? { tasks: o.live.length - o.doneTasks, docs: o.docs.filter((d) => !d.na).length - o.doneDocs } : null;
 
   useEffect(() => {
@@ -67,9 +85,10 @@ export function AppHeader() {
           <span className="lg:hidden xl:inline">相続コンパス</span>
         </Link>
         <nav ref={navRef} className="hidden min-w-0 flex-1 gap-1 overflow-x-auto lg:flex" aria-label="メニュー">
-          <NavLinks path={path} left={left} className="flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 text-sm font-medium" />
+          <NavLinks path={path} left={left} caseHref={caseHref} className="flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 text-sm font-medium" />
         </nav>
         <div className="ml-auto flex shrink-0 items-center gap-1 lg:ml-0">
+          <HelpButton />
           <NoticeBell />
           <div ref={menuRef} className="relative">
             <button
@@ -85,7 +104,7 @@ export function AppHeader() {
             {menu && (
               <div className="absolute right-0 z-50 mt-1 max-h-[calc(100dvh-4rem)] w-56 overflow-y-auto rounded-xl border border-stone-200 bg-white p-1 text-sm shadow-lg">
                 <div className="mb-1 border-b border-stone-100 pb-1 lg:hidden">
-                  <NavLinks path={path} left={left} onPick={close} className="flex items-center gap-2 rounded-lg px-3 py-2 font-medium" />
+                  <NavLinks path={path} left={left} caseHref={caseHref} onPick={close} className="flex items-center gap-2 rounded-lg px-3 py-2 font-medium" />
                 </div>
                 <Link href="/my/hearing" onClick={close} className="block rounded-lg px-3 py-2 hover:bg-stone-50">
                   聞き取りを直す

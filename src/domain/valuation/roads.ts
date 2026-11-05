@@ -160,3 +160,18 @@ export function evaluateRoads(district: District, roads: RoadInput[], opts: Eval
   );
   return { lines, perSqm, basePerSqm, frontageRate: f100 / 100, longRate: l100 / 100, front: frontLine, steps };
 }
+
+/** 計算に使った補正率の一覧（画面に出す） */
+export function correctionRates(ev: MultiRoadResult, other?: number): [string, string][] {
+  const roleName = { front: "正面", side: "側方", back: "裏面" } as const;
+  const out: [string, string][] = [];
+  for (const l of ev.lines) {
+    out.push([`奥行価格補正率（${roleName[l.role]}）`, String(l.depthRate)]);
+    if (l.role !== "front") out.push([l.role === "side" ? "側方路線影響加算率" : "二方路線影響加算率", String(l.addRate)]);
+  }
+  if (ev.frontageRate != null) out.push(["間口狭小補正率", String(ev.frontageRate)]);
+  if (ev.longRate != null) out.push(["奥行長大補正率", String(ev.longRate)]);
+  if (other != null && other > 0 && other <= 1) out.push(["修正した補正率", String(other)]);
+  return out;
+}
+

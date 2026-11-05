@@ -11,6 +11,7 @@ import { useOverall } from "@/lib/overall";
 import { summarizeForAssistant } from "@/lib/summary";
 import { daysLeftLabel, lateBadge } from "@/lib/taskStatus";
 import { CatIcon } from "./icons";
+import { FirstGuide } from "./FirstGuide";
 import { MilestoneFlow } from "./MilestoneView";
 
 const man = (n: number) => `約${Math.round(n / 10_000).toLocaleString("ja-JP")}万円`;
@@ -52,6 +53,7 @@ export function Home() {
 
   return (
     <AppShell wide>
+      <FirstGuide />
       <PageHead
         title={`ようこそ、${o.account?.name ?? ""}さん`}
         say={o.next ? "今日はここから始めましょう。" : "すべての手続きが終わりました、おつかれさまでした。"}
