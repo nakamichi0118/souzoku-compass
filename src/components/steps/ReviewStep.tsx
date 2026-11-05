@@ -283,7 +283,7 @@ function Talk({ t, review, set }: { t: Topic; review: ReviewState; set: (fn: (r:
             <CompassSays key={i}>{m.text}</CompassSays>
           ),
         )}
-        {busy && <CompassSays>ちょっと考えています…</CompassSays>}
+        {busy && <CompassSays thinking>ちょっと考えています…</CompassSays>}
       </ul>
       {result ? (
         <div className="flex flex-wrap items-center gap-3">
@@ -320,10 +320,10 @@ function Talk({ t, review, set }: { t: Topic; review: ReviewState; set: (fn: (r:
 }
 
 /** コンパスくんの発言（顔のアイコンと吹き出し） */
-function CompassSays({ children }: { children: React.ReactNode }) {
+function CompassSays({ children, thinking }: { children: React.ReactNode; thinking?: boolean }) {
   return (
     <li className="flex items-start gap-2 pr-6">
-      <CompassAvatar size={34} />
+      <CompassAvatar size={34} thinking={thinking} />
       <Bubble className="min-w-0 whitespace-pre-wrap">{children}</Bubble>
     </li>
   );

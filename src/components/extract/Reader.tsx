@@ -155,7 +155,7 @@ export function Reader({ docId, onRegistered, file, save = true }: { docId?: str
           </a>
         )}
       </div>
-      {ex.busy && <ProgressBar message="コンパスくんが読み取っています" progress={READ_WAIT} className="mt-3 text-sm text-teal-900" />}
+      {ex.busy && <ProgressBar kun message={"コンパスくんが読み取っています\n書類の文字を読み、金額・口座・日付を探しています"} progress={READ_WAIT} className="mt-3 text-sm text-teal-900" />}
       <p className="mt-2 text-xs text-stone-500">読み取った内容は自動で登録します。書類と見比べて、違っていたら直してください。</p>
       {ex.err && <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800">{ex.err}</p>}
       {ex.res && (

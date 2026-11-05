@@ -107,7 +107,7 @@ export async function locateSheet(opts: {
   const total = candidates.length + 1;
   let done = 0;
   const loading = () =>
-    onStep?.("候補の路線価図を国税庁のサイトから読み込んでいます", { at: (LOADED * done) / total, until: (LOADED * (done + 1)) / total, expectSec: LOAD_SEC });
+    onStep?.(`1/4 路線価図を読み込んでいます\n国税庁のサイトから候補の図（${candidates.length}枚）と、まわりの地図を取り寄せています`, { at: (LOADED * done) / total, until: (LOADED * (done + 1)) / total, expectSec: LOAD_SEC });
   const counted = <T>(job: Promise<T>) =>
     job.then((v) => {
       done++;
@@ -134,7 +134,7 @@ export async function locateSheet(opts: {
     throw e;
   }
 
-  onStep?.("土地が載っている路線価図を探しています", { at: LOADED, until: ANSWERED, expectSec: ASK_SEC });
+  onStep?.("2/4 土地が載っている図を探しています\nコンパスくんが、図の町名・道路の形を地図と見比べています（いちばん時間がかかります）", { at: LOADED, until: ANSWERED, expectSec: ASK_SEC });
   const fd = new FormData();
   fd.append("map", map.blob, "map.png");
   fd.append("mapSize", `${map.width},${map.height}`);
@@ -181,7 +181,7 @@ export async function locateSheet(opts: {
   // 道路の線で細かく合わせる（よくならなければコンパスくんの位置のまま）
   let refined = false;
   if (roads.length > 0) {
-    onStep?.("道路の線に合わせて、重なりを細かく調整しています", { at: ANSWERED, until: 1, expectSec: REFINE_SEC });
+    onStep?.("3/4 路線価図を重ね合わせています\n図の道路と地図の道路がぴったり重なるよう、位置と向きを細かく合わせています", { at: ANSWERED, until: 1, expectSec: REFINE_SEC });
     await new Promise((ok) => setTimeout(ok, 30));
     const field = await sheetField(chosen.sheet);
     const r = autoAlign(field, paper, roads, property, frame, 80);

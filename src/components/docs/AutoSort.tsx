@@ -4,6 +4,7 @@
  * 書類をまとめて撮影・アップロードすると、コンパスくんが何の書類かを見分けて、種類ごとに仕分ける。
  * 違っていたらその場で種類を直せる。金額を読める書類は、続けて読み取って財産に登録できる。
  */
+import { CompassAvatar } from "@/components/compass/CompassKun";
 import { useState } from "react";
 import { Reader } from "@/components/extract/Reader";
 import { EXTRA_DOCS, docName } from "@/domain/filing/submission";
@@ -53,7 +54,12 @@ export function AutoSort() {
       <div className="flex flex-wrap items-center gap-2">
         <AddButtons onFiles={(l) => void add(l)} label="撮影して仕分ける" />
       </div>
-      {busy > 0 && <p className="text-sm text-teal-900">コンパスくんが仕分けています（残り{busy}枚）</p>}
+      {busy > 0 && (
+        <p className="flex items-center gap-2 text-sm text-teal-900">
+          <CompassAvatar size={32} thinking />
+          コンパスくんが仕分けています（残り{busy}枚）
+        </p>
+      )}
       {store.err && <p className="text-sm text-rose-700">{store.err}</p>}
       {rows.length > 0 && (
         <ul className="space-y-2">

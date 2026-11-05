@@ -1,5 +1,6 @@
 "use client";
 
+import { CompassAvatar } from "@/components/compass/CompassKun";
 import Link from "next/link";
 import { Button, Card, Note, fmt } from "@/components/ui";
 import { useAsk } from "@/components/compass/AskCompass";
@@ -362,6 +363,12 @@ export function TaxStep() {
         <Button variant="secondary" onClick={() => explainer.ask(EXPLAIN_QUESTION)} disabled={busy}>
           {busy ? "説明を作っています…" : "コンパスくんに説明してもらう"}
         </Button>
+        {busy && (
+          <p className="flex items-center gap-2 text-sm text-teal-900">
+            <CompassAvatar size={32} thinking />
+            計算の結果を読んで、説明を書いています…
+          </p>
+        )}
         {!busy && explain && (
           <Card>
             <div className="text-sm text-stone-800"><Markdown text={explain} /></div>

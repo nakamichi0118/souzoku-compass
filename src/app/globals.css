@@ -106,3 +106,15 @@ body {
   height: 28px;
   font-size: 15px;
 }
+
+/* 待っている間のコンパスくん（首をかしげながら小さく揺れる） */
+@keyframes kun-thinking {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-3px) rotate(-6deg); }
+  50% { transform: translateY(0) rotate(0deg); }
+  75% { transform: translateY(-3px) rotate(6deg); }
+}
+.kun-thinking { animation: kun-thinking 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .kun-thinking { animation: none; }
+}

@@ -38,7 +38,7 @@ type MultiplierMethod = Extract<LandAsset["method"], { type: "multiplier" }>;
 type RatioSource = NonNullable<MultiplierMethod["source"]>;
 
 /** 評価倍率表を探している間の案内と、待ち時間の目安（表のPDFを丸ごと読むので、数十秒かかることがある） */
-export const RATIO_WAIT = "評価倍率表から、この土地の地域の行を探しています";
+export const RATIO_WAIT = "評価倍率表から、この土地の地域の行を探しています\nコンパスくんが国税庁の評価倍率表（PDF）を開き、町名の行を読んでいます";
 const RATIO_PROGRESS: Progress = { at: 0, until: 1, expectSec: 30 };
 
 /** 宅地の欄の「1.1」「1.10」などを倍率の数に。「路線」「比準」などは null */
@@ -226,7 +226,7 @@ export function RatioPanel({
     return (
       <div className="space-y-3">
         <h2 className="font-bold text-stone-800">2. 評価倍率表で倍率を確かめる</h2>
-        {busy && <ProgressBar message={RATIO_WAIT} progress={progress} className="rounded-lg bg-sky-50 p-2 text-sm text-sky-900" />}
+        {busy && <ProgressBar kun message={RATIO_WAIT} progress={progress} className="rounded-lg bg-sky-50 p-2 text-sm text-sky-900" />}
         {error && (
           <Note tone="warn">
             {error} 評価倍率表を見て、倍率を自分で入れることもできます。

@@ -4,14 +4,15 @@ export function CompassKun({ className = "" }: { className?: string }) {
   return <img src="/brand/compass-kun-main.png" alt="コンパスくん" className={className} width={220} height={280} />;
 }
 
-export function CompassAvatar({ size = 40 }: { size?: number }) {
+/** thinking：待っている間、首をかしげながら小さく揺れる（動きを減らす設定では動かさない） */
+export function CompassAvatar({ size = 40, thinking = false }: { size?: number; thinking?: boolean }) {
   return (
     <img
       src="/brand/mascot-chat-reference.png"
       alt="コンパスくん"
       width={size}
       height={size}
-      className="shrink-0 rounded-full border-2 border-white bg-sky-50 object-cover object-top shadow-sm"
+      className={`shrink-0 rounded-full border-2 border-white bg-sky-50 object-cover object-top shadow-sm${thinking ? " kun-thinking" : ""}`}
       style={{ width: size, height: size }}
     />
   );

@@ -21,7 +21,7 @@ export function BusyOverlay({ message, progress, onCancel, delayMs = 400 }: { me
       {shown && (
         <div role="alertdialog" aria-modal="true" aria-label={message} className="w-full max-w-sm rounded-2xl bg-white p-5 text-center shadow-2xl">
           <div className="flex justify-center">
-            <CompassAvatar size={56} />
+            <CompassAvatar size={64} thinking />
           </div>
           <ProgressBar message={message} progress={progress} className="mt-3 text-sm text-teal-900" />
           <button type="button" onClick={onCancel} className="mt-4 min-h-11 rounded-full border border-stone-300 px-6 py-2 text-sm font-semibold text-stone-700 hover:bg-stone-50">
