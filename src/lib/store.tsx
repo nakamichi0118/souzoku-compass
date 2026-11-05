@@ -5,6 +5,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { demoCase } from "@/data/demo";
 import { calculate, type TaxResult } from "@/domain/tax/engine";
 import type { Case } from "@/domain/types";
+import { withSoleHeir } from "./progress";
 
 const KEY = "souzoku-compass:case:v1";
 
@@ -40,7 +41,7 @@ export function CaseProvider({ children }: { children: React.ReactNode }) {
     try {
       const raw = kvGet(KEY);
       // 記録がないとき：デモは架空の家族、ログインした人は白紙から
-      setData(raw ? JSON.parse(raw) : mode === "demo" ? demoCase : blankCase());
+      setData(raw ? withSoleHeir(JSON.parse(raw)) : mode === "demo" ? demoCase : blankCase());
     } catch {
       setData(blankCase());
     }
@@ -84,8 +85,8 @@ export function CaseProvider({ children }: { children: React.ReactNode }) {
     kvSet(KEY, raw);
   }, [data, loaded]);
 
-  const update = useCallback((fn: (c: Case) => Case) => setData((c) => fn(structuredClone(c))), []);
-  const replace = useCallback((c: Case) => setData(c), []);
+  const update = useCallback((fn: (c: Case) => Case) => setData((c) => withSoleHeir(fn(structuredClone(c)))), []);
+  const replace = useCallback((c: Case) => setData(withSoleHeir(c)), []);
 
   const { result, error } = useMemo(() => {
     try {

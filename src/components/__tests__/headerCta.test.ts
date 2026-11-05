@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 const plan = { loaded: true, account: { name: "相続 一郎" } as { name: string } | null };
 vi.mock("@/lib/planStore", () => ({ usePlan: () => plan }));
 vi.mock("@/lib/store", () => ({ useCase: () => ({ data: {}, result: null }) }));
-vi.mock("@/lib/progress", () => ({ filingSteps: () => [] }));
+vi.mock("@/lib/progress", async (orig) => ({ ...(await orig<typeof import("@/lib/progress")>()), filingSteps: () => [] }));
 
 const { HeaderCta } = await import("../HeaderCta");
 const { SiteHeader } = await import("../SiteHeader");

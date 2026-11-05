@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Asset, Case } from "@/domain/types";
-import { divisionReady, filingSteps, formsUpToDate, markCompleted, markFormsCreated, unallocatedAssets, unsettledAssets } from "../progress";
+import { divisionReady, filingSteps, formsUpToDate, markCompleted, markFormsCreated, soleHeirId, unallocatedAssets, unsettledAssets, visibleSteps, withSoleHeir } from "../progress";
 
 const dep = (id: string): Asset => ({ id, kind: "deposit", label: id, amount: 1_000_000 });
 const ins: Asset = { id: "ins", kind: "insurance", label: "保険", amount: 5_000_000, recipientId: "s" };
@@ -90,5 +90,46 @@ describe("取得する人が決まっていない財産・税額と書類のス�
     expect(docsDone(changed)).toBe(false);
     // 同意のチェックや進み具合を変えただけなら作り直し不要
     expect(formsUpToDate(markCompleted({ ...made, review: { consent: { terms: true, responsibility: true, at: "x" } } } as Case, "tax"))).toBe(true);
+  });
+});
+
+describe("相続人が1人のとき（分け方を省く）", () => {
+  const sole = (extra: Partial<Case> = {}) =>
+    mk({
+      persons: [{ id: "c1", name: "長男", relation: "child" }],
+      progress: { completed: [] },
+      debts: [{ id: "d", kind: "funeral", label: "葬儀", amount: 800_000, bearers: [] }],
+      ...extra,
+    });
+
+  it("財産はすべてその人が受け取り、債務・葬式費用もその人が負担する", () => {
+    const c = withSoleHeir({ ...sole(), undivided: true });
+    expect(soleHeirId(c)).toBe("c1");
+    expect(c.undivided).toBeUndefined();
+    expect(c.allocations).toEqual([
+      { assetId: "a1", shares: [{ personId: "c1", numerator: 1, denominator: 1 }] },
+      { assetId: "a2", shares: [{ personId: "c1", numerator: 1, denominator: 1 }] },
+    ]);
+    expect(c.debts[0].bearers).toEqual([{ personId: "c1", amount: 800_000 }]);
+    // もう割り当て済みなら同じものを返す（保存し直さない）
+    expect(withSoleHeir(c)).toBe(c);
+  });
+
+  it("分け方のステップを帯から外し、済みにする", () => {
+    const c = withSoleHeir(sole());
+    expect(visibleSteps(c).map((s) => s.slug)).not.toContain("division");
+    expect(filingSteps(c, null).find((s) => s.slug === "division")?.done).toBe(true);
+  });
+
+  it("相続人が2人以上、または受遺者がいるときは何もしない", () => {
+    const two = mk();
+    expect(soleHeirId(two)).toBeNull();
+    expect(withSoleHeir(two)).toBe(two);
+    expect(visibleSteps(two).map((s) => s.slug)).toContain("division");
+    const legatee = sole({ persons: [{ id: "c1", name: "長男", relation: "child" }, { id: "o", name: "知人", relation: "other" }] });
+    expect(soleHeirId(legatee)).toBeNull();
+    // 放棄した相続人は数えない
+    const renounced = sole({ persons: [{ id: "c1", name: "長男", relation: "child" }, { id: "c2", name: "二男", relation: "child", renounced: true }] });
+    expect(soleHeirId(renounced)).toBe("c1");
   });
 });

@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { useEffect, useRef } from "react";
 import { centerCurrent } from "@/components/ui/scroll";
-import { filingSteps } from "@/lib/progress";
-import { STEPS, stepIndex } from "@/lib/steps";
+import { filingSteps, visibleSteps } from "@/lib/progress";
 import { useCase } from "@/lib/store";
 
 export function StepBar({ current }: { current: string }) {
-  const idx = stepIndex(current);
   const { data, result } = useCase();
+  // 相続人が1人なら「遺産の分け方」は出さない
+  const steps = visibleSteps(data);
+  const idx = steps.findIndex((s) => s.slug === current);
   // 「次へ」で終えて、入力もあるステップだけを済みにする
   const done = new Set(filingSteps(data, result).filter((s) => s.done).map((s) => s.slug));
   const navRef = useRef<HTMLElement>(null);
@@ -21,7 +22,7 @@ export function StepBar({ current }: { current: string }) {
         <nav ref={navRef} data-tour="steps" aria-label="進捗" className="min-w-0 flex-1 overflow-x-auto">
           {/* パソコン（lg 以上）では8つとも短い名前を出す。それより狭い画面では、いまのステップだけ名前を出し、ほかは番号だけにして1行に収める */}
           <ol className="flex min-w-max items-center gap-0.5 lg:gap-1">
-            {STEPS.map((s, i) => {
+            {steps.map((s, i) => {
               const state = i === idx ? "current" : done.has(s.slug) ? "done" : "todo";
               return (
                 <li key={s.slug} className="flex items-center">
@@ -46,7 +47,7 @@ export function StepBar({ current }: { current: string }) {
                     </span>
                     <span className={state === "current" ? "whitespace-nowrap" : "sr-only lg:not-sr-only lg:whitespace-nowrap"}>{s.short}</span>
                   </Link>
-                  {i < STEPS.length - 1 && <span className="mx-0.5 hidden h-px w-3 bg-stone-300 lg:block" aria-hidden />}
+                  {i < steps.length - 1 && <span className="mx-0.5 hidden h-px w-3 bg-stone-300 lg:block" aria-hidden />}
                 </li>
               );
             })}

@@ -70,6 +70,8 @@ const always = () => true;
 const hasWill = ({ iv }: Ctx) => iv.will === "notarized" || iv.will === "handwritten" || iv.will === "handwrittenStored";
 const hasRealEstate = ({ iv }: Ctx) => iv.homeValue > 0 || iv.otherRealEstate > 0;
 const securitiesDocs = ({ iv }: Ctx) => (iv.securities > 0 ? ["securitiesCert"] : []);
+/** 相続人全員の印鑑証明書は遺産分割協議書に添えるもの。相続人が1人なら協議書がないので要らない */
+const needsInkan = (x: Ctx) => (x.est.heirCount > 1 ? ["inkan"] : []);
 const realEstateDocs = (x: Ctx, docs: string[]) => (hasRealEstate(x) ? docs : []);
 const taxFiling = ({ est }: Ctx) => est.verdict === "likely" || est.verdict === "relief";
 
@@ -494,7 +496,7 @@ export const RULES: Rule[] = [
   {
     id: "inheritance-tax",
     office: "taxOffice",
-    docs: (x) => ["kosekiDecedent", "kosekiHeirs", "inkan", "balanceCert", ...securitiesDocs(x), ...realEstateDocs(x, ["touki", "hyokaCert"]), ...(x.iv.insurance > 0 ? ["insurancePay"] : []), "funeralReceipt"],
+    docs: (x) => ["kosekiDecedent", "kosekiHeirs", ...needsInkan(x), "balanceCert", ...securitiesDocs(x), ...realEstateDocs(x, ["touki", "hyokaCert"]), ...(x.iv.insurance > 0 ? ["insurancePay"] : []), "funeralReceipt"],
     title: ({ est }) =>
       est.verdict === "likely"
         ? "相続税の申告と納付"
@@ -644,7 +646,7 @@ export const RULES: Rule[] = [
     id: "registration",
     office: "legalAffairs",
     dept: "不動産登記の窓口",
-    docs: ["kosekiDecedent", "kosekiHeirs", "juminhyoJokyo", "juminhyoHeir", "hyokaCert", "inkan"],
+    docs: (x) => ["kosekiDecedent", "kosekiHeirs", "juminhyoJokyo", "juminhyoHeir", "hyokaCert", ...needsInkan(x)],
     title: "不動産の相続登記",
     category: "不動産",
     due: registrationDue,

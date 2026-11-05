@@ -10,6 +10,7 @@ import { DocFiles } from "@/components/docs/DocFiles";
 import { civilHeirIds } from "@/domain/heirs";
 import { DOCS } from "@/domain/procedures/documents";
 import { jpDate } from "@/domain/procedures/dates";
+import { soleHeirId } from "@/lib/progress";
 import { docName, itemReady, submissionItems } from "@/domain/filing/submission";
 import { buildBundle, filesFor } from "@/lib/bundle";
 import { useDocFiles } from "@/lib/docFiles";
@@ -27,6 +28,7 @@ export function SubmissionBundle({ formsReady, getForms }: { formsReady: boolean
     taxDocs: o.tasks.find((t) => t.id === "inheritance-tax")?.docs ?? [],
     smallLand: !!o.result?.assets.some((l) => l.reduction > 0),
     will: o.iv.will !== "none" && o.iv.will !== "unknown",
+    soleHeir: !!soleHeirId(o.case),
   });
   const count = (d: string) => store.of(d).length;
   const inkanCount = (() => {

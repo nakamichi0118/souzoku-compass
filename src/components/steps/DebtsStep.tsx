@@ -54,10 +54,8 @@ export function DebtsStep() {
           ＋ 葬式費用
         </Button>
       </div>
+      {data.debts.length > 0 && <p className="text-sm text-stone-600">誰が負担するかは「遺産の分け方」で決めます。</p>}
       {data.debts.map((d) => {
-        const borne = d.bearers.reduce((a, b) => a + b.amount, 0);
-        // 分け方が決まっていないときに負担額を入れなければ、法定相続分で負担したものとして計算する（合計が合わなくてもよい）
-        const byLegalShare = !!data.undivided && borne === 0;
         return (
           <div key={d.id} id={addedAnchor(d.id)}>
             <Card
@@ -89,37 +87,6 @@ export function DebtsStep() {
                   </Field>
                 )}
               </div>
-              <h3 className="mb-2 mt-4 text-sm font-bold text-stone-700">誰が負担しますか</h3>
-              {data.undivided && <p className="mb-2 text-xs text-stone-500">負担する人が決まっていなければ、×で外して空欄にしてください（法定相続分で計算します）。</p>}
-              <div className="space-y-2">
-                {d.bearers.map((b, i) => (
-                  <div key={i}>
-                    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2">
-                      <Select
-                        value={isLiving(b.personId) ? b.personId : ""}
-                        onChange={(v) => patch(d.id, { bearers: d.bearers.map((x, j) => (j === i ? { ...x, personId: v } : x)) })}
-                        options={[{ value: "", label: "選んでください" }, ...living.map((p) => ({ value: p.id, label: p.name || "（未入力）" }))]}
-                      />
-                      <YenInput value={b.amount} onChange={(v) => patch(d.id, { bearers: d.bearers.map((x, j) => (j === i ? { ...x, amount: v } : x)) })} />
-                      <Button variant="danger" onClick={() => patch(d.id, { bearers: d.bearers.filter((_, j) => j !== i) })}>
-                        ×
-                      </Button>
-                    </div>
-                    {!isLiving(b.personId) && <p className="mt-1 text-xs font-medium text-amber-800">負担する人を選んでください（選ぶまで税額を確定できません）。</p>}
-                  </div>
-                ))}
-                {byLegalShare && d.amount > 0 && <p className="text-xs text-stone-500">（法定相続分で負担したものとして計算します）</p>}
-                <Button variant="ghost" onClick={() => patch(d.id, { bearers: [...d.bearers, { personId: living[0]?.id ?? "", amount: 0 }] })}>
-                  ＋ 負担する人を追加
-                </Button>
-              </div>
-              {borne !== d.amount && !byLegalShare && (
-                <div className="mt-2">
-                  <Note tone="warn">
-                    負担額の合計（{fmt(borne)}円）が金額（{fmt(d.amount)}円）と一致していません。
-                  </Note>
-                </div>
-              )}
             </Card>
           </div>
         );

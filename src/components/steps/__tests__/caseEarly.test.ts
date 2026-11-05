@@ -12,7 +12,7 @@ vi.mock("@/lib/store", () => ({
   newId: () => "new-id",
 }));
 vi.mock("@/lib/planStore", () => ({ usePlan: () => ({ setStatus: () => {}, statusOf: () => undefined, done: [], iv: {} }) }));
-vi.mock("@/lib/progress", () => ({ filingSteps: () => [] }));
+vi.mock("@/lib/progress", async (orig) => ({ ...(await orig<typeof import("@/lib/progress")>()), filingSteps: () => [] }));
 
 const { DecedentStep } = await import("../DecedentStep");
 const { HeirsStep } = await import("../HeirsStep");

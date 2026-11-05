@@ -4,6 +4,7 @@ import { CalendarDays, Calculator, FolderCheck, House, Scale } from "lucide-reac
 import Link from "next/link";
 import { AppShell, PageHead } from "@/components/shell/AppShell";
 import { useOverall } from "@/lib/overall";
+import { soleHeirId } from "@/lib/progress";
 
 export function PapersPage() {
   const o = useOverall();
@@ -31,7 +32,8 @@ export function PapersPage() {
       need: "印鑑証明書は原本を同封します",
       todo: "相続税の申告がいるときに使います",
     },
-    {
+    // 相続人が1人なら遺産分割協議書は要らない
+    ...(soleHeirId(c) ? [] : [{
       Icon: Scale,
       title: "遺産分割協議書",
       text: "誰が何を受け継ぐかの書面。銀行・登記・申告で使います。",
@@ -39,7 +41,7 @@ export function PapersPage() {
       ready: c.allocations.length > 0,
       need: "相続人全員の署名と実印での押印が必要です",
       todo: "遺産分割で、財産を受け継ぐ人を決めると作れます",
-    },
+    }]),
     {
       Icon: House,
       title: "相続登記の申請書",
