@@ -57,8 +57,8 @@ async function addImagePage(pdf: PDFDocument, bytes: Uint8Array, type: string) {
 }
 
 /** 1つのファイルを足し、足したページ数を返す（読めないPDFは飛ばして 0） */
-async function addFile(pdf: PDFDocument, f: { blob: Blob; type: string }): Promise<number> {
-  const bytes = new Uint8Array(await f.blob.arrayBuffer());
+async function addFile(pdf: PDFDocument, f: { load: () => Promise<Blob>; type: string }): Promise<number> {
+  const bytes = new Uint8Array(await (await f.load()).arrayBuffer());
   if (f.type === "application/pdf") {
     try {
       const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
@@ -99,7 +99,10 @@ export async function buildBundle(x: BundleInput): Promise<Blob> {
   for (const item of x.items) {
     let n = 0;
     if (item.generated === "forms") {
-      if (x.forms) n = await addFile(body, { blob: x.forms, type: "application/pdf" });
+      if (x.forms) {
+        const forms = x.forms;
+        n = await addFile(body, { load: async () => forms, type: "application/pdf" });
+      }
     } else if (item.original) {
       await addImagePage(
         body,
