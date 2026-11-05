@@ -1,6 +1,6 @@
 /**
  * 「進めない」ところの画面の確かめ（ブラウザで実際に動かす）。開発サーバーを立ててから動かす：
- *   npx next dev -p 3100 &  BASE=http://localhost:3100 node scripts/e2e/gates.cjs [スクリーンショットの出力先]
+ *   npx next dev -p 3100 &  BASE=http://localhost:3100 node scripts/e2e/gates.mjs [スクリーンショットの出力先]
  * デモ（架空の家族）に入り、ブラウザの保存に止まる入力の相続を入れて、次を確かめる。
  *  1. 税額の確認：止まる事項ごとに「〜で直す」リンクがあり、押すとその行へ送って枠で目立たせる
  *  2. 書類の作成：止まる事項があると申告書のボタンは押せず、理由を1行で出す
@@ -8,8 +8,11 @@
  *  4. 小規模宅地：答え始めて取得する人がいないと「あと少し」と未回答の印を出す
  *  5. 聞き取り：飛ばした質問に「未回答」の印、下の帯のリンクで未回答へ送る
  */
-const { chromium } = require("playwright");
-const path = require("node:path");
+import path from "node:path";
+import { createRequire } from "node:module";
+
+// playwright はこのリポジトリの依存ではなく、環境に入っているものを使う
+const { chromium } = createRequire(import.meta.url)("playwright");
 
 const BASE = process.env.BASE || "http://localhost:3100";
 const OUT = process.argv[2] || "";
