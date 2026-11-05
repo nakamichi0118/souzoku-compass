@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Button, Card, Check, Field, Note, Select, YenInput, fmt } from "@/components/ui";
 import { civilHeirIds, determineHeirs } from "@/domain/heirs";
 import type { Allocation, Case, Compensation, Person } from "@/domain/types";
-import { divisibleAssets, isAllocated, soleHeirId, unsettledAssets } from "@/lib/progress";
+import { divisibleAssets, hasRenounced, isAllocated, soleHeirId, unsettledAssets } from "@/lib/progress";
 import { useCase } from "@/lib/store";
 import { kindLabel } from "./AssetsStep";
 import { DebtBearers } from "./DebtBearers";
@@ -54,10 +54,15 @@ export function DivisionStep() {
   const sole = soleHeirId(data);
   if (sole) {
     const name = data.persons.find((p) => p.id === sole)?.name || "相続人";
+    const renounced = hasRenounced(data) && data.debts.some((d) => d.kind === "funeral");
     return (
-      <Note tone="info">
-        相続人が{name}さん1人なので、財産はすべて{name}さんが受け取り、債務・葬式費用も{name}さんが負担します。分け方を決める必要も、遺産分割協議書も要りません。
-      </Note>
+      <div className="space-y-5">
+        <Note tone="info">
+          相続人が{name}さん1人なので、財産はすべて{name}さんが受け取り、債務{renounced ? "" : "・葬式費用"}も{name}さんが負担します。分け方を決める必要も、遺産分割協議書も要りません。
+        </Note>
+        {/* 相続を放棄した人が葬式費用を払ったときは、その人が引けるので負担者を選べるようにする */}
+        {renounced && <DebtBearers />}
+      </div>
     );
   }
   return <DivisionEditor />;

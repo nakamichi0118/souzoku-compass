@@ -121,6 +121,28 @@ describe("相続人が1人のとき（分け方を省く）", () => {
     expect(filingSteps(c, null).find((s) => s.slug === "division")?.done).toBe(true);
   });
 
+  it("相続を放棄した人が払った葬式費用はその人の負担のまま残し、分け方のステップも残す。代償金は消す", () => {
+    const persons: Case["persons"] = [
+      { id: "c1", name: "長男", relation: "child" },
+      { id: "c2", name: "二男", relation: "child", renounced: true },
+    ];
+    const c = withSoleHeir(
+      sole({
+        persons,
+        debts: [
+          { id: "f", kind: "funeral", label: "葬儀", amount: 800_000, bearers: [{ personId: "c2", amount: 800_000 }] },
+          { id: "d", kind: "debt", label: "借入", amount: 100_000, bearers: [{ personId: "c2", amount: 100_000 }] },
+        ],
+        compensation: [{ fromId: "c1", toId: "x", amount: 1 }],
+      }),
+    );
+    expect(c.debts[0].bearers).toEqual([{ personId: "c2", amount: 800_000 }]);
+    // 債務は放棄した人は負担できないので、相続人に
+    expect(c.debts[1].bearers).toEqual([{ personId: "c1", amount: 100_000 }]);
+    expect(c.compensation).toBeUndefined();
+    expect(visibleSteps(c).map((s) => s.slug)).toContain("division");
+  });
+
   it("相続人が2人以上、または受遺者がいるときは何もしない", () => {
     const two = mk();
     expect(soleHeirId(two)).toBeNull();

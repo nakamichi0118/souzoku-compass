@@ -24,8 +24,8 @@ export function soleHeirId(c: Case): string | null {
   return takers.length === 1 && takers[0].id === id ? id : null;
 }
 
-/** 画面の帯・前後のボタンに出すステップ（相続人が1人なら「遺産の分け方」は飛ばす） */
-export const visibleSteps = (c: Case) => (soleHeirId(c) ? STEPS.filter((s) => s.slug !== "division") : [...STEPS]);
+/** 画面の帯・前後のボタンに出すステップ（相続人が1人なら「遺産の分け方」は飛ばす。放棄した人が葬式費用を払っているかもしれないときは残す） */
+export const visibleSteps = (c: Case) => (soleHeirId(c) && !(hasRenounced(c) && c.debts.some((d) => d.kind === "funeral")) ? STEPS.filter((s) => s.slug !== "division") : [...STEPS]);
 
 /** 相続人が1人なら、分ける財産をすべてその人が受け取り、債務・葬式費用もその人が負担することにする（分け方の入力を省く）。それ以外はそのまま */
 export function withSoleHeir(c: Case): Case {
@@ -36,16 +36,25 @@ export function withSoleHeir(c: Case): Case {
     const al = c.allocations.find((x) => x.assetId === a.id);
     return al?.shares.length === 1 && al.shares[0].personId === id && al.shares[0].numerator === al.shares[0].denominator && al.shares[0].numerator > 0;
   };
-  // 債務・葬式費用もその人が全額負担する
-  const borne = (d: Case["debts"][number]) => d.bearers.length === 1 && d.bearers[0].personId === id && d.bearers[0].amount === d.amount;
-  if (!c.undivided && c.allocations.length === assets.length && assets.every(whole) && c.debts.every(borne)) return c;
+  // 債務・葬式費用もその人が全額負担する。ただし葬式費用は、相続を放棄した人（保険金を受け取った人など）が
+  // 実際に払っていれば、その人の負担のまま残す（その人は葬式費用を引ける）
+  const renouncedPaid = (d: Case["debts"][number]) =>
+    d.kind === "funeral" && d.bearers.some((b) => c.persons.some((p) => p.id === b.personId && p.renounced && !p.predeceased));
+  const borne = (d: Case["debts"][number]) =>
+    renouncedPaid(d) || (d.bearers.length === 1 && d.bearers[0].personId === id && d.bearers[0].amount === d.amount);
+  // 代償金は2人以上で分けるときのものなので、1人なら残さない（消した人との代償金が残って計算が止まらないように）
+  if (!c.undivided && !c.compensation?.length && c.allocations.length === assets.length && assets.every(whole) && c.debts.every(borne)) return c;
   return {
     ...c,
     undivided: undefined,
+    compensation: undefined,
     allocations: assets.map((a) => ({ assetId: a.id, shares: [{ personId: id, numerator: 1, denominator: 1 }] })),
     debts: c.debts.map((d) => (borne(d) ? d : { ...d, bearers: [{ personId: id, amount: d.amount }] })),
   };
 }
+
+/** 相続を放棄した人（亡くなっていない）がいるか。いれば葬式費用を負担していることがあるので、負担者の欄を残す */
+export const hasRenounced = (c: Case) => c.persons.some((p) => p.renounced && !p.predeceased);
 
 /** 取得する人が1人でも決まっている財産か */
 export const isAllocated = (c: Case, assetId: string) => c.allocations.some((x) => x.assetId === assetId && x.shares.some((s) => s.numerator > 0));
