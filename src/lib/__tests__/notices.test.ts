@@ -59,8 +59,14 @@ describe("相続コンパスからのお知らせ（SYSTEM_NOTICES）", () => {
   // 並び順は「新しい順に並ぶ」で確かめる。中身は id で引く（お知らせを足しても壊れないように）
   const byId = (id: string) => SYSTEM_NOTICES.find((n) => n.id === id) ?? ({ id: "", date: "", title: "", body: "" } as (typeof SYSTEM_NOTICES)[number]);
 
-  it("いちばん新しいお知らせは、口座・保険が複数あっても続けて読めること", () => {
-    const [more] = SYSTEM_NOTICES;
+  it("いちばん新しいお知らせは、書類をまとめてアップロード・続けて撮影できること", () => {
+    const [upload] = SYSTEM_NOTICES;
+    expect(upload).toMatchObject({ id: "2026-11-06-upload", date: "2026-11-06" });
+    expect(upload.body).toContain("追加でアップロード");
+  });
+
+  it("口座・保険が複数あっても続けて読めること", () => {
+    const more = byId("2026-11-06-more-docs");
     expect(more).toMatchObject({ id: "2026-11-06-more-docs" });
     expect(more.body).toContain("ほかにもある");
     expect(more.body).toContain("これで全部");

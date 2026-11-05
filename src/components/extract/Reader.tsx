@@ -137,12 +137,14 @@ export function Reader({
   file,
   save = true,
   read: doRead = true,
+  ask = true,
 }: {
   docId?: string;
-  onRegistered?: () => void;
+  onRegistered?: (all: boolean) => void;
   file?: File;
   save?: boolean;
   read?: boolean;
+  ask?: boolean;
 }) {
   const { data: c, update } = useCase();
   const ex = useExtract(() => ({
