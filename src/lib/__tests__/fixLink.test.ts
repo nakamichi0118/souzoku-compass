@@ -36,6 +36,8 @@ describe("止まっている事項から直す場所へのリンク", () => {
   });
   it("代償金は分け方の画面の、その代償金の行へ", () => {
     expect(fixTarget(base(), "代償金（1件目）の金額を、1円以上の整数で入れてください。").href).toBe("/case/division?focus=comp-0");
+    // もとにした財産の名前が入っていても、時価は分け方の画面の代償金の欄で入れる
+    expect(fixTarget(base(), "代償金（2件目）の額を決めるもとにした「架空銀行 普通預金」の時価を、1円以上の整数で入れてください。").href).toBe("/case/division?focus=comp-1");
   });
   it("人の事項は相続人の画面の、その人の行へ", () => {
     expect(fixTarget(base(), "花子さんが最初に障害者控除を受けた相続の日が、今回亡くなった日より前になっていません。相続人の画面で日付を確かめてください。").href).toBe("/case/heirs?focus=person-p1");

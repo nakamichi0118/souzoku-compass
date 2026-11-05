@@ -53,8 +53,8 @@ export function fixTarget(c: Case, msg: string): FixTarget {
 
   // 名指しした画面があればそこ。なければ、名前の出てきた財産・債務、内容の順に決める
   let screen: Screen | undefined = SCREEN_WORDS.find(([re]) => re.test(msg))?.[1];
-  // 債務・葬式費用を負担する人は、遺産の分け方で決める
-  if (!screen && /負担する人/.test(msg)) screen = "division";
+  // 債務・葬式費用を負担する人と代償金（もとにした財産の時価も）は、遺産の分け方で決める
+  if (!screen && (/負担する人/.test(msg) || comp)) screen = "division";
   if (!screen && asset) screen = "assets";
   if (!screen && debt) screen = "debts";
   if (!screen) screen = TOPIC_WORDS.find(([re]) => re.test(msg))?.[1];
