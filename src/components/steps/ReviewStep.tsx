@@ -12,6 +12,7 @@ import {
   type ReviewState,
   TOPICS,
   type Topic,
+  type TopicStatus,
   type TopicId,
   WITHDRAWAL_ADD,
   cashFromWithdrawal,
@@ -45,6 +46,38 @@ export function assetFromTemplate(t: AddTemplate, amount?: number): Asset {
   return out;
 }
 
+/** 答えたあとに、まだ残っていること（1行）。確かめ終わったか、まだ答えていなければ null */
+export function remainingNote(st: TopicStatus, answered: boolean): string | null {
+  switch (st.kind) {
+    case "unsure":
+      return "「分からない」のままです。確かめて答え直すか、税理士に相談してください。";
+    case "add":
+      return "下のボタンで、財産に加えてください。";
+    case "withdrawal":
+      return "引き出した額を入れて、財産に加えてください。";
+    case "talk":
+      return "コンパスくんの質問に答えてください。";
+    case "gift":
+      return "贈与として入れてください。";
+    case "consult":
+      return "税理士に相談してください。相談して問題なければ、ページ下のチェックを入れると済みになります。";
+    case "unanswered":
+      return answered ? "当てはまるものを選んでください。" : null;
+    default:
+      return null;
+  }
+}
+
+/** 残っている項目の行まで画面を送り、少しのあいだ目立たせる */
+function showTopic(id: string | undefined) {
+  if (!id) return;
+  const el = document.querySelector<HTMLElement>(`[data-q="${id}"]`);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.classList.add("ring-4", "ring-amber-300");
+  window.setTimeout(() => el.classList.remove("ring-4", "ring-amber-300"), 2000);
+}
+
 const withReview = (c: Case, fn: (r: ReviewState) => ReviewState): Case => ({ ...c, review: fn({ ...(c.review ?? {}) }) });
 
 export function ReviewStep() {
@@ -62,7 +95,15 @@ export function ReviewStep() {
         {sum.confirmed ? (
           <span className="font-semibold text-teal-700">・確認OK</span>
         ) : (
-          sum.open.length > 0 && <span className="text-orange-700">・残り{sum.open.length}件</span>
+          sum.open.length > 0 && (
+            <>
+              <span className="text-orange-700">・残り{sum.open.length}件</span>
+              {/* 答えたのに残っているときは、どれが残っているかへ送る */}
+              <button type="button" onClick={() => showTopic(sum.open[0])} className="ml-2 font-semibold text-teal-800 underline">
+                残っている項目を見る
+              </button>
+            </>
+          )
         )}
       </p>
 
@@ -97,6 +138,7 @@ function TopicRow({ t, review, set }: { t: Topic; review: ReviewState; set: (fn:
   const { update } = useCase();
   const answer = review.answers?.[t.id];
   const st = topicStatus(t, review);
+  const left = remainingNote(st, !!answer);
   // 答えを変えたら、前の答えで「相談して確かめた」にした印は外す（新しい事実は確かめていないため）
   const choose = (v: ReviewAnswer) => set((r) => ({ ...dropConsulted(r, t.id), answers: { ...r.answers, [t.id]: v } }));
   const markAdded = (key: string) => (r: ReviewState) => ({ ...r, added: [...new Set([...(r.added ?? []), key])] });
@@ -106,7 +148,10 @@ function TopicRow({ t, review, set }: { t: Topic; review: ReviewState; set: (fn:
 
   return (
     // 1問ずつ枠で囲んで区切る（答えたものは地の色を少し落とす）
-    <li className={`rounded-xl border px-3 py-3 sm:px-4 ${answer ? "border-stone-200 bg-stone-50/70" : "border-stone-300 bg-white shadow-sm"}`} data-q={t.id}>
+    <li
+      className={`rounded-xl border px-3 py-3 transition-shadow sm:px-4 ${left ? "border-orange-300 bg-orange-50/40" : answer ? "border-stone-200 bg-stone-50/70" : "border-stone-300 bg-white shadow-sm"}`}
+      data-q={t.id}
+    >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <p className="min-w-0 text-sm text-stone-800">
           {st.kind === "clear" && <CheckIcon className="mr-1 inline h-4 w-4 text-stone-400" aria-label="確認済み" />}
@@ -126,6 +171,7 @@ function TopicRow({ t, review, set }: { t: Topic; review: ReviewState; set: (fn:
           ))}
         </div>
       </div>
+      {left && <p className="mt-1.5 text-sm font-semibold text-orange-800">残っていること：{left}</p>}
       {t.tip && (
         <details className="mt-1 text-xs text-stone-600">
           <summary className="tips-summary cursor-pointer py-1 text-teal-800">Tips</summary>
