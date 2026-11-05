@@ -8,19 +8,25 @@ import { AddressField } from "@/components/ui/AddressField";
 import { scrollBelowHeader, scrollToY } from "@/components/ui/scroll";
 import { Choice, Counter, ManYen, Q, YesNo } from "@/components/plan/inputs";
 import { isValidDate } from "@/domain/procedures/dates";
-import { estimate, familyFromInterview, type Interview } from "@/domain/procedures/interview";
+import { estimate, familyFromInterview, heirBreakdown, type Interview } from "@/domain/procedures/interview";
 import { AppShell, PageHead } from "@/components/shell/AppShell";
 import { useCase } from "@/lib/store";
 import Link from "next/link";
 import type { Person } from "@/domain/types";
 import { usePlan } from "@/lib/planStore";
 
-const LABEL: Record<string, string> = { spouse: "配偶者", child: "子", grandchild: "孫", parent: "親", sibling: "兄弟姉妹" };
+const LABEL: Record<string, string> = { spouse: "配偶者", child: "子", adoptedChild: "養子", grandchild: "孫", parent: "親", grandparent: "祖父母", sibling: "兄弟姉妹", nephewNiece: "甥・姪" };
+
+function labelOf(p: Person): string {
+  if (p.predeceased) return p.relation === "sibling" ? "兄弟姉妹（先に死亡）" : "子（先に死亡）";
+  if (p.halfBlood) return "兄弟姉妹（父母の一方のみ同じ）";
+  return LABEL[p.relation];
+}
 
 /** 聞き取りの家族構成から、相続税申告の相続人の下書きを作る（名前は後で入力） */
 function seedPersons(iv: Interview): Person[] {
   // 氏名は空にしておき、相続人の画面で入力してもらう（仮の文字を消す手間をなくす）
-  return familyFromInterview(iv).map((p) => ({ ...p, name: "", relationLabel: p.predeceased ? "子（先に死亡）" : LABEL[p.relation] }));
+  return familyFromInterview(iv).map((p) => ({ ...p, name: "", relationLabel: labelOf(p) }));
 }
 
 const ANS_KEY = "souzoku-compass:answered:v1";
@@ -127,12 +133,16 @@ export function Hearing() {
   const set = <K extends keyof Interview>(k: K, v: Interview[K]) => saveIv({ ...iv, [k]: v });
   /** まだ答えていない選択肢は、何も選ばれていない状態で見せる */
   const a = <K extends keyof Interview>(k: K): Interview[K] | undefined => (answered?.includes(k) ? iv[k] : undefined);
-  const pick = <K extends keyof Interview>(k: K, v: Interview[K]) => {
-    set(k, v);
+  /** 答えた質問として記録し、次の質問へ送る */
+  const mark = (k: keyof Interview) => {
     const next = [...new Set([...(answered ?? []), k])];
     setAnswered(next);
     kvSet(ANS_KEY, JSON.stringify(next));
     scrollNext();
+  };
+  const pick = <K extends keyof Interview>(k: K, v: Interview[K]) => {
+    set(k, v);
+    mark(k);
   };
   const est = estimate(iv);
   const dateOk = isValidDate(iv.deathDate);
@@ -153,7 +163,13 @@ export function Hearing() {
   }
 
   if (!loaded || !answered) return null;
-  const choiceKeys: (keyof Interview)[] = ["stage", "myRelation", "spouse", "minorHeir", "heirAbroad", "will", "debts", ...(iv.homeValue > 0 ? (["homeToFamily"] as const) : []), "work", "pension", "health", "filedTaxReturn", "highMedical", "householdHead", "rentedHome", "car", "digital"];
+  const familyKeys: (keyof Interview)[] = [
+    "hasChildren",
+    ...(iv.hasChildren === "yes" ? (["exSpouseChild"] as const) : []),
+    ...(iv.hasChildren === "no" ? (["parentsAlive"] as const) : []),
+    ...(iv.hasChildren === "no" && answered.includes("parentsAlive") && iv.parentsAlive === 0 && iv.grandparentsAlive === 0 ? (["hasSiblings"] as const) : []),
+  ];
+  const choiceKeys: (keyof Interview)[] = ["stage", "myRelation", "spouse", ...familyKeys, "minorHeir", "heirAbroad", "will", "debts", ...(iv.homeValue > 0 ? (["homeToFamily"] as const) : []), "work", "pension", "health", "filedTaxReturn", "highMedical", "householdHead", "rentedHome", "car", "digital"];
   const unanswered = choiceKeys.filter((k) => !answered.includes(k)).length;
   return (
     <AppShell>
@@ -197,21 +213,90 @@ export function Hearing() {
           <Q label="配偶者（夫・妻）はご存命ですか？">
             <YesNo value={a("spouse")} onChange={(v) => pick("spouse", v)} />
           </Q>
-          <Q label="お子さんは何人いますか？" hint="養子も含めます。亡くなった方より後に亡くなったお子さんも数えます。">
-            <Counter value={iv.children} onChange={(v) => set("children", v)} />
+          <Q label="お子さんはいますか？" hint="先に亡くなったお子さんも含めます。">
+            <Choice
+              value={a("hasChildren") || undefined}
+              onChange={(v) => {
+                // 「いる」を選んだら、人数を1人から始める（0人のままだと相続人が数えられない）
+                const none = iv.children === 0 && iv.grandchildrenOfPredeceased === 0;
+                saveIv({ ...iv, hasChildren: v, ...(v === "yes" && none ? { children: 1 } : {}) });
+                mark("hasChildren");
+              }}
+              options={[
+                { value: "yes", label: "いる" },
+                { value: "no", label: "いない" },
+              ]}
+            />
           </Q>
-          <Q label="先に亡くなったお子さんの子（孫）の人数" hint="いなければ0人のまま。">
-            <Counter value={iv.grandchildrenOfPredeceased} onChange={(v) => set("grandchildrenOfPredeceased", v)} />
-          </Q>
-          {iv.children === 0 && iv.grandchildrenOfPredeceased === 0 && (
+          {iv.hasChildren !== "no" && (iv.hasChildren === "yes" || iv.children > 0 || iv.grandchildrenOfPredeceased > 0) && (
             <>
-              <Q label="亡くなった方のご両親で、ご存命の方は何人ですか？">
-                <Counter value={iv.parentsAlive} onChange={(v) => set("parentsAlive", v)} max={2} />
+              <Q label="ご存命のお子さんの人数" hint="養子・前の配偶者との子・認知した子も含めます。">
+                <Counter value={iv.children} onChange={(v) => saveIv({ ...iv, children: v, adoptedChildren: Math.min(iv.adoptedChildren, v) })} />
               </Q>
-              {iv.parentsAlive === 0 && (
-                <Q label="亡くなった方の兄弟姉妹は何人いますか？">
-                  <Counter value={iv.siblings} onChange={(v) => set("siblings", v)} />
+              {iv.children > 0 && (
+                <Q label="そのうち養子の人数" hint="いなければ0人のまま。">
+                  <Counter value={iv.adoptedChildren} onChange={(v) => set("adoptedChildren", v)} max={iv.children} />
                 </Q>
+              )}
+              <Q label="先に亡くなったお子さんの子（孫）の人数" hint="いなければ0人のまま。">
+                <Counter value={iv.grandchildrenOfPredeceased} onChange={(v) => set("grandchildrenOfPredeceased", v)} />
+              </Q>
+              <Q label="前の配偶者との子や、認知した子はいますか？">
+                <YesNo value={a("exSpouseChild")} onChange={(v) => pick("exSpouseChild", v)} />
+              </Q>
+              {iv.exSpouseChild && <Note tone="info">相続分は他の子と同じです。遺産分割には全員の同意が要ります。住所は戸籍の附票で調べられます。</Note>}
+            </>
+          )}
+          {iv.hasChildren === "no" && (
+            <Q label="亡くなった方のご両親で、ご存命の方は？">
+              <Choice
+                value={answered.includes("parentsAlive") ? String(iv.parentsAlive) : undefined}
+                onChange={(v) => pick("parentsAlive", Number(v))}
+                options={[
+                  { value: "2", label: "2人とも" },
+                  { value: "1", label: "1人" },
+                  { value: "0", label: "いない" },
+                ]}
+              />
+            </Q>
+          )}
+          {iv.hasChildren === "no" && answered.includes("parentsAlive") && iv.parentsAlive === 0 && (
+            <>
+              <Q label="ご存命の祖父母の人数" hint="いなければ0人のまま。">
+                <Counter value={iv.grandparentsAlive} onChange={(v) => set("grandparentsAlive", v)} max={4} />
+              </Q>
+              {iv.grandparentsAlive === 0 && (
+                <Q label="亡くなった方に兄弟姉妹はいますか？" hint="先に亡くなった兄弟姉妹も含めます。">
+                  <Choice
+                    value={a("hasSiblings") || undefined}
+                    onChange={(v) => {
+                      const none = iv.siblings === 0 && iv.halfSiblings === 0 && iv.nephewsOfPredeceased === 0;
+                      saveIv({ ...iv, hasSiblings: v, ...(v === "yes" && none ? { siblings: 1 } : {}) });
+                      mark("hasSiblings");
+                    }}
+                    options={[
+                      { value: "yes", label: "いる" },
+                      { value: "no", label: "いない" },
+                    ]}
+                  />
+                </Q>
+              )}
+              {iv.grandparentsAlive === 0 && iv.hasSiblings === "yes" && (
+                <>
+                  <Q label="両親が同じ兄弟姉妹（ご存命）">
+                    <Counter value={iv.siblings} onChange={(v) => set("siblings", v)} />
+                  </Q>
+                  <Q label="父か母の一方だけが同じ兄弟姉妹（ご存命）" hint="相続分は両親が同じ兄弟姉妹の半分です。">
+                    <Counter value={iv.halfSiblings} onChange={(v) => set("halfSiblings", v)} />
+                  </Q>
+                  <Q label="先に亡くなった兄弟姉妹の子（甥・姪）の人数" hint="いなければ0人のまま。">
+                    <Counter value={iv.nephewsOfPredeceased} onChange={(v) => set("nephewsOfPredeceased", v)} />
+                  </Q>
+                  <details className="text-xs text-stone-600">
+                    <summary className="cursor-pointer py-2 font-medium text-teal-800">Tips：知らない兄弟姉妹がいるかも</summary>
+                    <p className="mt-2 leading-relaxed">父か母の再婚相手との子も相続人です。両親の戸籍を取ると分かります。</p>
+                  </details>
+                </>
               )}
             </>
           )}
@@ -223,7 +308,8 @@ export function Hearing() {
           </Q>
           {iv.heirAbroad && <Note tone="info">海外の相続人は、印鑑証明書の代わりに大使館でサイン証明・在留証明を取ります。相続税は税理士に相談してください。</Note>}
           <p className="mt-2 rounded-lg bg-teal-50 px-4 py-3 text-sm text-teal-900">
-            基礎控除 <strong>{(est.basicDeduction / 10_000).toLocaleString()}万円</strong>（相続人 <strong>{est.heirCount}人</strong>）
+            基礎控除 <strong>{(est.basicDeduction / 10_000).toLocaleString()}万円</strong>（相続人 <strong>{est.heirCount}人</strong>
+            {est.heirCount > 0 && <>：{heirBreakdown(iv, est.heirs)}</>}）
             {c.persons.length > 0 && <span className="ml-1 text-xs">※ここでの答えからの概算です</span>}
           </p>
           {/* 相続人の画面で家族を入れたあとは、そちらが計算に使われる（ここを直しても相続人の画面は書き換えない） */}
