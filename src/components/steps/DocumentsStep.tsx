@@ -77,8 +77,8 @@ export function DocumentsStep() {
       const cur = c.review?.consent ?? { terms: false, responsibility: false, at: "" };
       return { ...c, review: { ...c.review, consent: { ...cur, [k]: v, at: new Date().toISOString() } } };
     });
-  const draft = draftReason(data.review);
-  const review = reviewSummary(data.review);
+  const draft = draftReason(data.review, data.decedent.deathDate);
+  const review = reviewSummary(data.review, data.decedent.deathDate);
   const division = (() => {
     if (noDivisionDoc) return { warnings: [] };
     try {

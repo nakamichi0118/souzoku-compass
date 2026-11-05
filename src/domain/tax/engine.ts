@@ -25,6 +25,7 @@ import { floor100, floor1000 } from "../rounding";
 import type { Asset, Case, Debt, PriorGift, Person, SmallLandKind } from "../types";
 import { Valuation, smallResidentialSelection, valueAsset } from "../valuation";
 import { ratio4, ratioText } from "../valuation/lease";
+import { judgeReceivable } from "../review/receivables";
 import { SMALL_LAND_RULE, type SmallResidentialCheck, judgeSmallResidential, shouldApply, smallLandKind } from "../valuation/smallResidential";
 
 /** 速算表（相続税法16条） */
@@ -1356,6 +1357,14 @@ function computeBase(c: Case, valueOf: (a: Asset) => Valuation) {
     if (a.foreign) blockers.push(`「${a.label}」は国外財産です。国外財産がある相続は税理士にご相談ください。`);
     const valuation = valueOf(a);
     if (valuation.needsConsultation) blockers.push(`「${a.label}」：${valuation.needsConsultation}`);
+    if ((a.kind === "other" || a.kind === "cash" || a.kind === "deposit" || a.kind === "household") && a.receivable) {
+      // 亡くなったあとに受け取るお金：種類と日付で相続財産にならないものは、計算に入れたまま確定させない
+      const v = judgeReceivable(a.receivable, c.decedent.deathDate);
+      const name = `「${a.label || "名称未入力の財産"}」`;
+      if (v.kind === "notEstate" || v.kind === "inBalance") blockers.push(`${name}は相続財産に入りません（${v.reason}）。財産の一覧から外してください。`);
+      else if (v.kind === "consult") blockers.push(`${name}：${v.reason}です。税理士にご相談ください。`);
+      else if (v.kind === "incomplete") blockers.push(`${name}が相続財産になるかを決めるため、財産の画面で「${v.need}」を入れてください。`);
+    }
     if (a.pending?.length) {
       // 書類から読み取っただけで本人が確かめていない値で申告書を作らない
       blockers.push(`「${a.label || "名称未入力の財産"}」は、書類から読み取ったあと、まだ確かめていない項目があります（${a.pending.join("、")}）。財産の画面で確かめて「入れて確かめました」を押してください。`);

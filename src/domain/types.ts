@@ -1,3 +1,4 @@
+import type { Receivable } from "./review/receivables";
 /**
  * 相続コンパスのドメインモデル。
  * 金額はすべて円単位の整数、日付は ISO 8601 (YYYY-MM-DD) 文字列。
@@ -336,6 +337,8 @@ export interface MoneyAsset extends AssetBase {
   institution?: string;
   branch?: string;
   accountType?: string;
+  /** 亡くなったあとに受け取るお金（還付金・高額療養費など）。種類と日付で相続財産になるかを決める（domain/review/receivables.ts） */
+  receivable?: Receivable;
 }
 
 export interface ListedStockAsset extends AssetBase {

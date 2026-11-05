@@ -56,7 +56,7 @@ export function filingSteps(c: Case, r: TaxResult | null) {
     assets: c.assets.length > 0,
     debts: true,
     review: (() => {
-      const s = reviewSummary(c.review);
+      const s = reviewSummary(c.review, c.decedent.deathDate);
       return s.answered === s.total;
     })(),
     division: divisionReady(c),

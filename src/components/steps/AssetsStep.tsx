@@ -12,6 +12,8 @@ import { AssetIcon } from "@/components/my/icons";
 import { revealBelowHeader } from "@/components/ui/scroll";
 import { type DivisionInput, LandEditor, LeaseRatioSelect, RentRatioField, SmallResidential, resetSmallOnKindChange } from "./LandEditor";
 import type { Interview } from "@/domain/procedures/interview";
+import { RECEIVABLE_TYPES, type Receivable } from "@/domain/review/receivables";
+import { ReceivableFields, VerdictLine } from "./ReceivableFields";
 
 const KINDS: { kind: AssetKind; label: string }[] = [
   { kind: "deposit", label: "預貯金" },
@@ -405,6 +407,7 @@ export function AssetEditor({
           <Field label={a.kind === "deposit" ? "亡くなった日の残高" : "金額"}>
             <YenInput value={a.amount} onChange={(v) => patch({ amount: v })} />
           </Field>
+          {a.kind === "other" && <ReceivableOnAsset value={a.receivable} onChange={(r) => patch({ receivable: r } as Partial<Asset>)} />}
           {a.kind === "deposit" && (
             <Field label="亡くなった日までの利息（税引後）" hint="残高証明書に書いてあります">
               <YenInput value={a.accruedInterest ?? 0} onChange={(v) => patch({ accruedInterest: v })} />
@@ -547,4 +550,26 @@ export function AssetEditor({
     case "land":
       return <LandEditor living={living} a={a} patch={patch} division={division} />;
   }
+}
+
+/** その他の財産：亡くなったあとに受け取るお金なら、種類と日付で相続財産かを判定する */
+function ReceivableOnAsset({ value, onChange }: { value?: Receivable; onChange: (r: Receivable | undefined) => void }) {
+  const { data } = useCase();
+  return (
+    <div className="space-y-2 sm:col-span-2">
+      <Field label="亡くなったあとに受け取るお金ですか">
+        <Select
+          value={value?.type ?? ""}
+          onChange={(v) => onChange(v ? { type: v as Receivable["type"], receivedOn: value?.receivedOn } : undefined)}
+          options={[{ value: "", label: "ちがう" }, ...RECEIVABLE_TYPES.map((d) => ({ value: d.type, label: d.label }))]}
+        />
+      </Field>
+      {value && (
+        <>
+          <ReceivableFields r={value} onChange={onChange} />
+          <VerdictLine r={value} deathDate={data.decedent.deathDate} />
+        </>
+      )}
+    </div>
+  );
 }

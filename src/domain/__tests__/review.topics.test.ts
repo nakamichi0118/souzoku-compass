@@ -25,12 +25,31 @@ describe("申告前の確認", () => {
     expect(reviewConsultLines(s)[0]).toContain("分からない");
   });
 
-  it("「ある」で財産に足す論点は、足すまで残る", () => {
+  it("亡くなったあとに受け取るお金：1件ずつ判定し、相続財産だけを足すまで残す", () => {
+    const t = topicById("receivables");
     const s = allNo();
     s.answers!.receivables = "yes";
-    expect(topicStatus(topicById("receivables"), s).kind).toBe("add");
-    s.added = ["receivables"];
-    expect(topicStatus(topicById("receivables"), s).kind).toBe("clear");
+    expect(topicStatus(t, s, "2026-03-15").kind).toBe("unanswered");
+    // 以前の版でまとめて足した人は済み
+    expect(topicStatus(t, { ...s, added: ["receivables"] }, "2026-03-15").kind).toBe("clear");
+    s.receivables = [
+      { id: "a", type: "kaigo", amount: 12_000 },
+      { id: "b", type: "pension" },
+      { id: "c", type: "kogakuRyoyo", basis: "2026-02", holder: "decedent" },
+    ];
+    const st = topicStatus(t, s, "2026-03-15");
+    expect(st.kind).toBe("add");
+    if (st.kind !== "add") throw new Error();
+    expect(st.items.map((i) => i.key)).toEqual(["receivables:a", "receivables:c"]);
+    expect(st.items[0].template).toMatchObject({ kind: "other", label: "介護保険料の還付金", amount: 12_000, pending: [], receivable: { type: "kaigo" } });
+    expect(st.items[1].template.pending).toEqual(["受け取る金額"]);
+    // 亡くなった日が分からないと判定できない
+    expect(topicStatus(t, s).kind).toBe("unanswered");
+    s.added = ["receivables:a", "receivables:c"];
+    expect(topicStatus(t, s, "2026-03-15").kind).toBe("clear");
+    s.receivables.push({ id: "d", type: "bonus" });
+    expect(topicStatus(t, s, "2026-03-15").kind).toBe("consult");
+    expect(reviewConsultLines(s, "2026-03-15")[0]).toContain("賞与");
   });
 
   it("選択肢で結論が決まる（持株会：上場は追加、非上場は相談）", () => {
