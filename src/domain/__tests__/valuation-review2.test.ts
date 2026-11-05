@@ -164,13 +164,12 @@ describe("形がいびつ・セットバックで地積規模の大きな宅地�
     expect(v.needsConsultation).toContain("地積規模の大きな宅地");
     expect(v.needsConsultation).toContain("規模格差補正率");
     expect(v.needsConsultation).toContain("補正率を修正");
+    // セットバックは止めないので、広い宅地の案内だけになる
     const s = valueLand(big({ condition: "setback", method: { type: "rosenka", routePrice: 200_000, depthCorrection: 1 } })).needsConsultation;
-    expect(s).toContain("セットバック");
-    expect(s).toContain("規模格差補正率");
+    expect(s).toContain("地積規模の大きな宅地");
   });
   it("倍率方式：両方を反映した評価額を直接入力するよう案内する（セットバック。形がいびつは倍率方式の宅地では補正しない）", () => {
     const v = valueLand(big({ condition: "setback", method: { type: "multiplier", fixedAssetValue: 10_000_000, multiplier: 1.1 } }));
-    expect(v.needsConsultation).toContain("セットバック");
     expect(v.needsConsultation).toContain("地積規模の大きな宅地");
     expect(v.needsConsultation).toContain("評価額を直接入力");
     expect(v.needsConsultation).not.toContain("「補正率を修正」");
@@ -200,7 +199,7 @@ describe("税理士に確認した値の入れ方は評価方法で変える", (
         expect(conditionMessage(c, m, { landUse })).not.toContain("「補正率を修正」");
       }
     }
-    const v = valueLand(land({ condition: "setback", method: { type: "multiplier", fixedAssetValue: 10_000_000, multiplier: 1.1 } }));
+    const v = valueLand(land({ condition: "irregular", landUse: "雑種地", method: { type: "multiplier", fixedAssetValue: 10_000_000, multiplier: 1.1 } }));
     expect(v.needsConsultation).toContain("評価額を直接入力");
     expect(v.needsConsultation).not.toContain("「補正率を修正」");
   });
@@ -219,7 +218,7 @@ describe("人に貸している・借りている土地の直接入力は、自�
     expect(advisorHintValue("leasehold")).toContain("自用地としての評価額");
     expect(advisorHintValue("self")).not.toContain("自用地");
     expect(advisorHintValue(undefined)).not.toContain("自用地");
-    const v = valueLand(land({ condition: "setback", use: "rentedHouse", leaseRatio: 0.6, method: { type: "multiplier", fixedAssetValue: 10_000_000, multiplier: 1.1 } }));
+    const v = valueLand(land({ condition: "irregular", landUse: "雑種地", use: "rentedHouse", leaseRatio: 0.6, method: { type: "multiplier", fixedAssetValue: 10_000_000, multiplier: 1.1 } }));
     expect(v.needsConsultation).toContain("自用地としての評価額");
     const big = valueLand(land({ location: "北海道札幌市", areaSqm: 1200, use: "rentedHouse", leaseRatio: 0.3, method: { type: "multiplier", fixedAssetValue: 30_000_000, multiplier: 1.1 } }));
     expect(big.needsConsultation).toContain("地積規模");

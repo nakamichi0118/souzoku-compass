@@ -779,12 +779,16 @@ describe("税理士に確かめた補正率", () => {
     expect(e.computable).toBe(true);
     expect(tp(e, "a")).toBe(11_000_000);
     expect(one(m("雑種地")).computable).toBe(false);
+    // セットバックは止めず、減額しない評価額で計算する（相談するかは本人が選ぶ）
     const sb = { ...(m("宅地") as LandItem), needsReduction: "setback" as const };
-    expect(one(sb).computable).toBe(false);
+    expect(one(sb).computable).toBe(true);
+    expect(tp(one(sb), "a")).toBe(11_000_000);
   });
   it("補正率がなければ計算の対象外のまま", () => {
     expect(one(landR("l", narrow, 150, { needsReduction: "irregular" })).computable).toBe(false);
-    expect(one(landR("l", narrow, 150, { needsReduction: "setback", advisorRate: 0.9 })).computable).toBe(false);
+    // セットバックは補正率がなくても計算する（減額しない）。補正率があればそれを掛ける
+    expect(one(landR("l", narrow, 150, { needsReduction: "setback" })).computable).toBe(true);
+    expect(one(landR("l", narrow, 150, { needsReduction: "setback", advisorRate: 0.9 })).computable).toBe(true);
   });
   it("地積規模の大きな宅地：規模格差補正率は奥行長大の補正のあとに掛ける。補正率1も確かめた答え", () => {
     const roads = [{ position: "front" as const, price: 95_000, depth: 52.5, frontage: 20, leaseLetter: "E" as const }];

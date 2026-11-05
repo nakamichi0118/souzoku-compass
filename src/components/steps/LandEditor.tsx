@@ -734,6 +734,36 @@ function roadLetter(a: LandAsset): LeaseLetter | undefined {
   return leaseLetterOf(notation);
 }
 
+/**
+ * セットバック：止めずに減額しない評価額で計算し、税理士に相談するかは本人が選ぶ（相談をすすめる）。
+ * 相談して補正率が分かれば「補正率を修正」で入れる（倍率方式・直接入力なら評価額を直接入力）
+ */
+function SetbackChoice({ a, patch }: { a: LandAsset; patch: (p: Partial<Asset>) => void }) {
+  const pick = (v: boolean) => patch({ reductionConsult: v } as Partial<Asset>);
+  const btn = (on: boolean) =>
+    `min-h-10 flex-1 rounded-lg border px-3 py-1.5 text-sm font-semibold ${on ? "border-teal-700 bg-teal-700 text-white" : "border-stone-300 bg-white text-stone-700 hover:bg-stone-50"}`;
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm sm:col-span-2">
+      <p className="text-stone-800">前の道路の幅が4m未満の可能性があるため、税理士に相談すると評価額が下がる可能性があります（相談をおすすめします）。</p>
+      <div className="mt-2 flex gap-2" role="group" aria-label="税理士に相談するか">
+        <button type="button" aria-pressed={a.reductionConsult === true} onClick={() => pick(true)} className={btn(a.reductionConsult === true)}>
+          相談する
+        </button>
+        <button type="button" aria-pressed={a.reductionConsult === false} onClick={() => pick(false)} className={btn(a.reductionConsult === false)}>
+          相談しない
+        </button>
+      </div>
+      {a.reductionConsult === true && (
+        <div className="mt-2 space-y-2 text-xs text-stone-700">
+          <p>{a.method.type === "rosenka" ? "補正率が分かったら、下の「補正率を修正」で入れてください。" : "評価額が分かったら、評価方法を「評価額を直接入力」にして入れてください。"}それまでは減額しない評価額で計算します。</p>
+          <ConsultLink topic="セットバック" />
+        </div>
+      )}
+      {a.reductionConsult === false && <p className="mt-2 text-xs text-stone-600">減額しない評価額で計算します（申告額が高めになることがあります）。</p>}
+    </div>
+  );
+}
+
 /** 土地の入力の区切り（2列の並びをまたいで、番号つきの見出しを出す） */
 function Part({ n, title }: { n: number; title: string }) {
   return (
@@ -797,9 +827,10 @@ export function LandEditor({
       <Part n={2} title="評価のしかた" />
       {(a.landUse === "宅地" || a.landUse === "雑種地") && (
         <Field label="この土地に当てはまること">
-          <Select value={a.condition ?? ""} onChange={(v) => patch({ condition: (v || undefined) as LandAsset["condition"] })} options={CONDITION_OPTIONS} />
+          <Select value={a.condition ?? ""} onChange={(v) => patch({ condition: (v || undefined) as LandAsset["condition"], reductionConsult: undefined })} options={CONDITION_OPTIONS} />
         </Field>
       )}
+      {a.condition === "setback" && <SetbackChoice a={a} patch={patch} />}
       <Field label="評価方法" hint="分からなければ「地図で評価する」で決まります">
         <Select
           value={m.type}

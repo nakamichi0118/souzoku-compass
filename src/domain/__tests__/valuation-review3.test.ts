@@ -100,8 +100,8 @@ describe("valuation-2：倍率方式の宅地は、形がいびつでも 固定�
     expect(v.needsConsultation).toContain("評価額を直接入力");
     expect(v.needsConsultation).not.toContain("形に合わせて評価を下げられます");
   });
-  it("セットバック・配偶者居住権は倍率方式でも相談のまま", () => {
-    expect(valueLand(land({ condition: "setback", method: multiplier() })).needsConsultation).toContain("セットバック");
+  it("配偶者居住権は倍率方式でも相談のまま（セットバックは止めずに減額しない評価額で計算する）", () => {
+    expect(valueLand(land({ condition: "setback", method: multiplier() })).needsConsultation).toBeUndefined();
     expect(valueLand(land({ condition: "spouseResidence", method: multiplier() })).needsConsultation).toContain("配偶者居住権");
   });
   it("宅地以外（雑種地・田など）は、近くの宅地と比べて評価するときに形の補正をすることがあるので相談のまま", () => {

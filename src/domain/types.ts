@@ -239,11 +239,14 @@ export interface LandAsset extends AssetBase {
    */
   leaseRatio?: number;
   /**
-   * 評価に影響する、この土地の事情（本人が選んだもの）。どれかがあると、相続コンパスでは評価せず税理士への相談を案内する
+   * 評価に影響する、この土地の事情（本人が選んだもの）。形がいびつ・配偶者居住権は、相続コンパスでは評価せず税理士への相談を案内する。
+   * セットバックは減額しかないので止めず、減額しない評価額で計算する（相談するかは本人が選ぶ）
    * irregular：形がいびつ（旗竿地・三角形・L字など）、setback：道路の幅が4m未満で建て替えのとき下がる部分がある、
    * spouseResidence：配偶者居住権を設定した
    */
   condition?: "irregular" | "setback" | "spouseResidence";
+  /** 評価を下げられる事情（いまはセットバック）について、税理士に相談する（true）・しない（false）。どちらでも止めず、補正率を入れるまでは減額しない評価額で計算する */
+  reductionConsult?: boolean;
   /** 小規模宅地等の特例を適用する（種類は smallLandKind で使い方と答えから決める） */
   smallResidential?: SmallLandRelief;
   registry?: RegistryInfo;
