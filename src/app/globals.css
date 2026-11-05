@@ -107,14 +107,11 @@ body {
   font-size: 15px;
 }
 
-/* 待っている間のコンパスくん（首をかしげながら小さく揺れる） */
-@keyframes kun-thinking {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  25% { transform: translateY(-3px) rotate(-6deg); }
-  50% { transform: translateY(0) rotate(0deg); }
-  75% { transform: translateY(-3px) rotate(6deg); }
-}
-.kun-thinking { animation: kun-thinking 1.6s ease-in-out infinite; }
+/* コンパスくんの8コマ（横に8枚並んだ画像を1コマずつ送る） */
+@keyframes kun-frames { to { background-position-x: calc(100% * 8 / 7); } }
+.kun-sprite { display: inline-block; background-repeat: no-repeat; background-size: 800% 100%; background-position: 0 0; }
+.kun-typing { animation: kun-frames 0.8s steps(8) infinite; }
+.kun-blink { animation: kun-frames 1.6s steps(8) infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .kun-thinking { animation: none; }
+  .kun-sprite { animation: none; }
 }
