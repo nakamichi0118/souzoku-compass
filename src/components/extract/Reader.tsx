@@ -20,6 +20,15 @@ const SAMPLE: Record<string, { url: string; name: string }> = {
   balanceCert: { url: "/demo/zandaka-sample.pdf", name: "残高証明書（見本）.pdf" },
 };
 
+/**
+ * 1件ごとに出る書類（口座・保険の契約・証券会社ごと）。1通読んだだけで「そろった」にせず、ほかにもあるかを聞く
+ */
+export const MORE_QUESTION: Record<string, string> = {
+  balanceCert: "ほかの銀行・口座の残高証明書もありますか？",
+  insurancePay: "ほかの保険の書類もありますか？",
+  securitiesCert: "ほかの証券会社の書類もありますか？",
+};
+
 /** 書類から読み取った値のうち、原本と見比べる主な項目 */
 function fields(x: ExtractedAsset): [string, string][] {
   const yen = (n: number | null | undefined) => (n != null ? `${fmt(n)}円` : null);
@@ -48,7 +57,7 @@ function fields(x: ExtractedAsset): [string, string][] {
  * 読んだ書類は、税務署に出す書類一式に使えるよう、この端末に書類の種類ごとに保存する（save=false なら保存しない）。
  * file を渡すと、その書類をすぐ読む（撮影して仕分けた書類など）
  */
-export function Reader({ docId, onRegistered, file, save = true }: { docId?: string; onRegistered?: () => void; file?: File; save?: boolean }) {
+export function Reader({ docId, onRegistered, file, save = true, ask = true }: { docId?: string; onRegistered?: (all: boolean) => void; file?: File; save?: boolean; ask?: boolean }) {
   const { data: c, update } = useCase();
   const ex = useExtract(() => ({ decedentName: c.decedent.name, deathDate: c.decedent.deathDate }));
   // 書類ごとに、登録した項目を候補の番号で覚える（別の書類を読んだら消える）
@@ -61,6 +70,9 @@ export function Reader({ docId, onRegistered, file, save = true }: { docId?: str
   latest.current = c;
   const [undo, setUndo] = useState<{ before: Case; after: Case } | null>(null);
   const [updated, setUpdated] = useState<Record<number, string>>({});
+  // 口座ごとの書類：読んだあとに「ほかにもある？」を聞く（more = 続けて読む案内を出している）
+  const more = docId ? MORE_QUESTION[docId] : undefined;
+  const [asking, setAsking] = useState<"ask" | "more" | null>(null);
   /** 読み取った候補を、確認の操作なしで財産・債務・贈与に登録する（同じものが登録済みなら、読み取った内容で更新） */
   const autoRegister = (res: Extracted | null, fileName: string) => {
     if (!res || res.assets.length === 0) return;
@@ -82,12 +94,14 @@ export function Reader({ docId, onRegistered, file, save = true }: { docId?: str
     setDone(refs);
     setUpdated(upd);
     setUndo({ before, after });
-    onRegistered?.();
+    if (!more) onRegistered?.(true);
+    else if (ask) setAsking("ask");
   };
   const store = useDocFiles();
   const [cam, setCam] = useState(false);
   const read = (f: File) => {
     setReadId((n) => n + 1);
+    setAsking(null);
     void ex.read(f).then((res) => {
       autoRegister(res, f.name);
       if (!save) return;
@@ -142,6 +156,7 @@ export function Reader({ docId, onRegistered, file, save = true }: { docId?: str
             disabled={ex.busy}
             onClick={() => {
               setReadId((n) => n + 1);
+              setAsking(null);
               void ex.readSample(sample.url, sample.name).then((res) => autoRegister(res, sample.name));
             }}
             className="rounded-lg border border-teal-600 bg-white px-3 py-2 text-sm text-teal-800 hover:bg-teal-50"
@@ -201,6 +216,37 @@ export function Reader({ docId, onRegistered, file, save = true }: { docId?: str
               {n}
             </p>
           ))}
+          {more && asking && Object.keys(done).length > 0 && c === undo?.after && (
+            <div className="rounded-lg border border-teal-200 bg-white px-3 py-2 text-sm">
+              {asking === "ask" ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="mr-1 font-semibold text-stone-800">{more}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAsking(null);
+                      onRegistered?.(true);
+                    }}
+                    className="rounded-lg bg-teal-700 px-3 py-1.5 font-semibold text-white hover:bg-teal-800"
+                  >
+                    これで全部
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAsking("more");
+                      onRegistered?.(false);
+                    }}
+                    className="rounded-lg border border-teal-600 px-3 py-1.5 text-teal-800 hover:bg-teal-50"
+                  >
+                    ほかにもある
+                  </button>
+                </div>
+              ) : (
+                <p className="text-stone-700">続けて、次の書類をアップロード・撮影してください。</p>
+              )}
+            </div>
+          )}
           {Object.keys(done).length > 0 && (
             <div className="flex flex-wrap items-center gap-3 text-sm">
               {undo && c === undo.after && (
