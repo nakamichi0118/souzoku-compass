@@ -6,6 +6,7 @@ import { demoCase } from "@/data/demo";
 import { calculate, type TaxResult } from "@/domain/tax/engine";
 import type { Case } from "@/domain/types";
 import { withSoleHeir } from "./progress";
+import { withSmallLandAcquirers } from "./smallLand";
 
 const KEY = "souzoku-compass:case:v1";
 
@@ -31,6 +32,9 @@ interface Ctx {
 }
 const CaseContext = createContext<Ctx | null>(null);
 
+/** 保存・計算の前にそろえること：相続人が1人なら分け方を省く、特例の取得する人が決まっていれば入れる */
+const normalize = (c: Case) => withSmallLandAcquirers(withSoleHeir(c));
+
 export function CaseProvider({ children }: { children: React.ReactNode }) {
   const [data, setData] = useState<Case>(demoCase);
   const [loaded, setLoaded] = useState(false);
@@ -41,7 +45,7 @@ export function CaseProvider({ children }: { children: React.ReactNode }) {
     try {
       const raw = kvGet(KEY);
       // 記録がないとき：デモは架空の家族、ログインした人は白紙から
-      setData(raw ? withSoleHeir(JSON.parse(raw)) : mode === "demo" ? demoCase : blankCase());
+      setData(raw ? normalize(JSON.parse(raw)) : mode === "demo" ? demoCase : blankCase());
     } catch {
       setData(blankCase());
     }
@@ -85,8 +89,8 @@ export function CaseProvider({ children }: { children: React.ReactNode }) {
     kvSet(KEY, raw);
   }, [data, loaded]);
 
-  const update = useCallback((fn: (c: Case) => Case) => setData((c) => withSoleHeir(fn(structuredClone(c)))), []);
-  const replace = useCallback((c: Case) => setData(withSoleHeir(c)), []);
+  const update = useCallback((fn: (c: Case) => Case) => setData((c) => normalize(fn(structuredClone(c)))), []);
+  const replace = useCallback((c: Case) => setData(normalize(c)), []);
 
   const { result, error } = useMemo(() => {
     try {
