@@ -11,6 +11,7 @@ vi.mock("@/lib/store", () => ({
   useCase: () => ({ ...ctx, update: () => {}, replace: () => {}, loaded: true }),
   newId: () => "new-id",
 }));
+vi.mock("../SubmissionBundle", () => ({ SubmissionBundle: () => null }));
 vi.mock("@/lib/planStore", () => ({ usePlan: () => ({ setStatus: () => {}, statusOf: () => undefined, done: [], iv: {} }) }));
 
 const { DivisionStep, legalShareDivision, CompensationBasis } = await import("../DivisionStep");

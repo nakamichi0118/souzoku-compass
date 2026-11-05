@@ -13,18 +13,22 @@ import { useCase } from "@/lib/store";
 import { formsUpToDate, markFormsCreated } from "@/lib/progress";
 import { usePlan } from "@/lib/planStore";
 import { FilingGuide, shortFormName } from "./FilingGuide";
+import { SubmissionBundle } from "./SubmissionBundle";
 import { saveBlob } from "@/lib/download";
 import Link from "next/link";
 import { draftReason, reviewSummary } from "@/domain/review/topics";
 import { Check } from "@/components/ui";
 
-async function download(url: string, body: unknown, filename: string) {
+async function fetchPdf(url: string, body: unknown): Promise<Blob> {
   const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   if (!res.ok) {
     const j = await res.json().catch(() => ({}));
     throw new Error([j.error, ...(j.blockers ?? [])].filter(Boolean).join("\n") || "作成に失敗しました");
   }
-  saveBlob(await res.blob(), filename);
+  return res.blob();
+}
+async function download(url: string, body: unknown, filename: string) {
+  saveBlob(await fetchPdf(url, body), filename);
 }
 
 /** 相続コンパスで聞いていないため、申告書で空欄にしている欄（印刷後に手で書く） */
@@ -181,6 +185,15 @@ export function DocumentsStep() {
         {noDivisionDoc && <p className="mt-2 text-xs text-stone-600">{noDivisionDoc}</p>}
       </Card>
       {err && <Note tone="stop">{err}</Note>}
+      <SubmissionBundle
+        formsReady={agreed && !!result && data.assets.length > 0 && result.blockers.length === 0}
+        getForms={async () => {
+          const b = await fetchPdf("/api/forms", data);
+          update(markFormsCreated);
+          plan.setStatus("filing:prepared", "done");
+          return b;
+        }}
+      />
       <FilingGuide missing={missing} blanks={blanks} />
     </div>
   );

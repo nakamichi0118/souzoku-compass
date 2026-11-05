@@ -3,11 +3,12 @@
 import { X } from "lucide-react";
 import { useCallback, useState } from "react";
 import { Reader } from "@/components/extract/Reader";
+import { DocFiles } from "@/components/docs/DocFiles";
 import { DOCS } from "@/domain/procedures/documents";
 import type { Task } from "@/domain/procedures/rules";
 
-/** 手続きを済ませたときに、アップロードを案内する書類（読み取りできて、まだ集めていないもの） */
-export const docsToUpload = (task: Pick<Task, "docs">, done: string[]) => task.docs.filter((d) => DOCS[d]?.readable && !done.includes(`doc:${d}`));
+/** 手続きを済ませたときに、撮影・アップロードを案内する書類（まだ集めていないもの。戸籍なども） */
+export const docsToUpload = (task: Pick<Task, "docs">, done: string[]) => task.docs.filter((d) => DOCS[d] && !done.includes(`doc:${d}`));
 
 /**
  * 手続きを済ませたときに出す案内：届いた書類をその場でアップロードして財産に登録できる。
@@ -40,12 +41,12 @@ export function UploadPrompt({ docs, open, onOpen, onClose, onRegistered }: { do
           <div className="min-w-0 flex-1">
             <p className="font-bold text-stone-900">お疲れさまでした！</p>
             <p className="mt-0.5 text-sm text-stone-700">
-              「{names.join("」「")}」が届いたら、アップロードしてください。コンパスくんが金額を読み取って、財産に登録します。
+              「{names.join("」「")}」が届いたら、ここで撮影しませんか？{docs.some((d) => DOCS[d].readable) ? "金額はコンパスくんが読み取って、財産に登録します。" : "税務署に出す書類にまとめておきます。"}
             </p>
             {!open && (
               <div className="mt-2 flex flex-wrap gap-2">
                 <button type="button" onClick={onOpen} className="rounded-lg bg-teal-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-teal-800">
-                  いまアップロードする
+                  いま撮影する
                 </button>
                 <button type="button" onClick={onClose} className="rounded-lg border border-stone-300 px-3 py-1.5 text-sm hover:bg-stone-50">
                   届いてから（資料集めでいつでもできます）
@@ -62,7 +63,7 @@ export function UploadPrompt({ docs, open, onOpen, onClose, onRegistered }: { do
             {docs.map((d) => (
               <div key={d}>
                 <p className="mb-1 text-sm font-semibold text-stone-700">{DOCS[d].name}</p>
-                <Reader docId={d} onRegistered={() => onRegistered(d)} />
+                {DOCS[d].readable ? <Reader docId={d} onRegistered={() => onRegistered(d)} /> : <DocFiles docId={d} onAdded={() => onRegistered(d)} />}
               </div>
             ))}
           </div>

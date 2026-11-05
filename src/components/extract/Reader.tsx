@@ -1,8 +1,11 @@
 "use client";
 
-import { Upload } from "lucide-react";
+import { Camera, Upload } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { DocCamera } from "@/components/docs/DocCamera";
+import { guessDocId } from "@/domain/filing/submission";
+import { useDocFiles } from "@/lib/docFiles";
 import { fmt } from "@/components/ui";
 import { TARGET_LABEL, applyExtracted, destination, findSame, missingItems, refExists, useExtract, type ExtractedAsset, type Ref } from "@/lib/extract";
 import { useCase } from "@/lib/store";
@@ -39,8 +42,12 @@ function fields(x: ExtractedAsset): [string, string][] {
   return rows.filter((r): r is [string, string] => !!r[1]);
 }
 
-/** アップロードした書類をコンパスくんが読み取り、確認してから財産・債務・贈与に登録する */
-export function Reader({ docId, onRegistered }: { docId?: string; onRegistered?: () => void }) {
+/**
+ * アップロードした書類をコンパスくんが読み取り、確認してから財産・債務・贈与に登録する。
+ * 読んだ書類は、税務署に出す書類一式に使えるよう、この端末に書類の種類ごとに保存する（save=false なら保存しない）。
+ * file を渡すと、その書類をすぐ読む（撮影して仕分けた書類など）
+ */
+export function Reader({ docId, onRegistered, file, save = true }: { docId?: string; onRegistered?: () => void; file?: File; save?: boolean }) {
   const { data: c, update } = useCase();
   const ex = useExtract(() => ({ decedentName: c.decedent.name, deathDate: c.decedent.deathDate }));
   // 書類ごとに、登録した項目を候補の番号で覚える（別の書類を読んだら消える）
@@ -60,10 +67,25 @@ export function Reader({ docId, onRegistered }: { docId?: string; onRegistered?:
     setDone((d) => ({ ...d, [i]: r.ref }));
     onRegistered?.();
   };
+  const store = useDocFiles();
+  const [cam, setCam] = useState(false);
   const read = (f: File) => {
     setReadId((n) => n + 1);
-    void ex.read(f);
+    void ex.read(f).then((res) => {
+      if (!save) return;
+      const id = docId ?? (res ? guessDocId(res.documentType) : null) ?? "otherDoc";
+      void store.add(id, [f]);
+    });
   };
+  // 渡された書類は1度だけ読む
+  const given = useRef<File | null>(null);
+  useEffect(() => {
+    if (file && given.current !== file) {
+      given.current = file;
+      read(file);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file]);
   return (
     <div className="rounded-xl border-2 border-dashed border-teal-400 bg-teal-50/40 p-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -82,6 +104,20 @@ export function Reader({ docId, onRegistered }: { docId?: string; onRegistered?:
             }}
           />
         </label>
+        <button type="button" onClick={() => setCam(true)} disabled={ex.busy} className="inline-flex items-center gap-2 rounded-lg border border-teal-600 bg-white px-3 py-2 text-sm text-teal-800 hover:bg-teal-50">
+          <Camera className="h-4 w-4" aria-hidden />
+          撮影する
+        </button>
+        {cam && (
+          <DocCamera
+            multi={false}
+            onClose={() => setCam(false)}
+            onDone={(fs) => {
+              setCam(false);
+              if (fs[0]) read(fs[0]);
+            }}
+          />
+        )}
         {sample && (
           <button
             type="button"

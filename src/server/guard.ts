@@ -15,6 +15,7 @@ const LIMITS = {
   ratio: 20,
   locate: 30,
   review: 60,
+  classify: 60,
 } as const;
 
 /** 問題があれば返すべき応答、なければ null */
