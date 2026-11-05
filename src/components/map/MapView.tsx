@@ -55,6 +55,8 @@ interface Props {
   /** 路線価図1枚分の枠（四隅） */
   frame?: [number, number][] | null;
   onFrameMove?: (center: [number, number]) => void;
+  /** 路線価図の基準点を地図の上でドラッグして直したとき（新しい点の並び） */
+  onPinMove?: (pins: GeoPair[]) => void;
   pendingImg?: [number, number] | null;
   /** 基準点を選んでいる図の名前（地図の上の案内に出す） */
   pendingLabel?: string;
@@ -127,7 +129,7 @@ function toImage(map: Leaflet.Map, sheet: Sheet | null | undefined, pairs: GeoPa
 }
 
 /** 位置合わせした画像を地図に重ねる。bottom なら他の重ね表示より下に置く。片付け用の関数を返す */
-function overlayImage(map: Leaflet.Map, sheet: Sheet, pairs: GeoPair[], opacity: number, bottom = false) {
+function overlayImage(map: Leaflet.Map, sheet: Sheet, pairs: GeoPair[], opacity: number, bottom = false, onImg?: (img: HTMLImageElement | null, matrix: (pairs?: GeoPair[]) => string) => void) {
   const img = document.createElement("img");
   img.src = sheet.src;
   img.alt = "";
@@ -153,27 +155,41 @@ function overlayImage(map: Leaflet.Map, sheet: Sheet, pairs: GeoPair[], opacity:
   };
   update();
   map.on("zoomend viewreset moveend", update);
+  onImg?.(img, (ps = pairs) => {
+    const m = transformFor(map, sheet, ps);
+    return m ? `matrix(${m.join(",")})` : "";
+  });
   return () => {
     map.off("zoomend viewreset moveend", update);
+    onImg?.(null, () => "");
     img.remove();
   };
 }
 
-/** 番号付きの基準点を描く */
-function drawPins(L: typeof Leaflet, g: Leaflet.LayerGroup, pins: GeoPair[], cls: string) {
+/**
+ * 番号付きの基準点を描く。onDrag / onDrop があれば印をドラッグでき、
+ * 動かしている間は onDrag に新しい点の並びを知らせる（重ねた図をその場で動かすため）。離したら onDrop で確定する
+ */
+function drawPins(L: typeof Leaflet, g: Leaflet.LayerGroup, pins: GeoPair[], cls: string, onDrag?: (pins: GeoPair[]) => void, onDrop?: (pins: GeoPair[]) => void) {
   g.clearLayers();
-  pins.forEach((p, i) =>
-    L.marker(p.latlng, {
-      icon: L.divIcon({ className: "", html: `<div class="${cls}">${i + 1}</div>`, iconSize: [22, 22], iconAnchor: [11, 11] }),
-    }).addTo(g),
-  );
+  const movable = !!onDrop;
+  pins.forEach((p, i) => {
+    const m = L.marker(p.latlng, {
+      draggable: movable,
+      icon: L.divIcon({ className: "", html: `<div class="${cls}${movable ? " cursor-move" : ""}" title="${movable ? "ドラッグして位置を直す" : ""}">${i + 1}</div>`, iconSize: [22, 22], iconAnchor: [11, 11] }),
+    }).addTo(g);
+    if (!movable) return;
+    const moved = (): GeoPair[] => pins.map((q, k) => (k === i ? { ...q, latlng: toLL(m.getLatLng()) } : q));
+    m.on("drag", () => onDrag?.(moved()));
+    m.on("dragend", () => onDrop?.(moved()));
+  });
 }
 
 const centroid = (q: LL[]): LL => [q.reduce((a, p) => a + p[0], 0) / q.length, q.reduce((a, p) => a + p[1], 0) / q.length];
 const midpoint = (a: LL, b: LL): LL => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
 const toLL = (ll: Leaflet.LatLng): LL => [ll.lat, ll.lng];
 
-export default function MapView({ center, property, pairs, pins, frame, onFrameMove, pendingImg, pendingLabel = "路線価図", sheet, opacity, showOverlay, onMapClick, onReady, className, lot, onLotMove, onEdgeToggle, roads, shape, onShapeChange, onShapeEdgeToggle, kozu, kozuPins }: Props) {
+export default function MapView({ center, property, pairs, pins, frame, onFrameMove, onPinMove, pendingImg, pendingLabel = "路線価図", sheet, opacity, showOverlay, onMapClick, onReady, className, lot, onLotMove, onEdgeToggle, roads, shape, onShapeChange, onShapeEdgeToggle, kozu, kozuPins }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Leaflet.Map | null>(null);
   const LRef = useRef<typeof Leaflet | null>(null);
@@ -182,6 +198,10 @@ export default function MapView({ center, property, pairs, pins, frame, onFrameM
   lotMoveRef.current = onLotMove;
   const edgeRef = useRef(onEdgeToggle);
   edgeRef.current = onEdgeToggle;
+  /** 重ねている路線価図（枠を動かしている間、画像も一緒に動かすため） */
+  const sheetImg = useRef<{ img: HTMLImageElement; matrix: (pairs?: GeoPair[]) => string } | null>(null);
+  const pinMoveRef = useRef(onPinMove);
+  pinMoveRef.current = onPinMove;
   const frameMoveRef = useRef(onFrameMove);
   frameMoveRef.current = onFrameMove;
   const clickRef = useRef(onMapClick);
@@ -258,12 +278,19 @@ export default function MapView({ center, property, pairs, pins, frame, onFrameM
       : undefined;
   }, [property, ready]);
 
+  const canMovePins = !!onPinMove;
   // 基準点（路線価図・公図）
   useEffect(() => {
     const L = LRef.current;
     const g = layers.current.pairs;
-    if (L && g) drawPins(L, g, pins, "gcp-pin");
-  }, [pins, ready]);
+    if (!L || !g) return;
+    // 基準点を動かしている間は、重ねた路線価図もその場で動かす
+    const live = (ps: GeoPair[]) => {
+      const s = sheetImg.current;
+      if (s && ps.length >= 2) s.img.style.transform = s.matrix(ps);
+    };
+    drawPins(L, g, pins, "gcp-pin", live, pinMoveRef.current ? (ps) => pinMoveRef.current?.(ps) : undefined);
+  }, [pins, ready, canMovePins]);
   useEffect(() => {
     const L = LRef.current;
     const g = layers.current.kozuPins;
@@ -277,12 +304,27 @@ export default function MapView({ center, property, pairs, pins, frame, onFrameM
     if (!L || !g) return;
     g.clearLayers();
     if (!frame) return;
-    L.polygon(frame, { color: "#0f766e", weight: 2, dashArray: "6 4", fillOpacity: 0.04, interactive: false }).addTo(g);
+    const poly = L.polygon(frame, { color: "#0f766e", weight: 2, dashArray: "6 4", fillOpacity: 0.04, interactive: false }).addTo(g);
     const c: [number, number] = [frame.reduce((a, p) => a + p[0], 0) / 4, frame.reduce((a, p) => a + p[1], 0) / 4];
     const handle = L.marker(c, {
       draggable: true,
       icon: L.divIcon({ className: "", html: '<div class="frame-handle" title="ドラッグして枠を移動">✥</div>', iconSize: [26, 26], iconAnchor: [13, 13] }),
     }).addTo(g);
+    // ドラッグしている間も、枠と重ねた路線価図を印と一緒に動かす（離したときに位置を確定する）
+    handle.on("drag", () => {
+      const map = mapRef.current;
+      if (!map) return;
+      const ll = handle.getLatLng();
+      const dLat = ll.lat - c[0];
+      const dLng = ll.lng - c[1];
+      poly.setLatLngs(frame.map((p) => [p[0] + dLat, p[1] + dLng] as [number, number]));
+      const s = sheetImg.current;
+      if (s) {
+        const a = map.latLngToLayerPoint(c);
+        const b = map.latLngToLayerPoint(ll);
+        s.img.style.transform = `translate(${b.x - a.x}px, ${b.y - a.y}px) ${s.matrix()}`;
+      }
+    });
     handle.on("dragend", () => {
       const ll = handle.getLatLng();
       frameMoveRef.current?.([ll.lat, ll.lng]);
@@ -472,7 +514,7 @@ export default function MapView({ center, property, pairs, pins, frame, onFrameM
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !sheet || !showOverlay || pairs.length < 2) return;
-    return overlayImage(map, sheet, pairs, opacity);
+    return overlayImage(map, sheet, pairs, opacity, false, (img, matrix) => (sheetImg.current = img ? { img, matrix } : null));
   }, [sheet, pairs, showOverlay, opacity, ready]);
 
   return (

@@ -18,7 +18,7 @@ export function StepBar({ current }: { current: string }) {
   return (
     <div className="border-b border-stone-200 bg-white">
       <div className="mx-auto flex max-w-6xl items-center px-4 py-2">
-        <nav ref={navRef} aria-label="進捗" className="min-w-0 flex-1 overflow-x-auto">
+        <nav ref={navRef} data-tour="steps" aria-label="進捗" className="min-w-0 flex-1 overflow-x-auto">
           {/* パソコン（lg 以上）では8つとも短い名前を出す。それより狭い画面では、いまのステップだけ名前を出し、ほかは番号だけにして1行に収める */}
           <ol className="flex min-w-max items-center gap-0.5 lg:gap-1">
             {STEPS.map((s, i) => {

@@ -49,7 +49,7 @@ export function ViewSwitch({ view, onChange }: { view: View; onChange: (v: View)
     ["month", "月ごと"],
   ];
   return (
-    <div className="mb-4 inline-flex rounded-full bg-stone-100 p-1" role="group" aria-label="カレンダーの表示">
+    <div data-tour="calendar-view" className="mb-4 inline-flex rounded-full bg-stone-100 p-1" role="group" aria-label="カレンダーの表示">
       {opts.map(([v, label]) => (
         <button
           key={v}

@@ -90,7 +90,7 @@ export function FinishBar({ dateOk, unanswered, onFinish, barRef }: { dateOk: bo
 export function UnansweredTips() {
   return (
     <details className="mt-5 text-xs text-stone-600">
-      <summary className="cursor-pointer py-2 font-medium text-teal-800">Tips：選んでいない質問があるときは</summary>
+      <summary className="tips-summary cursor-pointer py-2 font-medium text-teal-800">Tips：選んでいない質問があるときは</summary>
       <p className="mt-2 leading-relaxed">選ばないままだと仮の答えで手続きを出すため、必要な手続きが抜けることがあります。答えはあとから変えられます。</p>
     </details>
   );
@@ -293,7 +293,7 @@ export function Hearing() {
                     <Counter value={iv.nephewsOfPredeceased} onChange={(v) => set("nephewsOfPredeceased", v)} />
                   </Q>
                   <details className="text-xs text-stone-600">
-                    <summary className="cursor-pointer py-2 font-medium text-teal-800">Tips：知らない兄弟姉妹がいるかも</summary>
+                    <summary className="tips-summary cursor-pointer py-2 font-medium text-teal-800">Tips：知らない兄弟姉妹がいるかも</summary>
                     <p className="mt-2 leading-relaxed">父か母の再婚相手との子も相続人です。両親の戸籍を取ると分かります。</p>
                   </details>
                 </>
@@ -395,7 +395,7 @@ export function Hearing() {
             </Q>
           )}
           <details className="mt-3 text-xs text-stone-600">
-            <summary className="cursor-pointer py-2 font-medium text-teal-800">Tips：あとから見つかった財産は</summary>
+            <summary className="tips-summary cursor-pointer py-2 font-medium text-teal-800">Tips：あとから見つかった財産は</summary>
             <p className="mt-2 leading-relaxed">「財産と相続税」で登録すると、必要な手続きと集める書類が自動で追加されます。</p>
           </details>
         </Card>

@@ -44,7 +44,7 @@ describe("トップページの上の帯（スマホ）", () => {
 describe("相続税申告のステップの帯", () => {
   it("帯だけを横に送れるようにし（画面は横に動かない）、いまのステップに印をつける", () => {
     const html = renderToStaticMarkup(createElement(StepBar, { current: "tax" }));
-    expect(html).toMatch(/<nav aria-label="進捗" class="min-w-0 flex-1 overflow-x-auto">/);
+    expect(html).toMatch(/<nav data-tour="steps" aria-label="進捗" class="min-w-0 flex-1 overflow-x-auto">/);
     expect(html.match(/aria-current="step"/g)).toHaveLength(1);
   });
 });

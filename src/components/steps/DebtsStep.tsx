@@ -132,7 +132,7 @@ export function DebtsStep() {
           {settlement && <span className="mt-1 block">相続時精算課税を選んだ後の贈与は、何年前でも全部入れて「相続時精算課税」に印を付けます。</span>}
         </p>
         <details className="mb-3 text-xs text-stone-600">
-          <summary className="cursor-pointer py-2 font-medium text-teal-800">Tips：入れない贈与</summary>
+          <summary className="tips-summary cursor-pointer py-2 font-medium text-teal-800">Tips：入れない贈与</summary>
           <p className="mt-2 leading-relaxed">
             贈与税の配偶者控除（2,000万円まで）を受けた分と、住宅取得等資金の非課税を受けた分は、相続財産に足さないので入れません。配偶者控除を受けた贈与は、配偶者控除の額（2,000万円まで）だけを引いた残りを入れてください（基礎控除の110万円は引きません）。
           </p>

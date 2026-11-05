@@ -4,7 +4,7 @@ export const CONSULT_FIRM = {
   /** 公式ホームページ（空のときは出さない） */
   url: "",
   /** ロゴ画像（public 以下のパス。空のときは名前の文字で出す） */
-  logo: "",
+  logo: "/brand/iu-consulting-logo.webp",
   /**
    * 事務所の画面（/firm）に入れるアカウントのメールアドレス。このアドレスで相続コンパスに登録してログインする。
    * テストの間は dxs-info。本番では info@taxlawyer328.com を加える

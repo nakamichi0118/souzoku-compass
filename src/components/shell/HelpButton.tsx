@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef, useState } from "react";
 import { helpFor } from "@/data/help";
-import { OPEN_GUIDE } from "@/components/my/FirstGuide";
+import { startTour } from "@/components/my/FirstGuide";
 import { useOutsideClose } from "./useOutsideClose";
 
 /** 右上の「使い方」：いま開いている画面の使い方を、その場で出す */
@@ -24,6 +24,7 @@ export function HelpButton() {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-label="使い方"
+        data-tour="help"
         className="flex min-h-9 items-center gap-1 rounded-full px-2 py-1.5 text-sm text-stone-700 hover:bg-stone-100"
       >
         <CircleHelp className="h-5 w-5 text-brand" aria-hidden />
@@ -48,15 +49,17 @@ export function HelpButton() {
             <Link href={`/help${h ? `#${h.id}` : ""}`} onClick={close} className="font-semibold text-sky-800 hover:underline">
               ヘルプを見る ›
             </Link>
-            <Link
-              href="/my?guide=1"
+            <button
+              type="button"
               onClick={() => {
                 close();
-                // すでにホームにいるときは画面が作り直されないので、ガイドに直接知らせる
-                window.dispatchEvent(new Event(OPEN_GUIDE));
-              }} className="font-semibold text-sky-800 hover:underline">
+                // 画面をめぐる操作ガイドを最初から始める
+                startTour();
+              }}
+              className="font-semibold text-sky-800 hover:underline"
+            >
               操作ガイド ›
-            </Link>
+            </button>
           </div>
         </div>
       )}
