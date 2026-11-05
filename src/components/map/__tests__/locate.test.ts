@@ -78,13 +78,13 @@ describe("路線価図を探す間の進み具合", () => {
     expect(r.no).toBe("B");
     expect(r.frame).not.toBeNull();
 
-    const msgs = steps.map((s) => s.msg);
+    const msgs = steps.map((s) => s.msg.split("\n")[0]);
     expect(msgs).toEqual([
-      "候補の路線価図を国税庁のサイトから読み込んでいます",
-      "候補の路線価図を国税庁のサイトから読み込んでいます",
-      "候補の路線価図を国税庁のサイトから読み込んでいます",
-      "土地が載っている路線価図を探しています",
-      "道路の線に合わせて、重なりを細かく調整しています",
+      "1/4 路線価図を読み込んでいます",
+      "1/4 路線価図を読み込んでいます",
+      "1/4 路線価図を読み込んでいます",
+      "2/4 土地が載っている図を探しています",
+      "3/4 路線価図を重ね合わせています",
     ]);
     const ps = steps.map((s) => s.p);
     expect(ps[0].at).toBe(0);
@@ -114,8 +114,8 @@ describe("路線価図を探す間の進み具合", () => {
 
   it("道路の線がなければ、合わせる段階は出さない", async () => {
     const msgs: string[] = [];
-    await locateSheet({ property, candidates, cache: new Map(), roads: [], onStep: (m) => msgs.push(m) });
-    expect(msgs.at(-1)).toBe("土地が載っている路線価図を探しています");
+    await locateSheet({ property, candidates, cache: new Map(), roads: [], onStep: (m) => msgs.push(m.split("\n")[0]) });
+    expect(msgs.at(-1)).toBe("2/4 土地が載っている図を探しています");
   });
 
   it("図が1枚でも読み込めなければやめる。ほかの図の描画が終わるのを待ってから、作った画像を捨てる", async () => {

@@ -120,7 +120,7 @@ export function AskCompass({ state, placeholder = "質問を入力", lead, id, f
         {(asked || busy || answer) && (
           <div ref={answerRef} className="space-y-2" aria-live="polite">
             {asked && <p className="text-sm font-medium text-stone-600">Q.「{asked}」</p>}
-            <Bubble>{busy ? "ちょっと調べています…" : answer ? <div className="text-sm text-stone-800"><Markdown text={answer} /></div> : null}</Bubble>
+            <Bubble>{busy ? <span className="flex items-center gap-2"><CompassAvatar size={28} thinking />ちょっと調べています…</span> : answer ? <div className="text-sm text-stone-800"><Markdown text={answer} /></div> : null}</Bubble>
           </div>
         )}
       </div>

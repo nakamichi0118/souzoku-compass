@@ -88,7 +88,9 @@ describe("評価倍率表を探している間 ui-progress", () => {
     const h = renderToStaticMarkup(
       createElement(RatioPanel, { step: 2, setStep: () => {}, land: land(), property: [43.06, 141.35], cache: new Map(), onApply: () => {}, onUseRosenka: () => {} }),
     );
-    expect(h).toContain(`${RATIO_WAIT}…`);
+    expect(h).toContain(`${RATIO_WAIT.split("\n")[0]}…`);
+    // なぜ時間がかかるかも添える
+    expect(h).toContain(RATIO_WAIT.split("\n")[1]);
     expect(h).toContain('role="progressbar"');
     expect(h).toContain('aria-valuenow="0"');
   });

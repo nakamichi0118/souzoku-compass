@@ -47,6 +47,7 @@ const READ_PROGRESS: Progress = { at: 0, until: 1, expectSec: 15 };
 const SHAPE_OPS = ["● 角をドラッグで移動", "＋ 辺の真ん中で角を増やす", "角をダブルクリックで消す", "✥ 全体を移動"];
 
 type Route = "rosenka" | "ratio";
+const FINDING = "この場所の路線価図を探しています\n国税庁の町名の一覧から、この場所が載っている図を探しています";
 const CANCELLED = "キャンセルしました。もう一度、土地の場所をクリックしてください。";
 interface ReadResult {
   candidates: ReadCandidate[];
@@ -476,14 +477,14 @@ function LandWizard() {
     const g = gen.current;
     setLocated(null);
     setAlignOpen(false);
-    await run("路線価図を探しています", async () => {
+    await run("1/4 路線価図を読み込んでいます\n国税庁のサイトから候補の図を取り寄せています", async () => {
       // バーの最後の少しは、選んだ図を地図に重ねる分
       const r = await locateSheet({ property, candidates: list, town, cache: pdfCache.current, roads: roads ?? [], onStep: (m, p) => g === gen.current && wait(m, within(p, 0, 0.95)) });
       if (g !== gen.current) return;
       setLocated(r);
       const c = list.find((x) => x.no === r.no) ?? (list.length === 1 ? list[0] : undefined);
       if (!c) return;
-      setProg({ at: 0.95, until: 1, expectSec: 3, since: Date.now() });
+      wait("4/4 地図に重ねています\n選んだ図を地図の上に置いています", { at: 0.95, until: 1, expectSec: 3 });
       const buf = await fetchSheetPdf(c.pdfUrl, pdfCache.current);
       if (g !== gen.current || !(await showSheet(buf, 1, g))) return;
       setPdfData(buf);
@@ -501,7 +502,7 @@ function LandWizard() {
 
   async function loadFromUrl(url: string, keepAlignment = false) {
     const g = gen.current;
-    await run("路線価図を読み込んでいます", async () => {
+    await run("路線価図を読み込んでいます\n国税庁のサイトから図を取り寄せています", async () => {
       const buf = await fetchSheetPdf(url, pdfCache.current);
       if (g !== gen.current || !(await showSheet(buf, keepAlignment ? pageNo : 1, g))) return;
       setSheetUrl(url);
@@ -568,7 +569,7 @@ function LandWizard() {
     const g = gen.current;
     const list = frontages.map((f) => ({ f, key: keyOf(f), ctx: frontageContext(ctx, f) })).filter((x) => force || needsRead(readings, x.key, x.ctx));
     if (list.length === 0) return;
-    await run("路線価図を読み取っています", async () => {
+    await run("路線価を読み取っています\nコンパスくんが、接している道路ごとに図の数字（例：420D）を読んでいます", async () => {
       const results = await Promise.all(
         list.map(async ({ f, key, ctx: c }) => {
           const at = api.current?.toSheet(f.outside);
@@ -699,7 +700,7 @@ function LandWizard() {
     (!!property && !!route && (route === "ratio" ? n === 2 || (n === 3 && (step >= 2 ? ratioReady : savedRatio)) : n === 2 ? !!shape : n === 3 ? !!shape : !!sheet && !!shape));
   const overlayOn = route === "rosenka" && step >= 3 && showOverlay;
   /** 地図の上に出す待ちの案内（同じ案内は右の手順の欄にも出す） */
-  const waiting = busy ? { message: busy, progress: prog } : route === "ratio" && step >= 2 ? ratioWait : finding ? { message: "この場所の路線価図を探しています", progress: null } : null;
+  const waiting = busy ? { message: busy, progress: prog } : route === "ratio" && step >= 2 ? ratioWait : finding ? { message: FINDING, progress: null } : null;
   const wide = route === "ratio" && step >= 2;
 
   return (
@@ -816,7 +817,7 @@ function LandWizard() {
               {property && (
                 <div className="space-y-2 rounded-lg bg-stone-50 p-3 text-sm">
                   <p className="font-semibold text-stone-800">選んだ場所{town ? `：${town}` : ""}</p>
-                  {finding && <ProgressBar message="この場所の路線価図を探しています" className="text-stone-600" />}
+                  {finding && <ProgressBar quiet message={FINDING} className="text-stone-600" />}
                   {!finding && route === "rosenka" && (
                     <p className="text-stone-700">
                       {found?.sheets.length ? `路線価図のある地域です（候補の図 ${found.sheets.map((s) => s.no).join("・")}）。` : "路線価図で評価します。"}

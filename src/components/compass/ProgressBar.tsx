@@ -9,6 +9,7 @@
  * 目安の時間を過ぎたら「もう少しかかっています」と1行だけ添える。
  */
 import { useEffect, useState } from "react";
+import { CompassAvatar } from "./CompassKun";
 
 export interface Progress {
   /** この段階が始まる位置（全体を 0〜1 として） */
@@ -50,9 +51,13 @@ export function ProgressBar({
   message,
   progress,
   quiet = false,
+  kun = false,
   className = "",
 }: {
+  /** 1行目が案内。改行のあとは、なぜ時間がかかるかの補足（小さく出す） */
   message: string;
+  /** 考えているコンパスくんを左に出す */
+  kun?: boolean;
   progress?: Progress | null;
   /** 同じ案内を画面のほかの場所にも出しているときは true（読み上げを1回にする） */
   quiet?: boolean;
@@ -70,10 +75,13 @@ export function ProgressBar({
   }, [timed]);
   const elapsed = Math.max(0, (now - (p.since ?? shown)) / 1000);
   const value = progressValue(p, elapsed);
-  const text = message.replace(/…+$/, "");
-  return (
-    <div className={className} aria-hidden={quiet || undefined}>
+  const [head, ...rest] = message.split("\n");
+  const text = head.replace(/…+$/, "");
+  const detail = rest.join(" ").trim();
+  const bar = (
+    <div className={kun ? "min-w-0 flex-1" : undefined}>
       <p aria-live={quiet ? undefined : "polite"}>{text}…</p>
+      {detail && <p className="mt-0.5 text-xs opacity-80">{detail}</p>}
       <div
         role="progressbar"
         aria-label={text}
@@ -85,6 +93,12 @@ export function ProgressBar({
         <div className="h-full rounded-full bg-teal-600 transition-[width] duration-300 ease-linear motion-reduce:transition-none" style={{ width: `${Math.max(2, value * 100).toFixed(1)}%` }} />
       </div>
       {isSlow(p, elapsed) && <p className="mt-1 text-xs opacity-80">もう少しかかっています</p>}
+    </div>
+  );
+  return (
+    <div className={`${kun ? "flex items-center gap-3 " : ""}${className}`} aria-hidden={quiet || undefined}>
+      {kun && <CompassAvatar size={36} thinking />}
+      {bar}
     </div>
   );
 }

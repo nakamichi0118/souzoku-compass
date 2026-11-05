@@ -128,7 +128,7 @@ export function OfficeLookup({ kind, dept, address, forProperty }: { kind: Offic
         </div>
       ) : busy ? (
         // 調べている間は、ボタンの代わりに進み具合を出す（30秒ほどかかる）
-        <ProgressBar message="コンパスくんが公式サイトを調べています" progress={LOOKUP_WAIT} className="mt-2 text-teal-900" />
+        <ProgressBar kun message={"コンパスくんが公式サイトを調べています\nこの住所の担当の窓口を、役所・国の公式ページで確かめています"} progress={LOOKUP_WAIT} className="mt-2 text-teal-900" />
       ) : (
         <button type="button" onClick={lookup} className="mt-2 inline-flex items-center gap-2 rounded-lg border border-sky-300 bg-white px-3 py-1.5 font-semibold text-sky-800 hover:bg-sky-50">
           <CompassAvatar size={22} />
