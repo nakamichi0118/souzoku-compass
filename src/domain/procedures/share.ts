@@ -68,7 +68,7 @@ export function decodeFeed(s: string): Feed | null {
       if (!(k in iv) || typeof v !== typeof iv[k]) continue;
       if (typeof v === "number") {
         if (!Number.isFinite(v) || v < 0) continue;
-        iv[k] = Math.min(Math.floor(v), typeof iv[k] === "number" && k.match(/^(children|grandchildrenOfPredeceased|parentsAlive|siblings)$/) ? 20 : 1e13);
+        iv[k] = Math.min(Math.floor(v), typeof iv[k] === "number" && k.match(/^(children|adoptedChildren|grandchildrenOfPredeceased|parentsAlive|grandparentsAlive|siblings|halfSiblings|nephewsOfPredeceased)$/) ? 20 : 1e13);
       } else if (typeof v === "string") {
         iv[k] = v.slice(0, 40);
       } else iv[k] = v;
