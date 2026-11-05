@@ -6,6 +6,8 @@ import { CompassAvatar } from "@/components/compass/CompassKun";
 import { kvGet, kvSet, PREFIX } from "@/lib/cloud";
 
 export const GUIDE_KEY = `${PREFIX}guide-seen`;
+/** 「操作ガイド」を押したときに送る合図（ホームを開いたままでも、もう一度出す） */
+export const OPEN_GUIDE = "souzoku-compass:open-guide";
 
 /** 操作ガイドの各ページ（メニューの名前と同じ言葉で） */
 export const GUIDE_SLIDES: { Icon: LucideIcon; title: string; text: string }[] = [
@@ -25,6 +27,12 @@ export function FirstGuide() {
   useEffect(() => {
     const again = new URLSearchParams(window.location.search).get("guide") === "1";
     if (again || !kvGet(GUIDE_KEY)) setOpen(true);
+    const reopen = () => {
+      setI(0);
+      setOpen(true);
+    };
+    window.addEventListener(OPEN_GUIDE, reopen);
+    return () => window.removeEventListener(OPEN_GUIDE, reopen);
   }, []);
   if (!open) return null;
   const s = GUIDE_SLIDES[i];

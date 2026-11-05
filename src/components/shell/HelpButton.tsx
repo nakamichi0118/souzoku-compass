@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef, useState } from "react";
 import { helpFor } from "@/data/help";
+import { OPEN_GUIDE } from "@/components/my/FirstGuide";
 import { useOutsideClose } from "./useOutsideClose";
 
 /** 右上の「使い方」：いま開いている画面の使い方を、その場で出す */
@@ -16,7 +17,8 @@ export function HelpButton() {
   const h = helpFor(path);
   const close = () => setOpen(false);
   return (
-    <div ref={ref} className="relative">
+    // スマホでは、画面の幅いっぱい（左右に余白）で出す。ボタンの位置に合わせると左にはみ出すため（お知らせと同じ）
+    <div ref={ref} className="shrink-0 sm:relative">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -28,7 +30,7 @@ export function HelpButton() {
         <span className="hidden sm:inline">使い方</span>
       </button>
       {open && (
-        <div role="dialog" aria-label="この画面の使い方" className="absolute right-0 z-50 mt-1 w-[min(20rem,calc(100vw-2rem))] rounded-xl border border-stone-200 bg-white p-4 text-sm shadow-lg">
+        <div role="dialog" aria-label="この画面の使い方" className="absolute inset-x-4 top-full z-50 mt-1 rounded-xl sm:inset-x-auto sm:right-0 sm:top-auto sm:w-80 border border-stone-200 bg-white p-4 text-sm shadow-lg">
           {h ? (
             <>
               <p className="font-bold text-sky-950">{h.title}の使い方</p>
@@ -46,7 +48,13 @@ export function HelpButton() {
             <Link href={`/help${h ? `#${h.id}` : ""}`} onClick={close} className="font-semibold text-sky-800 hover:underline">
               ヘルプを見る ›
             </Link>
-            <Link href="/my?guide=1" onClick={close} className="font-semibold text-sky-800 hover:underline">
+            <Link
+              href="/my?guide=1"
+              onClick={() => {
+                close();
+                // すでにホームにいるときは画面が作り直されないので、ガイドに直接知らせる
+                window.dispatchEvent(new Event(OPEN_GUIDE));
+              }} className="font-semibold text-sky-800 hover:underline">
               操作ガイド ›
             </Link>
           </div>
