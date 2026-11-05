@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback } from "react";
-import { AskCompass, useAsk } from "@/components/compass/AskCompass";
+import { useCompassTopic } from "@/lib/compassChat";
 import { MonthCalendar } from "@/components/plan/MonthCalendar";
 import { AppShell, PageHead } from "@/components/shell/AppShell";
 import { Panel } from "@/components/ui/Panel";
@@ -29,7 +29,7 @@ export function Home() {
       ].join("\n"),
     [o.iv.deathDate, o.pct, o.main, o.done, o.case, o.result],
   );
-  const ask = useAsk("home", context);
+  useCompassTopic("home", context, "例：この手続きは何をするの？");
   if (!o.loaded) return <AppShell>{null}</AppShell>;
 
   if (!o.heard || !o.valid || !o.est)
@@ -162,8 +162,6 @@ export function Home() {
             </Panel>
           )}
 
-          {/* 吹き出しは答えが出てから出す（見出しと質問ボタンで、何ができるかは分かる） */}
-          <AskCompass state={ask} placeholder="例：この手続きは何をするの？" lead={null} />
         </div>
 
         <div className="space-y-5">

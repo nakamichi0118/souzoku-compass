@@ -112,4 +112,9 @@ export function useCase() {
   return ctx;
 }
 
+/** CaseProvider の外（テストなど）では null */
+export function useCaseOptional() {
+  return useContext(CaseContext);
+}
+
 export const newId = () => crypto.randomUUID().slice(0, 8);

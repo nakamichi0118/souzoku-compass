@@ -89,12 +89,10 @@ describe("ホームの文字", () => {
     expect(text(html)).not.toContain("申告の続き（");
   });
 
-  it("コンパスくんに相談は、答えが出るまで吹き出しを出さず、質問ボタンは3つ", () => {
-    const t = text(render());
-    expect(t).toContain("コンパスくんに相談");
-    expect(t).not.toMatch(/困ったときは|なんでも聞いて|気軽に聞いて/);
-    expect(t).not.toContain("相続税の申告が必要か知りたい");
-    expect(t).toContain("四十九日までに何を準備すればいい？");
+  it("コンパスくんへの質問は右下のチャットに任せ、ホームの本文には相談の欄を置かない", () => {
+    const html = render();
+    expect(html).not.toContain("<textarea");
+    expect(text(html)).not.toContain("四十九日までに何を準備すればいい？");
   });
 
   it("相続税の見込みは、判定と3つの金額と、計算結果か目安かの区別を残す", () => {

@@ -4,7 +4,7 @@ import { Building2, FileText, MapPin, NotebookPen, Phone } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AskCompass, useAsk } from "@/components/compass/AskCompass";
+import { useCompassTopic } from "@/lib/compassChat";
 import { OfficeLookup } from "@/components/plan/OfficeLookup";
 import { AppShell, PageHead } from "@/components/shell/AppShell";
 import { googleEventUrl, icsStamp, toICS } from "@/domain/procedures/calendar";
@@ -264,7 +264,7 @@ export function TasksPage() {
       ].join("\n"),
     [o.iv.deathDate, o.main, o.done, t],
   );
-  const ask = useAsk("tasks", context);
+  useCompassTopic("tasks", context, t ? `「${t.title}」について聞いてみる` : undefined);
 
   if (!ready) return <AppShell>{null}</AppShell>;
   const select = (id: string) => {
@@ -546,8 +546,6 @@ export function TasksPage() {
                 </a>
               )}
             </div>
-
-            <AskCompass state={ask} placeholder={`「${t.title}」について聞いてみる`} />
           </article>
         )}
       </div>

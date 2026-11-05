@@ -7,6 +7,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui";
 import { CONSULT_FIRM, PREFECTURES, prefectureOf } from "@/data/consultFirm";
 import { useSession } from "@/lib/cloud";
+import { clearConsultDraft, peekConsultDraft } from "@/lib/compassChat";
 import { consultMemo } from "@/lib/consult";
 import { useCase } from "@/lib/store";
 
@@ -58,7 +59,8 @@ export function ConsultForm({ onSent }: { onSent?: () => void }) {
     name: user?.name ?? "",
     prefecture: prefectureOf(data.decedent.address),
     contact: user?.email ?? "",
-    content: consultMemo(data, result),
+    // 右下のチャットから来たときは、コンパスくんに聞いたことを頭に入れる
+    content: [peekConsultDraft(), consultMemo(data, result)].filter(Boolean).join("\n\n"),
   }));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -87,6 +89,7 @@ export function ConsultForm({ onSent }: { onSent?: () => void }) {
       const res = await fetch("/api/consult", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(f) });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j.error || "送れませんでした。");
+      clearConsultDraft();
       setSent(true);
       onSent?.();
     } catch (e) {
