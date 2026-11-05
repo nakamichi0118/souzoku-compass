@@ -56,22 +56,30 @@ describe("あなたへのお知らせの文", () => {
 });
 
 describe("相続コンパスからのお知らせ（SYSTEM_NOTICES）", () => {
-  it("いちばん新しいお知らせは、税額の画面の財産の合計の内訳（小規模宅地等の特例・保険金の非課税）", () => {
-    const [breakdown] = SYSTEM_NOTICES;
+  it("いちばん新しいお知らせは、右下のコンパスくんのチャット", () => {
+    const chat = SYSTEM_NOTICES.find((n) => n.id === "2026-11-06-chat")!;
+    expect(chat.title).toBe("コンパスくんに右下から聞けます");
+    expect(chat.body).toContain("このチャットで解決できましたか？");
+  });
+
+  // ここからは、税額の内訳のお知らせより前のもの（新しいお知らせが増えても順番は変わらない）
+  const OLDER = SYSTEM_NOTICES.slice(SYSTEM_NOTICES.findIndex((n) => n.id === "2026-11-05-breakdown"));
+  it("税額の画面の財産の合計の内訳（小規模宅地等の特例・保険金の非課税）", () => {
+    const [breakdown] = OLDER;
     expect(breakdown).toMatchObject({ id: "2026-11-05-breakdown", date: "2026-11-05" });
     expect(breakdown.body).toContain("500万円×法定相続人の数");
     expect(breakdown.body).toContain("小規模宅地等の特例");
   });
 
   it("その前は、止まった理由から直す場所へ飛べること", () => {
-    const [, gates] = SYSTEM_NOTICES;
+    const [, gates] = OLDER;
     expect(gates).toMatchObject({ id: "2026-11-05-gates", date: "2026-11-05" });
     expect(gates.body).toContain("未回答");
     expect(gates.body).toContain("下書き");
   });
 
   it("その前は、還付金・高額療養費の判定、画面をめぐる操作ガイドと右上の「使い方」", () => {
-    const [, , receivables, tour, help] = SYSTEM_NOTICES;
+    const [, , receivables, tour, help] = OLDER;
     expect(receivables).toMatchObject({ id: "2026-11-05-receivables", date: "2026-11-05" });
     expect(receivables.body).toContain("高額療養費");
     expect(tour).toMatchObject({ id: "2026-11-05-tour", date: "2026-11-05" });
@@ -81,7 +89,7 @@ describe("相続コンパスからのお知らせ（SYSTEM_NOTICES）", () => {
   });
 
   it("その前のお知らせは、書類の撮影、小規模宅地等の特例の割り当て、受け取る人が決まっていない財産、第8の8表・第14表、郵便番号から住所を入れること、画面の文字を減らしたこと", () => {
-    const [, , , , , scan, small, unsettled, latest, first, second] = SYSTEM_NOTICES;
+    const [, , , , , scan, small, unsettled, latest, first, second] = OLDER;
     expect(scan).toMatchObject({ id: "2026-11-05-scan-bundle", date: "2026-11-05", title: "書類を撮影して提出用にまとめられます" });
     expect(scan.body).toContain("印鑑証明書は原本");
     expect(small).toMatchObject({ id: "2026-11-04-small-land", date: "2026-11-04", title: "小規模宅地等の特例の割り当てを見直しました" });
