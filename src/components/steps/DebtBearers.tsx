@@ -15,10 +15,17 @@ export function evenBearers(amount: number, people: { id: string }[]): Debt["bea
   return people.map((p, i) => ({ personId: p.id, amount: i === 0 ? amount - each * (people.length - 1) : each }));
 }
 
+/** 全額を1人が負担しているなら、その人の id（同じ人が何行かに分かれて入っていても合わせて見る） */
+export function soleBearer(d: Debt): string | null {
+  const ids = new Set(d.bearers.map((b) => b.personId));
+  if (ids.size !== 1) return null;
+  return d.bearers.reduce((a, b) => a + b.amount, 0) === d.amount ? [...ids][0] : null;
+}
+
 /** 保存されている負担者から、いまの選び方（1人・複数人・未定）を読む */
 export function bearMode(d: Debt): BearMode {
   if (d.bearers.length === 0) return "undecided";
-  return d.bearers.length === 1 && d.bearers[0].amount === d.amount ? "one" : "many";
+  return soleBearer(d) != null ? "one" : "many";
 }
 
 /**
@@ -65,7 +72,8 @@ function DebtChoice({ d, people, evenPeople }: { d: Debt; people: Person[]; even
     if (m === "undecided") setBearers([]);
     if (m === "one" && derived !== "one") setBearers([]);
   };
-  const amountOf = (id: string) => d.bearers.find((b) => b.personId === id)?.amount ?? 0;
+  // 以前の入力で同じ人が何行かに分かれていることがあるので、人ごとに合わせて見せる（直すと1行にまとまる）
+  const amountOf = (id: string) => d.bearers.filter((b) => b.personId === id).reduce((a, b) => a + b.amount, 0);
   const setAmount = (id: string, v: number) => {
     const others = d.bearers.filter((b) => b.personId !== id);
     // 人の並びどおりに残す
@@ -104,7 +112,7 @@ function DebtChoice({ d, people, evenPeople }: { d: Debt; people: Person[]; even
       {mode === "one" && (
         <div className="mt-3 flex flex-wrap gap-2">
           {people.map((h) => {
-            const on = d.bearers.length === 1 && d.bearers[0].personId === h.id;
+            const on = soleBearer(d) === h.id;
             return (
               <button key={h.id} type="button" onClick={() => setBearers([{ personId: h.id, amount: d.amount }])} className={`rounded-full border px-4 py-1.5 text-sm ${on ? "border-teal-700 bg-teal-700 text-white" : "border-stone-300 hover:border-teal-500"}`}>
                 {h.name || "（名前未入力）"}

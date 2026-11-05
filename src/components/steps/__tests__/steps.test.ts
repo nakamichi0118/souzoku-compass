@@ -16,7 +16,7 @@ vi.mock("@/lib/planStore", () => ({ usePlan: () => ({ setStatus: () => {}, statu
 
 const { DivisionStep, legalShareDivision, CompensationBasis } = await import("../DivisionStep");
 const { DebtsStep, newDebt, withDebtAmount } = await import("../DebtsStep");
-const { DebtBearers, evenBearers } = await import("../DebtBearers");
+const { DebtBearers, evenBearers, bearMode } = await import("../DebtBearers");
 const { HeirsStep, priorCreditKinds, removePerson } = await import("../HeirsStep");
 const { TaxStep, filingMessage, filingNeeded, refundOnlyFiling, SUPPORTER_TIP, ROUNDING_TIP } = await import("../TaxStep");
 const { DocumentsStep, handFilledBlanks, divisionDocUnavailable } = await import("../DocumentsStep");
@@ -169,6 +169,17 @@ describe("債務・葬式費用の負担者（遺産の分け方）：分け方�
     expect(many).toMatch(/aria-pressed="true"[^>]*>複数人</);
     expect(many).toContain("一致していません");
     expect(many).toContain("相続人全員で均等に負担する");
+  });
+
+  it("同じ人が何行かに分かれた以前の入力も、合わせて1人・合計で見る", () => {
+    const d = { id: "d", kind: "debt" as const, label: "", amount: 1_000_000, bearers: [{ personId: "hanako", amount: 400_000 }, { personId: "hanako", amount: 600_000 }] };
+    expect(bearMode(d)).toBe("one");
+    expect(bearMode({ ...d, bearers: [d.bearers[0]] })).toBe("many");
+    const c = clone();
+    c.debts = [{ ...d, bearers: [{ personId: "hanako", amount: 400_000 }, { personId: "hanako", amount: 500_000 }] }];
+    const html = render(DebtBearers, c);
+    expect(html).toContain("900,000");
+    expect(html).toContain("一致していません");
   });
 
   it("均等に負担するときは、端数を最初の人に寄せる", () => {
