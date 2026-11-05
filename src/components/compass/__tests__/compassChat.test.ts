@@ -73,6 +73,19 @@ describe("解決できましたか？", () => {
     ]);
   });
 
+  it("答えが届かなかった質問は、エラーの返事といっしょに外す（次の質問と答えの組を崩さない）", () => {
+    const h = chat.historyOf([
+      { role: "user", text: "失敗した質問" },
+      { role: "assistant", text: "通信に失敗しました。", local: true },
+      { role: "user", text: "次の質問" },
+      { role: "assistant", text: "次の答え", resolved: true },
+    ]);
+    expect(h).toEqual([
+      { role: "user", text: "次の質問" },
+      { role: "assistant", text: "次の答え" },
+    ]);
+  });
+
   it("相談の下書きには、聞いた質問だけを入れる", () => {
     const d = chat.consultDraft([
       { role: "user", text: "名義預金って何？" },

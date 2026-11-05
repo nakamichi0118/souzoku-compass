@@ -74,8 +74,9 @@ export const openChat = (open = true) => set({ open });
 
 /** Claude に送るやりとり（画面の中だけの返事は除き、直近の分だけ） */
 export function historyOf(msgs: ChatMsg[]): { role: "user" | "assistant"; text: string }[] {
+  // 答えが届かなかった質問（すぐ後が画面の中だけの返事）は、その返事といっしょに外す
   return msgs
-    .filter((m) => !m.local && m.text.trim())
+    .filter((m, i) => !m.local && m.text.trim() && (m.role === "assistant" || (msgs[i + 1]?.role === "assistant" && !msgs[i + 1].local)))
     .slice(-10)
     .map((m) => ({ role: m.role, text: m.text.slice(0, 4000) }));
 }
@@ -139,9 +140,12 @@ export function consultDraft(msgs: ChatMsg[]): string {
   return qs.length ? `コンパスくんに聞いたこと：\n${qs.slice(-5).join("\n")}` : "";
 }
 
+/** いまの持ち主（ログインした人・デモ）。下書きは同じ持ち主のときだけ使う（ログインし直した別の人に渡さない） */
+const owner = () => localStorage.getItem("souzoku-compass-mode") ?? "";
+
 function saveConsultDraft(msgs: ChatMsg[]) {
   try {
-    sessionStorage.setItem(CONSULT_DRAFT_KEY, consultDraft(msgs));
+    sessionStorage.setItem(CONSULT_DRAFT_KEY, JSON.stringify({ owner: owner(), text: consultDraft(msgs) }));
   } catch {
     /* 下書きを残せなくても、相談の画面には移れる */
   }
@@ -150,7 +154,14 @@ function saveConsultDraft(msgs: ChatMsg[]) {
 /** 相談フォームに入れる、チャットからの下書き（送ったら clearConsultDraft で消す） */
 export function peekConsultDraft(): string {
   try {
-    return sessionStorage.getItem(CONSULT_DRAFT_KEY) ?? "";
+    const raw = sessionStorage.getItem(CONSULT_DRAFT_KEY);
+    if (!raw) return "";
+    const d = JSON.parse(raw) as { owner?: unknown; text?: unknown };
+    if (d.owner !== owner() || typeof d.text !== "string") {
+      sessionStorage.removeItem(CONSULT_DRAFT_KEY);
+      return "";
+    }
+    return d.text;
   } catch {
     return "";
   }
