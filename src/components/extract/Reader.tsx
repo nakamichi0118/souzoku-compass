@@ -22,13 +22,14 @@ import {
 } from "@/lib/extract";
 import type { Case } from "@/domain/types";
 import { useCase } from "@/lib/store";
+import { SAMPLE_PREFIX, withSource, type Source } from "@/lib/sourceDocs";
 import { type Progress, ProgressBar } from "@/components/compass/ProgressBar";
 
 /** 書類の読み取りにかかる目安（コンパスくんが画像を読む。ふつう十数秒） */
 const READ_WAIT: Progress = { at: 0, until: 1, expectSec: 20 };
 
 /** 見本の書類で試せる書類 */
-const SAMPLE: Record<string, { url: string; name: string }> = {
+export const SAMPLE: Record<string, { url: string; name: string }> = {
   balanceCert: {
     url: "/demo/zandaka-sample.pdf",
     name: "残高証明書（見本）.pdf",
@@ -138,6 +139,8 @@ export function Reader({
   save = true,
   read: doRead = true,
   ask = true,
+  fileId,
+  fileName,
 }: {
   docId?: string;
   onRegistered?: (all: boolean) => void;
@@ -145,6 +148,10 @@ export function Reader({
   save?: boolean;
   read?: boolean;
   ask?: boolean;
+  /** file がすでに保存済みの書類なら、その id（登録した財産に結びつける） */
+  fileId?: string;
+  /** その保存済みの書類のファイル名（画像は保存するときに .jpg になるため、元のファイル名とは違うことがある） */
+  fileName?: string;
 }) {
   const { data: c, update } = useCase();
   const ex = useExtract(() => ({
@@ -166,7 +173,7 @@ export function Reader({
   const more = doRead && docId ? MORE_QUESTION[docId] : undefined;
   const [asking, setAsking] = useState<"ask" | "more" | null>(null);
   /** 読み取った候補を、確認の操作なしで財産・債務・贈与に登録する（同じものが登録済みなら、読み取った内容で更新） */
-  const autoRegister = (res: Extracted, fileName: string) => {
+  const autoRegister = (res: Extracted, src: Source) => {
     let cur = latest.current;
     const refs: Record<number, Ref> = {};
     const updated: Record<number, string> = {};
@@ -178,18 +185,9 @@ export function Reader({
             ? cur.assets.find((a) => a.id === same.id)?.label
             : cur.debts.find((d) => d.id === same.id)?.label) ?? "";
       const r = applyExtracted(cur, x, same);
-      const ref = r.ref;
-      // どの財産の書類を読んだかを財産ごとに残す（同じ種類の書類でも、口座・土地ごとに「書類あり」を分ける）
-      cur =
-        ref.type === "asset"
-          ? {
-              ...r.next,
-              assets: r.next.assets.map((a) =>
-                a.id === ref.id ? { ...a, docFrom: fileName.slice(0, 200) } : a,
-              ),
-            }
-          : r.next;
-      refs[i] = ref;
+      // どの資料を読んで登録したかを財産・債務ごとに残す（財産の画面から開いて見比べられるように。口座・土地ごとの「書類あり」にも使う）
+      cur = withSource(r.next, r.ref, src);
+      refs[i] = r.ref;
     });
     const after = cur;
     latest.current = after;
@@ -246,20 +244,25 @@ export function Reader({
         refs: {},
         updated: {},
       };
+      // 先に書類を保存して、登録する財産にその書類を結びつける
+      let src: Source = { name: (fileId && fileName) || f.name, fileId: fileId ?? (sampleName && docId ? `${SAMPLE_PREFIX}${docId}` : undefined) };
+      if (save && !sampleName) {
+        const guessed = res ? guessDocId(res.documentType) : null;
+        // マイナンバーの書類と分かったものは、どの欄に入れても保存しない
+        if (guessed && NO_UPLOAD.has(guessed)) setRefused(true);
+        else {
+          const [rec] = await store.add(docId ?? guessed ?? "otherDoc", [f]);
+          if (rec) src = { name: rec.name, fileId: rec.id };
+        }
+      }
       if (res && res.assets.length) {
-        const r = autoRegister(res, f.name);
+        const r = autoRegister(res, src);
         run.refs = r.refs;
         run.updated = r.updated;
         registered = true;
         setUndo({ before, after: r.after });
       }
       setRuns((rs) => [...rs, run]);
-      if (save && !sampleName) {
-        const guessed = res ? guessDocId(res.documentType) : null;
-        // マイナンバーの書類と分かったものは、どの欄に入れても保存しない
-        if (guessed && NO_UPLOAD.has(guessed)) setRefused(true);
-        else await store.add(docId ?? guessed ?? "otherDoc", [f]);
-      }
     }
     setProgress(null);
     if (!registered) return;
