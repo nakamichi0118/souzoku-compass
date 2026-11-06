@@ -15,6 +15,7 @@ import type { Interview } from "@/domain/procedures/interview";
 import { RECEIVABLE_TYPES, type Receivable } from "@/domain/review/receivables";
 import { ReceivableFields, VerdictLine } from "./ReceivableFields";
 import { otherRecipients, receiptOver } from "@/domain/receipt";
+import { SourceDocs } from "@/components/docs/SourceDocs";
 
 const KINDS: { kind: AssetKind; label: string }[] = [
   { kind: "deposit", label: "預貯金" },
@@ -283,11 +284,12 @@ export function AssetsStep() {
               </button>
               {open && (
                 <div className="space-y-3 border-t border-stone-100 px-4 py-4">
+                  <SourceDocs ids={a.sourceFiles} docFrom={a.docFrom} />
                   {docId && (
                     <Check
                       checked={!!a.docFrom}
                       onChange={(v) => update((c) => ({ ...c, assets: c.assets.map((x) => (x.id === a.id ? { ...x, docFrom: v ? x.docFrom || "手元にあり" : undefined } : x)) }))}
-                      label={a.docFrom && a.docFrom !== "手元にあり" ? `この財産の書類あり（${a.docFrom} から読み取り）` : "この財産の書類（残高証明書・評価証明書など）が手元にある"}
+                      label={a.docFrom && a.docFrom !== "手元にあり" ? "この財産の書類あり（上の資料から読み取り）" : "この財産の書類（残高証明書・評価証明書など）が手元にある"}
                     />
                   )}
                   {a.pending && a.pending.length > 0 && (

@@ -5,6 +5,7 @@ import { AddressField } from "@/components/ui/AddressField";
 import type { Case, Debt } from "@/domain/types";
 import { newId, useCase } from "@/lib/store";
 import { addedAnchor, useShowAdded } from "./useShowAdded";
+import { SourceDocs } from "@/components/docs/SourceDocs";
 
 /** 申告書（第13表）の「種類」。値は申告書の表記、表示は分かりやすい説明つき */
 const DEBT_TYPES: { value: NonNullable<Debt["debtType"]>; label: string }[] = [
@@ -66,6 +67,9 @@ export function DebtsStep() {
                 </Button>
               }
             >
+              <div className="mb-3 empty:hidden">
+                <SourceDocs ids={d.sourceFiles} docFrom={d.docFrom} />
+              </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="内容">
                   <TextInput value={d.label} onChange={(e) => patch(d.id, { label: e.target.value })} />

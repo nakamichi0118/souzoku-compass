@@ -22,6 +22,7 @@ export const CASE_LIMITS = {
   pending: 30,
   progress: 50,
   smallLandOthers: 10,
+  sourceFiles: 30,
 } as const;
 
 /** 送られたデータ全体の大きさ（バイト）の上限。保存できるデータは90万文字までで、日本語は1文字3バイトのため、その3倍 */
@@ -61,8 +62,11 @@ const smallLandRelief = z.looseObject({
   ).optional(),
 });
 
+const sourceFiles = many(z.string().max(120), CASE_LIMITS.sourceFiles, "元の資料").optional();
+
 const asset = z.looseObject({
   id,
+  sourceFiles,
   kind: z.string().max(40),
   pending: many(z.string().max(500), CASE_LIMITS.pending, "確認待ちの項目").optional(),
   method: landMethod.optional(),
@@ -72,6 +76,7 @@ const asset = z.looseObject({
 
 const debt = z.looseObject({
   id,
+  sourceFiles,
   bearers: many(z.looseObject({}), CASE_LIMITS.bearers, "1つの債務を負担する人").optional(),
 });
 

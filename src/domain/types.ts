@@ -136,6 +136,8 @@ export interface AssetBase {
   pending?: string[];
   /** この財産の書類（残高証明書など）：読み取った書類のファイル名か「手元にあり」。資料集めの印は書類の種類ごとなので、口座・土地ごとにはこちらで見る */
   docFrom?: string;
+  /** この財産を登録・更新した元の資料（保存した書類ファイルの id。見本の書類は sample:書類の種類）。財産の画面から開いて見比べられるようにする */
+  sourceFiles?: string[];
 }
 
 export type LandMethod =
@@ -391,6 +393,10 @@ export interface Debt {
   debtType?: "公租公課" | "銀行借入金" | "未払金" | "その他";
   /** 負担者ごとの金額 */
   bearers: { personId: string; amount: number }[];
+  /** 登録・更新した元の資料（AssetBase.sourceFiles と同じ） */
+  sourceFiles?: string[];
+  /** 元の資料のファイル名（ファイルの id が変わったとき・保存しなかったときの手がかり） */
+  docFrom?: string;
 }
 
 /** 遺産分割：財産ごとに誰がどれだけ取得するか（割合） */

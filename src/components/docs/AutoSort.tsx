@@ -118,7 +118,7 @@ export function AutoSort() {
               </div>
               {read && (
                 <div className="mt-2">
-                  <Reader docId={rec.docId} file={file} save={false} ask={false} onRegistered={() => plan.setStatus(`doc:${rec.docId}`, "done")} />
+                  <Reader docId={rec.docId} file={file} fileId={rec.id} save={false} ask={false} onRegistered={() => plan.setStatus(`doc:${rec.docId}`, "done")} />
                 </div>
               )}
             </li>
