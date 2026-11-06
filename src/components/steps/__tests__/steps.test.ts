@@ -14,7 +14,7 @@ vi.mock("@/lib/store", () => ({
 vi.mock("../SubmissionBundle", () => ({ SubmissionBundle: () => null }));
 vi.mock("@/lib/planStore", () => ({ usePlan: () => ({ setStatus: () => {}, statusOf: () => undefined, done: [], iv: {} }) }));
 
-const { DivisionStep, legalShareDivision, CompensationBasis } = await import("../DivisionStep");
+const { DivisionStep, legalShareDivision, CompensationBasis, uniformDivision, readUniformShares } = await import("../DivisionStep");
 const { DebtsStep, newDebt, withDebtAmount } = await import("../DebtsStep");
 const { DebtBearers, evenBearers, bearMode } = await import("../DebtBearers");
 const { HeirsStep, priorCreditKinds, removePerson } = await import("../HeirsStep");
@@ -65,13 +65,38 @@ describe("遺産の分け方：財産ごとの選び方", () => {
   });
 });
 
+describe("遺産の分け方：すべて1人・すべて同じ割合でまとめて決める", () => {
+  it("分ける財産すべてに同じ割合を入れ、未分割のチェックを外す（保険金・退職金は入れない）", () => {
+    const c = { ...clone(), undivided: true };
+    const next = uniformDivision(c, [{ personId: "hanako", numerator: 1, denominator: 1 }]);
+    expect(next.undivided).toBeUndefined();
+    expect(next.allocations.length).toBe(c.assets.filter((a) => a.kind !== "insurance" && a.kind !== "retirement").length);
+    expect(next.allocations.every((a) => a.shares.length === 1 && a.shares[0].personId === "hanako")).toBe(true);
+  });
+  it("割合は合計がちょうど1のときだけ使う", () => {
+    const people = [{ id: "a" }, { id: "b" }, { id: "c" }];
+    expect(readUniformShares({ a: "1/2", b: "1/3", c: "1/6" }, people)).toEqual([
+      { personId: "a", numerator: 1, denominator: 2 },
+      { personId: "b", numerator: 1, denominator: 3 },
+      { personId: "c", numerator: 1, denominator: 6 },
+    ]);
+    expect(readUniformShares({ a: "１／２", b: "1/2" }, people)).toHaveLength(2);
+    expect(readUniformShares({ a: "1/2", b: "1/3" }, people)).toContain("合計が1");
+    expect(readUniformShares({ a: "あ" }, people)).toContain("読めない");
+    expect(readUniformShares({}, people)).toContain("入れてください");
+  });
+});
+
 describe("遺産の分け方：「すべて法定相続分どおりに分けると決めた」（ui-7）", () => {
   it("分け方が決まっていないにチェックがあるときはボタンを出さない", () => {
-    expect(render(DivisionStep, clone())).toContain("すべて法定相続分どおりに分けると決めた");
+    const shown = render(DivisionStep, clone());
+    expect(shown).toContain("まとめて決める");
+    expect(shown).toContain("すべて1人が取得");
+    expect(shown).toContain("すべて同じ割合で取得");
     const c = clone();
     c.undivided = true;
     const html = render(DivisionStep, c);
-    expect(html).not.toContain("すべて法定相続分どおりに分けると決めた");
+    expect(html).not.toContain("まとめて決める");
     expect(html).not.toContain("すべて法定相続分どおりにする");
   });
 
