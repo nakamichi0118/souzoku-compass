@@ -33,6 +33,138 @@ export function legalShareDivision(c: Case): Case {
   return { ...c, undivided: undefined, allocations: divisibleAssets(c).map((a) => ({ assetId: a.id, shares })) };
 }
 
+/**
+ * 「すべて同じ分け方に決めた」：分ける財産すべてに同じ割合を入れる（すべて1人が取得・すべて一定の割合で取得）。
+ * 決まった分け方になるので、「分け方がまだ決まっていない」のチェックは外す
+ */
+export function uniformDivision(c: Case, shares: Allocation["shares"]): Case {
+  return { ...c, undivided: undefined, allocations: divisibleAssets(c).map((a) => ({ assetId: a.id, shares: shares.map((x) => ({ ...x })) })) };
+}
+
+/** 割合の入力（人 id → 「1/2」などの文字）を読み、合計がちょうど1なら割合の並びを返す。読めない・合計が1でなければ理由 */
+export function readUniformShares(text: Record<string, string>, people: { id: string }[]): Allocation["shares"] | string {
+  const shares: Allocation["shares"] = [];
+  for (const p of people) {
+    const t = (text[p.id] ?? "").trim();
+    if (!t) continue;
+    const v = parseShare(t);
+    if (!v) return "読めない割合があります（「1/2」のように入れてください）。";
+    if (v.n > 0) shares.push({ personId: p.id, numerator: v.n, denominator: v.d });
+  }
+  if (shares.length === 0) return "割合を入れてください。";
+  // 合計がちょうど1か（分数のまま比べる）
+  let n = 0n;
+  let d = 1n;
+  for (const x of shares) {
+    n = n * BigInt(x.denominator) + BigInt(x.numerator) * d;
+    d = d * BigInt(x.denominator);
+  }
+  return n === d ? shares : "割合の合計が1になっていません。";
+}
+
+type BulkMode = "legal" | "one" | "ratio";
+
+/** 分け方をまとめて決める：法定相続分どおり・すべて1人が取得・すべて一定の割合で取得 */
+function BulkDivision({ heirs }: { heirs: Person[] }) {
+  const { update } = useCase();
+  const [mode, setMode] = useState<BulkMode | null>(null);
+  const [ratio, setRatio] = useState<Record<string, string>>({});
+  const [msg, setMsg] = useState<string | null>(null);
+  const pick = (m: BulkMode) => {
+    setMsg(null);
+    setMode(m);
+  };
+  const tab = (m: BulkMode) =>
+    `rounded-lg border px-3 py-2 text-sm ${mode === m ? "border-brand bg-brand-soft font-bold text-stone-900" : "border-stone-300 bg-white text-stone-700 hover:bg-stone-50"}`;
+  const read = readUniformShares(ratio, heirs);
+  return (
+    <div className="rounded-xl border border-stone-200 bg-white p-4 shadow-sm">
+      <p className="text-sm font-bold text-stone-800">まとめて決める</p>
+      <div className="mt-2 grid gap-2 sm:grid-cols-3" role="group" aria-label="まとめて決める">
+        <button type="button" className={tab("legal")} aria-pressed={mode === "legal"} onClick={() => pick("legal")}>
+          法定相続分どおり
+        </button>
+        <button type="button" className={tab("one")} aria-pressed={mode === "one"} onClick={() => pick("one")}>
+          すべて1人が取得
+        </button>
+        <button type="button" className={tab("ratio")} aria-pressed={mode === "ratio"} onClick={() => pick("ratio")}>
+          すべて同じ割合で取得
+        </button>
+      </div>
+      {mode === "legal" && (
+        <div className="mt-3">
+          <Button
+            variant="secondary"
+            onClick={() => {
+              update(legalShareDivision);
+              setMsg("すべての財産を法定相続分で分けました。");
+            }}
+          >
+            すべて法定相続分どおりに分けると決めた
+          </Button>
+        </div>
+      )}
+      {mode === "one" && (
+        <div className="mt-3 space-y-2">
+          <p className="text-xs text-stone-500">すべての財産を受け取る人を押してください。</p>
+          <div className="flex flex-wrap gap-2">
+            {heirs.map((h) => (
+              <button
+                key={h.id}
+                type="button"
+                onClick={() => {
+                  update((c) => uniformDivision(c, [{ personId: h.id, numerator: 1, denominator: 1 }]));
+                  setMsg(`すべての財産を${h.name || "この人"}さんが受け取ることにしました。`);
+                }}
+                className="rounded-full border border-stone-300 px-4 py-1.5 text-sm hover:border-teal-500"
+              >
+                {h.name || "（名前未入力）"}
+                <span className="ml-1 text-xs text-stone-500">{h.relationLabel}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {mode === "ratio" && (
+        <div className="mt-3 space-y-2">
+          <p className="text-xs text-stone-500">割合を「1/2」のように入れます（合計1）。すべての財産をこの割合で分けます。</p>
+          <ul className="space-y-1.5">
+            {heirs.map((h) => (
+              <li key={h.id} className="flex items-center justify-between gap-3">
+                <span className="text-sm">
+                  {h.name || "（名前未入力）"} <span className="text-xs text-stone-500">{h.relationLabel}</span>
+                </span>
+                <input
+                  value={ratio[h.id] ?? ""}
+                  onChange={(e) => setRatio((r) => ({ ...r, [h.id]: e.target.value }))}
+                  placeholder="—"
+                  aria-label={`${h.name || "この人"}の割合`}
+                  className="w-20 rounded border border-stone-300 px-2 py-1 text-center text-base tabular-nums sm:text-sm"
+                />
+              </li>
+            ))}
+          </ul>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              variant="secondary"
+              disabled={typeof read === "string"}
+              onClick={() => {
+                if (typeof read === "string") return;
+                update((c) => uniformDivision(c, read));
+                setMsg("すべての財産をこの割合で分けました。");
+              }}
+            >
+              この割合で決めた
+            </Button>
+            {typeof read === "string" && Object.values(ratio).some((t) => t.trim()) && <span className="text-xs text-red-700">{read}</span>}
+          </div>
+        </div>
+      )}
+      {msg && <p className="mt-2 text-sm font-semibold text-teal-800">{msg}下の財産ごとの欄で、一部だけ直すこともできます。</p>}
+    </div>
+  );
+}
+
 const shareText = (s?: { numerator: number; denominator: number }) => (!s ? "" : s.denominator === 1 ? `${s.numerator}` : `${s.numerator}/${s.denominator}`);
 
 function ShareCell({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
@@ -86,15 +218,9 @@ function DivisionEditor() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-stone-600">財産ごとに、受け取る人を選びます。</p>
-        {/* 決まった分け方として計算される（配偶者の税額軽減・小規模宅地等の特例も使う）ので、「まだ決まっていない」のときは出さない */}
-        {!data.undivided && (
-          <Button variant="secondary" onClick={() => update(legalShareDivision)}>
-            すべて法定相続分どおりに分けると決めた
-          </Button>
-        )}
-      </div>
+      <p className="text-sm text-stone-600">財産ごとに、受け取る人を選びます。全部同じ分け方なら、まとめて決められます。</p>
+      {/* 決まった分け方として計算される（配偶者の税額軽減・小規模宅地等の特例も使う）ので、「まだ決まっていない」のときは出さない */}
+      {!data.undivided && heirs.length > 0 && <BulkDivision heirs={heirs} />}
       <div>
         <Check checked={!!data.undivided} onChange={(v) => update((c) => ({ ...c, undivided: v || undefined }))} label="分け方がまだ決まっていない" />
         {data.undivided && <p className="mt-1 pl-6 text-xs text-stone-500">決まっていない財産は法定相続分で計算します。</p>}
