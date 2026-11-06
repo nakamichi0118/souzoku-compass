@@ -68,7 +68,7 @@ export function DebtsStep() {
               }
             >
               <div className="mb-3 empty:hidden">
-                <SourceDocs ids={d.sourceFiles} docFrom={d.docFrom} />
+                <SourceDocs list={d.sourceFiles} docFrom={d.docFrom} />
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="内容">

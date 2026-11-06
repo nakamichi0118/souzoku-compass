@@ -7,6 +7,7 @@ import { ExternalLink, FileText } from "lucide-react";
 import { SAMPLE } from "@/components/extract/Reader";
 import { useDocFiles } from "@/lib/docFiles";
 import { resolveSources } from "@/lib/sourceDocs";
+import type { SourceFile } from "@/domain/types";
 
 const linkCls = "flex min-w-0 items-center gap-2 rounded-lg border border-stone-300 bg-white py-1.5 pl-1.5 pr-3 text-sm text-sky-900 hover:bg-sky-50";
 
@@ -23,15 +24,15 @@ function Thumb({ src, type, name }: { src: string; type: string; name: string })
   );
 }
 
-export function SourceDocs({ ids, docFrom }: { ids?: string[]; docFrom?: string }) {
+export function SourceDocs({ list, docFrom }: { list?: SourceFile[]; docFrom?: string }) {
   // 書類から登録していない財産では、書類の一覧を読みにいかない
-  if (!ids?.length && (!docFrom || docFrom === "手元にあり")) return null;
-  return <Shown ids={ids} docFrom={docFrom} />;
+  if (!list?.length && (!docFrom || docFrom === "手元にあり")) return null;
+  return <Shown list={list} docFrom={docFrom} />;
 }
 
-function Shown({ ids, docFrom }: { ids?: string[]; docFrom?: string }) {
+function Shown({ list, docFrom }: { list?: SourceFile[]; docFrom?: string }) {
   const { files } = useDocFiles();
-  const shown = resolveSources(ids, docFrom, files);
+  const shown = resolveSources(list, docFrom, files);
   if (!shown.length) return null;
   return (
     <div>

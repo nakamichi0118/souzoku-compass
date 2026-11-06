@@ -62,7 +62,7 @@ const smallLandRelief = z.looseObject({
   ).optional(),
 });
 
-const sourceFiles = many(z.string().max(120), CASE_LIMITS.sourceFiles, "元の資料").optional();
+const sourceFiles = many(z.looseObject({ id: z.string().max(120), name: z.string().max(200) }), CASE_LIMITS.sourceFiles, "元の資料").optional();
 
 const asset = z.looseObject({
   id,

@@ -140,6 +140,7 @@ export function Reader({
   read: doRead = true,
   ask = true,
   fileId,
+  fileName,
 }: {
   docId?: string;
   onRegistered?: (all: boolean) => void;
@@ -149,6 +150,8 @@ export function Reader({
   ask?: boolean;
   /** file がすでに保存済みの書類なら、その id（登録した財産に結びつける） */
   fileId?: string;
+  /** その保存済みの書類のファイル名（画像は保存するときに .jpg になるため、元のファイル名とは違うことがある） */
+  fileName?: string;
 }) {
   const { data: c, update } = useCase();
   const ex = useExtract(() => ({
@@ -242,7 +245,7 @@ export function Reader({
         updated: {},
       };
       // 先に書類を保存して、登録する財産にその書類を結びつける
-      let src: Source = { name: f.name, fileId: fileId ?? (sampleName && docId ? `${SAMPLE_PREFIX}${docId}` : undefined) };
+      let src: Source = { name: (fileId && fileName) || f.name, fileId: fileId ?? (sampleName && docId ? `${SAMPLE_PREFIX}${docId}` : undefined) };
       if (save && !sampleName) {
         const guessed = res ? guessDocId(res.documentType) : null;
         // マイナンバーの書類と分かったものは、どの欄に入れても保存しない

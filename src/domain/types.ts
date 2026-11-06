@@ -125,6 +125,14 @@ export type AssetKind =
   | "household" // 家庭用財産
   | "other"; // その他の財産
 
+/** 財産・債務を登録した元の資料 */
+export interface SourceFile {
+  /** 保存した書類ファイルの id（見本の書類は sample:書類の種類） */
+  id: string;
+  /** 保存したときのファイル名（端末からサーバーへ移して id が変わったときは、名前で探す） */
+  name: string;
+}
+
 export interface AssetBase {
   id: string;
   kind: AssetKind;
@@ -136,8 +144,8 @@ export interface AssetBase {
   pending?: string[];
   /** この財産の書類（残高証明書など）：読み取った書類のファイル名か「手元にあり」。資料集めの印は書類の種類ごとなので、口座・土地ごとにはこちらで見る */
   docFrom?: string;
-  /** この財産を登録・更新した元の資料（保存した書類ファイルの id。見本の書類は sample:書類の種類）。財産の画面から開いて見比べられるようにする */
-  sourceFiles?: string[];
+  /** この財産を登録・更新した元の資料。財産の画面から開いて見比べられるようにする */
+  sourceFiles?: SourceFile[];
 }
 
 export type LandMethod =
@@ -394,7 +402,7 @@ export interface Debt {
   /** 負担者ごとの金額 */
   bearers: { personId: string; amount: number }[];
   /** 登録・更新した元の資料（AssetBase.sourceFiles と同じ） */
-  sourceFiles?: string[];
+  sourceFiles?: SourceFile[];
   /** 元の資料のファイル名（ファイルの id が変わったとき・保存しなかったときの手がかり） */
   docFrom?: string;
 }

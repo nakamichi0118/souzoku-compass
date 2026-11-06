@@ -284,7 +284,7 @@ export function AssetsStep() {
               </button>
               {open && (
                 <div className="space-y-3 border-t border-stone-100 px-4 py-4">
-                  <SourceDocs ids={a.sourceFiles} docFrom={a.docFrom} />
+                  <SourceDocs list={a.sourceFiles} docFrom={a.docFrom} />
                   {docId && (
                     <Check
                       checked={!!a.docFrom}
