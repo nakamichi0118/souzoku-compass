@@ -2,6 +2,7 @@ import type { TaxResult } from "@/domain/tax/engine";
 import type { Asset, Case } from "@/domain/types";
 import { SMALL_LAND_RULE, judgeSmallResidential, smallLandKind } from "@/domain/valuation/smallResidential";
 import { smallLandDivisionGap } from "./smallLand";
+import { usedArea } from "@/domain/area";
 
 /**
  * 税額の画面の「財産の合計の内訳」。課税価格の合計（第1表の⑥の合計）が、財産の評価額から
@@ -100,7 +101,7 @@ export function taxBreakdown(c: Case, r: TaxResult): TaxBreakdown {
     if (!(l.reduction > 0) || !l.small) return [];
     const rule = SMALL_LAND_RULE[l.small.kind];
     const area = [l.small, ...(l.smallExtra ?? [])].reduce((s, d) => s + d.selectedArea, 0);
-    return [{ assetId: l.asset.id, label: labelOf(l.asset), name: rule.name, rate: l.small.rate, area: Math.round(area * 100) / 100, reduction: l.reduction }];
+    return [{ assetId: l.asset.id, label: labelOf(l.asset), name: rule.name, rate: l.small.rate, area: usedArea(area), reduction: l.reduction }];
   });
 
   const smallUnused: SmallLandUnused[] = [];

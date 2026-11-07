@@ -1699,7 +1699,8 @@ function computeBase(c: Case, valueOf: (a: Asset) => Valuation) {
         line,
         part,
         landPart,
-        area,
+        // 付表1の③に書く面積も、計算と同じ0.01㎡未満切り捨ての値にする
+        area: lot100 / 100,
         area100: lot100,
         cap100,
         acquirerId: u.acquirerId,
