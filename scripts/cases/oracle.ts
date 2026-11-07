@@ -1088,9 +1088,22 @@ export function expected(s: Scenario): Expected {
       const heirsRecv = [...accs.values()].filter((a) => heirIds.has(a.id) && a[kind] > 0);
       const tot = heirsRecv.reduce((x, a) => x + a[kind], 0);
       if (tot === 0) continue;
-      for (const a of heirsRecv) {
-        // 非課税金額 = 限度額 × その相続人の受取額 / 相続人全員の受取額（円未満切捨て）
-        const ex = tot <= limit ? a[kind] : yenFloor(limit, Qn(a[kind], tot));
+      // 非課税金額 = 限度額 × その相続人の受取額 / 相続人全員の受取額。
+      // 円未満を切り捨てて合計が限度額に足りない分は、端数の大きい人（同じならIDの順）から1円ずつ足し、合計をちょうど限度額にする
+      const exact = heirsRecv.map((a) => {
+        const num = BigInt(limit) * BigInt(a[kind]);
+        const fl = num / BigInt(tot);
+        return { a, ex: tot <= limit ? a[kind] : Number(fl), rem: num - fl * BigInt(tot) };
+      });
+      if (tot > limit) {
+        let short = limit - exact.reduce((x, e) => x + e.ex, 0);
+        for (const e of [...exact].sort((x, y) => (y.rem > x.rem ? 1 : y.rem < x.rem ? -1 : x.a.id < y.a.id ? -1 : x.a.id > y.a.id ? 1 : 0))) {
+          if (short <= 0) break;
+          e.ex += 1;
+          short -= 1;
+        }
+      }
+      for (const { a, ex } of exact) {
         if (kind === "insurance") a.insuranceExempt = ex;
         else a.retirementExempt = ex;
       }

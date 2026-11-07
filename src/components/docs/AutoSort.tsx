@@ -7,13 +7,16 @@
 import { CompassAvatar } from "@/components/compass/CompassKun";
 import { useState } from "react";
 import { Reader } from "@/components/extract/Reader";
-import { EXTRA_DOCS, docName } from "@/domain/filing/submission";
+import { EXTRA_DOCS, NO_UPLOAD, NO_UPLOAD_NOTE, docName } from "@/domain/filing/submission";
 import { DOCS } from "@/domain/procedures/documents";
-import { useDocFiles, type DocFile } from "@/lib/docFiles";
+import { splitDuplicates, useDocFiles, type DocFile, type Duplicate } from "@/lib/docFiles";
 import { usePlan } from "@/lib/planStore";
-import { AddButtons } from "./DocFiles";
+import { AddButtons, DupNote } from "./DocFiles";
 
-const CHOICES = [...Object.keys(DOCS), ...Object.keys(EXTRA_DOCS)];
+/** 仕分けの答えになりうる種類（マイナンバーも見分けるが、それは保存しない） */
+const KINDS = [...Object.keys(DOCS), ...Object.keys(EXTRA_DOCS)];
+/** 種類を直すときの選択肢（預からない書類は出さない） */
+const CHOICES = KINDS.filter((id) => !NO_UPLOAD.has(id));
 
 async function classify(f: File): Promise<string> {
   try {
@@ -21,7 +24,7 @@ async function classify(f: File): Promise<string> {
     fd.append("file", f);
     const r = await fetch("/api/classify", { method: "POST", body: fd });
     const j = await r.json().catch(() => ({}));
-    return r.ok && typeof j.docId === "string" && CHOICES.includes(j.docId) ? j.docId : "otherDoc";
+    return r.ok && typeof j.docId === "string" && KINDS.includes(j.docId) ? j.docId : "otherDoc";
   } catch {
     return "otherDoc";
   }
@@ -36,10 +39,25 @@ export function AutoSort() {
   const markDone = (docId: string) => {
     if (DOCS[docId] && !DOCS[docId].readable) plan.setStatus(`doc:${docId}`, "done");
   };
-  const add = async (list: File[]) => {
+  const [dups, setDups] = useState<Duplicate[]>([]);
+  // マイナンバーと分かって保存しなかった枚数
+  const [refused, setRefused] = useState(0);
+  const add = async (picked: File[], force = false) => {
+    // 保存済みと同じ書類は仕分けず、どこに入っているかを知らせる
+    let list = picked;
+    if (!force) {
+      const split = await splitDuplicates(picked, store.files);
+      setDups(split.dups);
+      list = split.fresh;
+    } else setDups([]);
     setBusy((n) => n + list.length);
     for (const f of list) {
       const docId = await classify(f);
+      if (NO_UPLOAD.has(docId)) {
+        setRefused((n) => n + 1);
+        setBusy((n) => n - 1);
+        continue;
+      }
       const [rec] = await store.add(docId, [f]);
       if (rec) {
         markDone(docId);
@@ -54,10 +72,17 @@ export function AutoSort() {
       <div className="flex flex-wrap items-center gap-2">
         <AddButtons onFiles={(l) => void add(l)} label="撮影して仕分ける" />
       </div>
+      <DupNote dups={dups} onClose={() => setDups([])} onForce={() => void add(dups.map((d) => d.file), true)} />
       {busy > 0 && (
         <p className="flex items-center gap-2 text-sm text-teal-900">
           <CompassAvatar size={32} thinking />
           コンパスくんが仕分けています（残り{busy}枚）
+        </p>
+      )}
+      {refused > 0 && (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          {refused > 1 ? `${refused}枚：` : ""}
+          {NO_UPLOAD_NOTE}申告書にはご自身で写しを重ねてください。
         </p>
       )}
       {store.err && <p className="text-sm text-rose-700">{store.err}</p>}
@@ -93,7 +118,7 @@ export function AutoSort() {
               </div>
               {read && (
                 <div className="mt-2">
-                  <Reader docId={rec.docId} file={file} save={false} ask={false} onRegistered={() => plan.setStatus(`doc:${rec.docId}`, "done")} />
+                  <Reader docId={rec.docId} file={file} fileId={rec.id} fileName={rec.name} save={false} ask={false} onRegistered={() => plan.setStatus(`doc:${rec.docId}`, "done")} />
                 </div>
               )}
             </li>

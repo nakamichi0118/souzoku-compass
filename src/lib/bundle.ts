@@ -115,6 +115,19 @@ export async function buildBundle(x: BundleInput): Promise<Blob> {
         "image/png",
       );
       n = 0;
+    } else if (item.selfOnly) {
+      // マイナンバーの写しは預からないので、差し込む場所だけ示す
+      await addImagePage(
+        body,
+        await textPage([
+          { text: item.label, size: 44, bold: true, gap: 30 },
+          { text: "ここに、ご自身で用意した写しを重ねてください。", size: 34, bold: true, color: "#b45309", gap: 16 },
+          { text: "相続人それぞれのマイナンバーカードの表と裏の写し", size: 28 },
+          { text: "（カードがなければ、通知カードと運転免許証などの写し）", size: 28 },
+        ]),
+        "image/png",
+      );
+      n = 0;
     } else {
       for (const f of filesFor(item, x.files)) n += await addFile(body, f);
     }
@@ -128,8 +141,8 @@ export async function buildBundle(x: BundleInput): Promise<Blob> {
   ];
   x.items.forEach((item, i) => {
     const n = counts[item.id];
-    const state = item.generated === "forms" ? (x.forms ? `${n}枚` : "別に印刷してください") : item.original ? "原本を同封" : n > 0 ? `${n}枚` : item.optional ? "なし" : "まだありません";
-    lines.push({ text: `□ ${i + 1}. ${item.label}　…　${state}`, size: 30, bold: true, color: !item.optional && !item.original && n === 0 ? "#be123c" : "#1c1917" });
+    const state = item.generated === "forms" ? (x.forms ? `${n}枚` : "別に印刷してください") : item.original ? "原本を同封" : item.selfOnly ? "ご自身で同封" : n > 0 ? `${n}枚` : item.optional ? "なし" : "まだありません";
+    lines.push({ text: `□ ${i + 1}. ${item.label}　…　${state}`, size: 30, bold: true, color: !item.optional && !item.original && !item.selfOnly && n === 0 ? "#be123c" : "#1c1917" });
     if (item.note) lines.push({ text: `　　${item.note}`, size: 24, color: "#57534e", gap: 8 });
   });
   lines.push({ text: "", gap: 16 });

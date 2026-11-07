@@ -60,9 +60,31 @@ describe("相続コンパスからのお知らせ（SYSTEM_NOTICES）", () => {
   const byId = (id: string) => SYSTEM_NOTICES.find((n) => n.id === id) ?? ({ id: "", date: "", title: "", body: "" } as (typeof SYSTEM_NOTICES)[number]);
 
   it("右下のコンパスくんのチャットのお知らせ", () => {
-    const chat = byId("2026-11-06-chat");
+    const chat = byId("2026-11-07-chat");
     expect(chat.title).toBe("コンパスくんに右下から聞けます");
     expect(chat.body).toContain("このチャットで解決できましたか？");
+  });
+
+  it("財産ごとに元の資料を開けること", () => {
+    expect(byId("2026-11-06-source-docs")).toMatchObject({ id: "2026-11-06-source-docs", date: "2026-11-06" });
+  });
+
+  it("マイナンバーの書類を預からないこと", () => {
+    const no = SYSTEM_NOTICES.find((n) => n.id === "2026-11-06-no-mynumber")!;
+    expect(no).toMatchObject({ id: "2026-11-06-no-mynumber", date: "2026-11-06" });
+    expect(no.body).toContain("ご自身で写しを用意");
+  });
+
+  it("保険金を何人かで受け取れること", () => {
+    const latest = byId("2026-11-06-recipients");
+    expect(latest).toMatchObject({ id: "2026-11-06-recipients", date: "2026-11-06" });
+    expect(latest.body).toContain("受取人を追加");
+  });
+
+  it("書類をまとめてアップロード・続けて撮影できること", () => {
+    const upload = byId("2026-11-06-upload");
+    expect(upload).toMatchObject({ id: "2026-11-06-upload", date: "2026-11-06" });
+    expect(upload.body).toContain("追加でアップロード");
   });
 
   it("口座・保険が複数あっても続けて読めること", () => {
@@ -70,6 +92,12 @@ describe("相続コンパスからのお知らせ（SYSTEM_NOTICES）", () => {
     expect(more).toMatchObject({ id: "2026-11-06-more-docs" });
     expect(more.body).toContain("ほかにもある");
     expect(more.body).toContain("これで全部");
+  });
+
+  it("使い方ガイドで開く場所を示すことと、聞き取りの完了案内", () => {
+    const guide = byId("2026-11-06-guide-nav");
+    expect(guide.date).toBe("2026-11-06");
+    expect(guide.body).toContain("上のメニュー");
   });
 
   it("税額の画面の財産の合計の内訳（小規模宅地等の特例・保険金の非課税）", () => {

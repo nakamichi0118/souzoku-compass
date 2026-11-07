@@ -6,7 +6,8 @@
  */
 import { Camera, FileText, Upload, X } from "lucide-react";
 import { useState } from "react";
-import { useDocFiles, type DocFile } from "@/lib/docFiles";
+import { docName } from "@/domain/filing/submission";
+import { splitDuplicates, useDocFiles, type DocFile, type Duplicate } from "@/lib/docFiles";
 import { DocCamera } from "./DocCamera";
 
 /** 撮影する・ファイルを選ぶ の2つのボタン */
@@ -76,11 +77,47 @@ export function FileThumbs({ files, onRemove }: { files: DocFile[]; onRemove?: (
   );
 }
 
+/**
+ * 同じ書類を2回入れたときの案内。保存済みの書類は追加せず、どこに入っているかを示す。
+ * 別の書類だったときのために「別の書類なので追加する」を出す
+ */
+export function DupNote({ dups, onForce, onClose }: { dups: Duplicate[]; onForce: () => void; onClose: () => void }) {
+  if (!dups.length) return null;
+  const where = (d: Duplicate) => (d.same.docId ? `「${docName(d.same.docId)}」${d.same.name && d.same.name !== d.name ? `（${d.same.name}）` : ""}` : "今回選んだ書類の中");
+  return (
+    <div role="status" className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+      {dups.length === 1 ? (
+        <p>「{dups[0].name}」は{where(dups[0])}にアップロード済みなので、追加しませんでした。</p>
+      ) : (
+        <>
+          <p>次の{dups.length}つはアップロード済みなので、追加しませんでした。</p>
+          <ul className="mt-1 list-disc pl-5">
+            {dups.map((d, i) => (
+              <li key={i}>
+                「{d.name}」→ {where(d)}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      <div className="mt-2 flex flex-wrap gap-2">
+        <button type="button" onClick={onForce} className="rounded-lg border border-amber-400 bg-white px-3 py-1.5 text-amber-900 hover:bg-amber-100">
+          別の書類なので追加する
+        </button>
+        <button type="button" onClick={onClose} className="rounded-lg px-3 py-1.5 text-amber-900 underline">
+          閉じる
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** 1つの書類の種類の、保存した書類と追加のボタン */
 export function DocFiles({ docId, onAdded, buttons = true }: { docId: string; onAdded?: (n: number) => void; buttons?: boolean }) {
   const store = useDocFiles();
   const mine = store.of(docId);
   const [busy, setBusy] = useState(false);
+  const [dups, setDups] = useState<Duplicate[]>([]);
   return (
     <div className="space-y-2">
       <FileThumbs files={mine} onRemove={(f) => void store.remove(f.id)} />
@@ -91,7 +128,9 @@ export function DocFiles({ docId, onAdded, buttons = true }: { docId: string; on
             label={mine.length ? "追加で撮影" : "撮影する"}
             onFiles={async (list) => {
               setBusy(true);
-              const added = await store.add(docId, list);
+              const split = await splitDuplicates(list, store.files);
+              setDups(split.dups);
+              const added = split.fresh.length ? await store.add(docId, split.fresh) : [];
               setBusy(false);
               if (added.length) onAdded?.(added.length);
             }}
@@ -99,6 +138,16 @@ export function DocFiles({ docId, onAdded, buttons = true }: { docId: string; on
           {mine.length > 0 && <span className="text-xs text-stone-500">{mine.length}枚 保存済み</span>}
         </div>
       )}
+      <DupNote
+        dups={dups}
+        onClose={() => setDups([])}
+        onForce={async () => {
+          const list = dups.map((d) => d.file);
+          setDups([]);
+          const added = await store.add(docId, list);
+          if (added.length) onAdded?.(added.length);
+        }}
+      />
       {store.err && <p className="text-sm text-rose-700">{store.err}</p>}
     </div>
   );

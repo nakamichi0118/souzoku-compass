@@ -125,6 +125,14 @@ export type AssetKind =
   | "household" // 家庭用財産
   | "other"; // その他の財産
 
+/** 財産・債務を登録した元の資料 */
+export interface SourceFile {
+  /** 保存した書類ファイルの id（見本の書類は sample:書類の種類） */
+  id: string;
+  /** 保存したときのファイル名（端末からサーバーへ移して id が変わったときは、名前で探す） */
+  name: string;
+}
+
 export interface AssetBase {
   id: string;
   kind: AssetKind;
@@ -136,6 +144,8 @@ export interface AssetBase {
   pending?: string[];
   /** この財産の書類（残高証明書など）：読み取った書類のファイル名か「手元にあり」。資料集めの印は書類の種類ごとなので、口座・土地ごとにはこちらで見る */
   docFrom?: string;
+  /** この財産を登録・更新した元の資料。財産の画面から開いて見比べられるようにする */
+  sourceFiles?: SourceFile[];
 }
 
 export type LandMethod =
@@ -361,8 +371,13 @@ export interface UnlistedStockAsset extends AssetBase {
 export interface DeemedAsset extends AssetBase {
   kind: "insurance" | "retirement";
   amount: number;
-  /** 受取人（遺産分割の対象外。受取人が取得する） */
+  /** 受取人（遺産分割の対象外。受取人が取得する）。何人かで受け取るときは代表の1人目で、受取金額から2人目以降の分を引いた残りを受け取る */
   recipientId: string;
+  /**
+   * 受取人が何人かいるとき（受取人が「法定相続人」となっている保険など）の2人目以降と、それぞれが受け取った金額。
+   * 非課税の枠（500万円×法定相続人の数）は、受け取った人ごとの金額で分ける
+   */
+  otherRecipients?: { personId: string; amount: number }[];
 }
 
 export type Asset =
@@ -386,6 +401,10 @@ export interface Debt {
   debtType?: "公租公課" | "銀行借入金" | "未払金" | "その他";
   /** 負担者ごとの金額 */
   bearers: { personId: string; amount: number }[];
+  /** 登録・更新した元の資料（AssetBase.sourceFiles と同じ） */
+  sourceFiles?: SourceFile[];
+  /** 元の資料のファイル名（ファイルの id が変わったとき・保存しなかったときの手がかり） */
+  docFrom?: string;
 }
 
 /** 遺産分割：財産ごとに誰がどれだけ取得するか（割合） */

@@ -10,6 +10,7 @@ import type { PageFill } from "./render";
 import { build06, build07, build08_8, build09, build10, build14, buildF1, smallLines } from "./attachments";
 import { buildSchedule11 } from "./schedule11";
 import { build13, build15, build5, filingPersons } from "./schedules";
+import { phoneParts } from "@/lib/phone";
 
 const RELATION_LABEL: Record<Person["relation"], string> = {
   spouse: "配偶者",
@@ -28,7 +29,7 @@ export const relationLabel = (p: Person) => p.relationLabel ?? RELATION_LABEL[p.
 function personHeader(prefix: string, p: Person, deathDate: string) {
   const w = wareki(p.birthDate);
   const [zip1, zip2] = (p.zip ?? "").split("-");
-  const phone = (p.phone ?? "").split("-");
+  const phone = phoneParts(p.phone);
   return {
     [`${prefix}.kana`]: p.kana,
     [`${prefix}.name`]: p.name,

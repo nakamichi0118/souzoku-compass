@@ -10,7 +10,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Bubble, CompassAvatar } from "@/components/compass/CompassKun";
 import { Reader } from "@/components/extract/Reader";
 import { AutoSort } from "@/components/docs/AutoSort";
-import { DocFiles } from "@/components/docs/DocFiles";
 import { OfficeLookup } from "@/components/plan/OfficeLookup";
 import { AppShell, PageHead } from "@/components/shell/AppShell";
 import { Panel } from "@/components/ui/Panel";
@@ -110,14 +109,7 @@ function DocCard({ item, address, open, onOpen, focus }: { item: DocItem; addres
               <Bubble>{doc.readable ? "そろいましたね！撮影すると金額を読み取ります。" : "そろいましたね！撮影しておくと、税務署に出す書類にまとめます。"}</Bubble>
             </div>
           )}
-          {doc.readable ? (
-            <>
-              <Reader docId={item.id} onRegistered={(all) => setStatus(key, all ? "done" : "open")} />
-              <DocFiles docId={item.id} buttons={false} />
-            </>
-          ) : (
-            <DocFiles docId={item.id} onAdded={() => setStatus(key, "done")} />
-          )}
+          <Reader docId={item.id} read={!!doc.readable} onRegistered={(all) => setStatus(key, all ? "done" : "open")} />
           <AssetDocList docId={item.id} />
           <p>{doc.purpose}</p>
           <dl className="grid gap-x-4 gap-y-1 sm:grid-cols-[7rem_1fr]">

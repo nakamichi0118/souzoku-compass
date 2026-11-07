@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "./cloud";
+import { NO_UPLOAD, NO_UPLOAD_NOTE } from "@/domain/filing/submission";
 
 export interface DocFile {
   id: string;
@@ -80,6 +81,41 @@ export async function normalizeImage(file: File | Blob, name = "photo.jpg"): Pro
   return new File([blob], `${base}.jpg`, { type: "image/jpeg" });
 }
 
+/** 同じ書類が2回入ったときに知らせるための、すでに保存した書類と同じもの */
+export interface Duplicate {
+  name: string;
+  file: File;
+  same: DocFile;
+}
+
+/**
+ * 選んだ書類を、まだ保存していないものと、保存済みの書類と同じもの（同じ書類を2回入れたもの）に分ける。
+ * 保存するときと同じ変換をしてから、種類と大きさ（バイト数）が同じなら同じ書類とみなす（名前は変えられるので見ない）。
+ * 1回で同じ書類を2つ選んだときも、2つ目を同じものとする（same.docId が空）
+ */
+export async function splitDuplicates(list: File[], saved: DocFile[]): Promise<{ fresh: File[]; dups: Duplicate[] }> {
+  const fresh: File[] = [];
+  const dups: Duplicate[] = [];
+  const seen: DocFile[] = [...saved];
+  for (const file of list) {
+    let n: File;
+    try {
+      n = await normalizeImage(file);
+    } catch {
+      fresh.push(file);
+      continue;
+    }
+    const hit = seen.find((x) => x.type === n.type && x.size === n.size);
+    if (hit) {
+      dups.push({ name: file.name, file, same: hit });
+      continue;
+    }
+    fresh.push(file);
+    seen.push({ id: "", docId: "", name: file.name, type: n.type, size: n.size, addedAt: "", src: "", load: async () => n });
+  }
+  return { fresh, dups };
+}
+
 const newId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 /** 保存先：サーバー（ログイン中）か、この端末 */
@@ -131,7 +167,10 @@ const urlOf = (r: LocalRec) => {
 };
 const local = (owner: string): Backend => ({
   async list() {
-    return (await localList(owner)).map((r) => {
+    const recs = await localList(owner);
+    // 以前に入ってしまったマイナンバーの書類は、この端末からも消す
+    for (const r of recs.filter((x) => NO_UPLOAD.has(x.docId))) await tx("readwrite", (s) => s.delete(r.id));
+    return recs.filter((r) => !NO_UPLOAD.has(r.docId)).map((r) => {
       const src = urlOf(r);
       return { id: r.id, docId: r.docId, name: r.name, type: r.type, size: r.size, addedAt: r.addedAt, src, load: async () => r.blob };
     });
@@ -203,6 +242,10 @@ export function useDocFiles() {
     async (docId: string, list: File[]) => {
       setErr(null);
       const out: DocFile[] = [];
+      if (NO_UPLOAD.has(docId)) {
+        setErr(NO_UPLOAD_NOTE);
+        return out;
+      }
       try {
         for (const f of list) out.push(await backend().add(docId, await normalizeImage(f)));
       } catch (e) {

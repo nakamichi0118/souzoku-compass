@@ -8,6 +8,7 @@ import type { AssetLine, PersonTax, SmallResidentialDetail, TaxResult } from "@/
 import type { Case, DeemedAsset, SmallLandKind } from "@/domain/types";
 import { wareki, yen } from "./format";
 import type { PageFill } from "./render";
+import { receiptShares } from "../domain/receipt";
 
 const chunk = <T,>(xs: T[], n: number): T[][] => {
   const out: T[][] = [];
@@ -29,17 +30,22 @@ function deemedPages(c: Case, r: TaxResult, kind: "insurance" | "retirement"): P
   // 2 課税される金額の計算：相続人（放棄した人を除く）が受け取った場合だけ記入する
   const heirs = r.persons.filter((p) => p.isCivilHeir && received(p) > 0);
   const limit = kind === "insurance" ? r.insuranceExemptLimit : r.retirementExemptLimit;
-  const rowPages = chunk(assets, 5);
+  // 第9表・第10表の1は、受取人ごとに1行（何人かで受け取った保険は、人ごとの金額で行を分ける）
+  const rows = assets.flatMap((a) => {
+    const shares = receiptShares(a);
+    return shares.length ? shares.map((s) => ({ a, personId: s.personId, amount: s.amount })) : [{ a, personId: a.recipientId, amount: a.amount }];
+  });
+  const rowPages = chunk(rows, 5);
   const heirPages = chunk(heirs, 5);
   const n = Math.max(rowPages.length, heirPages.length, 1);
   const pages: PageFill[] = [];
   for (let i = 0; i < n; i++) {
     const values: PageFill["values"] = { "d.name": c.decedent.name };
-    (rowPages[i] ?? []).forEach((a, j) => {
+    (rowPages[i] ?? []).forEach(({ a, personId, amount }, j) => {
       values[`r${j}.company`] = a.label;
       if (kind === "retirement") values[`r${j}.kind`] = "退職手当金";
-      values[`r${j}.amount`] = yen(a.amount);
-      values[`r${j}.recipient`] = name.get(a.recipientId) ?? "";
+      values[`r${j}.amount`] = yen(amount);
+      values[`r${j}.recipient`] = name.get(personId) ?? "";
     });
     if (i === 0 && heirs.length > 0) {
       values.count = r.legalHeirCount;

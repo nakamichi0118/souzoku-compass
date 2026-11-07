@@ -42,7 +42,7 @@ export function NavLinks({
     const on = n.match(path);
     const href = n.href === "/case/decedent" && caseHref ? caseHref : n.href;
     return (
-      <Link key={n.href} href={href} onClick={onPick} aria-current={on ? "page" : undefined} className={`${className} ${on ? "bg-sky-100 text-sky-900" : "text-stone-600 hover:bg-stone-100"}`}>
+      <Link key={n.href} href={href} onClick={onPick} data-tour-nav={n.label} aria-current={on ? "page" : undefined} className={`${className} ${on ? "bg-sky-100 text-sky-900" : "text-stone-600 hover:bg-stone-100"}`}>
         <n.Icon className={`h-4 w-4 shrink-0 ${on ? "text-brand" : "text-brand/80"}`} aria-hidden />
         {n.label}
         {n.count && left && left[n.count] > 0 && (
@@ -98,6 +98,7 @@ export function AppHeader() {
                 type="button"
                 onClick={() => setMenu((m) => !m)}
                 aria-expanded={menu}
+                data-tour-nav="menu"
                 className="flex min-h-9 items-center gap-1 rounded-full px-2 py-1.5 text-sm text-stone-700 hover:bg-stone-100"
               >
                 <Menu className="h-5 w-5 text-brand lg:hidden" aria-hidden />
