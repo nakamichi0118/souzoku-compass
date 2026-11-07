@@ -3,7 +3,7 @@
 import { ChevronDown } from "lucide-react";
 import { useCase } from "@/lib/store";
 import { DOC_OF, assetHasDoc, assetsMissingDoc } from "@/lib/assetDocs";
-import { AskCompass, useAsk } from "@/components/compass/AskCompass";
+import { useCompassTopic } from "@/lib/compassChat";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -166,7 +166,7 @@ export function DocsPage() {
     () => [`亡くなった日：${o.iv.deathDate}`, "集める書類：", ...o.docs.map((d) => `- ${DOCS[d.id].name}${d.done ? "（済）" : d.na ? "（不要）" : ""}`)].join("\n"),
     [o.iv.deathDate, o.docs],
   );
-  const ask = useAsk("docs", docsContext);
+  useCompassTopic("docs", docsContext, "例：除籍謄本と改製原戸籍はどう違う？");
   // 聞き取りが済んでいなければトップへ戻す（移動は描画のあとに行う）
   const ready = useRequireHearing(o);
 
@@ -311,9 +311,6 @@ export function DocsPage() {
             </Link>
           </Panel>
         </div>
-      </div>
-      <div className="mt-6">
-        <AskCompass state={ask} placeholder="例：除籍謄本と改製原戸籍はどう違う？" />
       </div>
     </AppShell>
   );

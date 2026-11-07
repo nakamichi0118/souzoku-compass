@@ -1,11 +1,9 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { headerBottom, scrollBelowHeader } from "@/components/ui/scroll";
-import { Bubble, CompassAvatar } from "./CompassKun";
-import { FAQS, type Faq } from "./faq";
-import { Markdown } from "./Markdown";
+import type { Faq } from "./faq";
 
+/** 1回だけの質問（税額の画面の「説明して」など）。チャットは右下の CompassChat */
 export function useAsk(step: string, context: () => string) {
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
@@ -51,98 +49,3 @@ export function useAsk(step: string, context: () => string) {
 }
 
 export type AskState = ReturnType<typeof useAsk>;
-
-/**
- * コンパスくんに相談する欄。
- * fill：パソコンで横に貼りついた欄のときは、与えられた高さに収め、答えと想定質問の部分だけを中で動かす
- * （入力欄と「コンパスくんに聞く」は、いつも下に見えるように）
- * lead：答えが出る前の吹き出し。null なら、答えが出るまで吹き出しを出さない
- */
-export function AskCompass({ state, placeholder = "質問を入力", lead, id, fill }: { state: AskState; placeholder?: string; lead?: React.ReactNode; id?: string; fill?: boolean }) {
-  const { q, setQ, busy, answer, asked, ask, pick } = state;
-  const intro = lead === undefined ? "気軽に聞いてくださいね。" : lead;
-  const faqs = FAQS[state.step] ?? [];
-  const answerRef = useRef<HTMLDivElement>(null);
-  const bodyRef = useRef<HTMLDivElement>(null);
-  /**
-   * 答えは想定質問の下に出す。新しい答えの頭が見えていなければ、見える所まで送る。
-   * パソコンの横の欄（中で動かす欄）では欄の中だけを送り、画面全体は動かさない
-   */
-  const showAnswer = () =>
-    requestAnimationFrame(() => {
-      const el = answerRef.current;
-      const body = bodyRef.current;
-      if (!el) return;
-      if (body && body.scrollHeight > body.clientHeight + 1) {
-        body.scrollTop += el.getBoundingClientRect().top - body.getBoundingClientRect().top - 8;
-        return;
-      }
-      const top = el.getBoundingClientRect().top;
-      if (top < headerBottom() + 4 || top > window.innerHeight - 120) scrollBelowHeader(el);
-    });
-  const showIntro = !asked && !busy && intro;
-  return (
-    <section id={id} className={`space-y-3 rounded-2xl border border-sky-200 bg-gradient-to-b from-sky-50 to-emerald-50/60 p-3 sm:p-5${fill ? " lg:flex lg:min-h-0 lg:flex-1 lg:flex-col" : ""}`}>
-      <div ref={bodyRef} className={fill ? "space-y-3 lg:-mx-1 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain lg:px-1" : "space-y-3"}>
-        <div className="flex items-start gap-3">
-          {/* スマホでは顔を見出しの横に小さく出し、答えの幅を広くとる */}
-          <span className="hidden sm:block">
-            <CompassAvatar size={52} />
-          </span>
-          <div className="min-w-0 flex-1 space-y-2">
-            <p className="flex items-center gap-2 font-bold text-sky-900">
-              <span className="sm:hidden">
-                <CompassAvatar size={32} />
-              </span>
-              コンパスくんに相談
-            </p>
-            {showIntro && <Bubble>{intro}</Bubble>}
-          </div>
-        </div>
-        {faqs.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {faqs.map((f) => (
-              <button
-                key={f.q}
-                type="button"
-                onClick={() => {
-                  pick(f);
-                  showAnswer();
-                }}
-                className={`rounded-full border px-3 py-1 text-sm ${asked === f.q ? "border-sky-600 bg-sky-700 text-white" : "border-sky-200 bg-white text-sky-900 hover:bg-sky-50"}`}
-              >
-                {f.q}
-              </button>
-            ))}
-          </div>
-        )}
-        {/* 質問と答えは、想定質問の下に（上から 質問を選ぶ → 答え の順に読めるように） */}
-        {(asked || busy || answer) && (
-          <div ref={answerRef} className="space-y-2" aria-live="polite">
-            {asked && <p className="text-sm font-medium text-stone-600">Q.「{asked}」</p>}
-            <Bubble>{busy ? <span className="flex items-center gap-2"><CompassAvatar size={28} thinking="blink" />ちょっと調べています…</span> : answer ? <div className="text-sm text-stone-800"><Markdown text={answer} /></div> : null}</Bubble>
-          </div>
-        )}
-      </div>
-      {/* 文字は 16px（iPhone で入力するときに画面が拡大されないように） */}
-      <textarea
-        rows={2}
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder={placeholder}
-        className="w-full shrink-0 rounded-lg border border-stone-300 bg-white px-3 py-2 text-base sm:text-sm"
-      />
-      <button
-        type="button"
-        onClick={() => {
-          ask(q);
-          showAnswer();
-        }}
-        disabled={busy || !q.trim()}
-        className="w-full shrink-0 rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:bg-stone-300"
-      >
-        {busy ? "考えています…" : "コンパスくんに聞く"}
-      </button>
-    </section>
-  );
-}

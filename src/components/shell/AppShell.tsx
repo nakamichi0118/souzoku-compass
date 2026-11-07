@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { LogoMark } from "@/components/compass/CompassKun";
 import { centerCurrent } from "@/components/ui/scroll";
 import { GuideTour } from "@/components/my/FirstGuide";
+import { CompassChat } from "@/components/compass/CompassChat";
 import { HelpButton } from "./HelpButton";
 import { NoticeBell } from "./Notices";
 import { useOutsideClose } from "./useOutsideClose";
@@ -155,6 +156,8 @@ export function AppHeader() {
       </header>
       {/* 操作ガイド（案内中なら、その番の画面に移って説明を重ねる）。ヘッダーのぼかしの外に置く */}
       <GuideTour />
+      {/* 右下のコンパスくん（どの画面からでも聞ける） */}
+      <CompassChat />
     </>
   );
 }

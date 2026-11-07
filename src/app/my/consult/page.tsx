@@ -5,6 +5,7 @@ import { AppShell, PageHead } from "@/components/shell/AppShell";
 import { ConsultInbox, type ConsultItem } from "@/components/consult/ConsultThread";
 import { ConsultDemoNotice, ConsultForm, FirmBadge } from "@/components/compass/ConsultForm";
 import { useSession } from "@/lib/cloud";
+import { peekConsultDraft } from "@/lib/compassChat";
 
 export default function MyConsultPage() {
   const { user, ready } = useSession();
@@ -21,6 +22,9 @@ export default function MyConsultPage() {
   useEffect(() => {
     if (ready && user) load();
   }, [ready, user]);
+  // コンパスくんのチャットから来たとき（相談がもうある人にも、新しい相談のフォームを出す）
+  const [fromChat, setFromChat] = useState(false);
+  useEffect(() => setFromChat(!!peekConsultDraft()), []);
   const change = (x: ConsultItem) => setItems((xs) => (xs ?? []).map((y) => (y.id === x.id ? x : y)));
 
   return (
@@ -37,17 +41,30 @@ export default function MyConsultPage() {
         ) : items === null ? (
           <p className="text-sm text-stone-500">読み込み中…</p>
         ) : (
-          <ConsultInbox
-            items={items}
-            staff={false}
-            onChange={change}
-            empty={
-              <div className="space-y-3">
-                <p className="text-sm text-stone-600">まだ相談はありません。</p>
-                <ConsultForm onSent={load} />
-              </div>
-            }
-          />
+          <>
+            {fromChat && items.length > 0 && (
+              <section className="space-y-2 rounded-xl border border-brand/40 bg-brand-soft p-3">
+                <p className="text-sm font-semibold text-stone-800">新しく相談する</p>
+                <ConsultForm
+                  onSent={() => {
+                    setFromChat(false);
+                    load();
+                  }}
+                />
+              </section>
+            )}
+            <ConsultInbox
+              items={items}
+              staff={false}
+              onChange={change}
+              empty={
+                <div className="space-y-3">
+                  <p className="text-sm text-stone-600">まだ相談はありません。</p>
+                  <ConsultForm onSent={load} />
+                </div>
+              }
+            />
+          </>
         )}
       </div>
     </AppShell>

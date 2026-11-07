@@ -167,6 +167,14 @@ export function Hearing() {
   /** いま押した質問（iPhone の Safari ではボタンを押してもフォーカスが移らないので、押した場所から探す） */
   const tappedQ = useRef<HTMLElement | null>(null);
   const [barH, barRef] = useHeight<HTMLDivElement>();
+  // 右下のコンパスくんを、下の「マイページへ」の帯の上に出す
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--fab-lift", `${barH ?? 96}px`);
+    return () => {
+      root.style.removeProperty("--fab-lift");
+    };
+  }, [barH]);
   /** この画面で質問に答えた（すべて答え終えたら、完了の案内まで送る） */
   const [touched, setTouched] = useState(false);
   /** 選んだ質問の次の質問へ、画面をゆっくり送る */

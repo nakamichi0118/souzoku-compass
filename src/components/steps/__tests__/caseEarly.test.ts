@@ -65,10 +65,10 @@ describe("ステップの帯と Tips（全ステップ共通）", () => {
     expect(heirTips).not.toContain("基礎控除の人数");
   });
 
-  it("相談の欄の入力例は、どのステップでも合う短い言葉にする", () => {
+  it("横の欄は Tips だけ（コンパスくんへの質問は右下のチャットから）", () => {
     const html = render(() => createElement(GuidePanel, { step: "decedent" }));
-    expect(html).toContain('placeholder="質問を入力"');
-    expect(html).not.toContain("定期預金の利息はどう調べればいい？");
+    expect(html).toContain("このステップのTips");
+    expect(html).not.toContain("<textarea");
   });
 });
 

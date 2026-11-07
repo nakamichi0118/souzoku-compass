@@ -2,7 +2,7 @@
 
 import { ChevronDown, Lightbulb } from "lucide-react";
 import { useCallback } from "react";
-import { AskCompass, useAsk } from "./compass/AskCompass";
+import { useCompassTopic } from "@/lib/compassChat";
 import { CompassAvatar } from "./compass/CompassKun";
 import { useCase } from "@/lib/store";
 import { summarizeForAssistant } from "@/lib/summary";
@@ -30,7 +30,7 @@ export function GuidePanel({ step }: { step: string }) {
   const g = GUIDES[step];
   const { data, result } = useCase();
   const context = useCallback(() => summarizeForAssistant(data, result), [data, result]);
-  const state = useAsk(step, context);
+  useCompassTopic(step, context);
   return (
     <div className="space-y-3 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
       {g && (
@@ -51,7 +51,6 @@ export function GuidePanel({ step }: { step: string }) {
           </div>
         </details>
       )}
-      <AskCompass state={state} fill />
     </div>
   );
 }
