@@ -19,6 +19,7 @@
  * 特例を使う面積は、限度面積の範囲で受け継いだ面積の一部だけにもできる（第11・11の2表の付表1の③〜⑥。国税庁 タックスアンサー No.4124）、
  * 国税庁 質疑応答事例「未分割の場合の課税価格（相続時精算課税適用財産がある場合）」（相続時精算課税の贈与を特別受益として未分割の財産を分ける）。
  */
+import { area100 } from "../area";
 import { Fraction, ONE, ZERO, add, div, frac, mul, mulYen, sub, sum } from "../fraction";
 import { HeirResult, determineHeirs, isSurchargeTarget } from "../heirs";
 import { floor100, floor1000 } from "../rounding";
@@ -292,21 +293,37 @@ function isDescendant(p: Person): boolean {
   return p.relation === "child" || p.relation === "adoptedChild" || ((p.relation === "grandchild" || p.relation === "greatGrandchild") && !!p.substituteOf);
 }
 
+/**
+ * 亡くなった方の配偶者が、子孫 d の親（代襲相続人なら祖父母・曾祖父母）か。子の答え（spouseParent）を見る。
+ * 代襲相続人は、代わりに相続する元の子（先に亡くなった子）の答えを見る
+ */
+export function spouseParentAnswer(d: Person, all: readonly Person[] = []): Person["spouseParent"] {
+  let cur: Person | undefined = d;
+  for (let i = 0; i < 4 && cur; i++) {
+    if (cur.relation === "child" || cur.relation === "adoptedChild") return cur.spouseParent;
+    const up: string | undefined = cur.substituteOf;
+    cur = up ? all.find((p) => p.id === up) : undefined;
+  }
+  return undefined;
+}
+
 /** b が a の配偶者・直系血族・兄弟姉妹であると、亡くなった方との続柄から確かに言えるか（片方向） */
-function kinOneWay(a: Person, b: Person): boolean {
+function kinOneWay(a: Person, b: Person, all: readonly Person[], assumeSpouseParent: boolean): boolean {
   const ascendant = b.relation === "parent" || b.relation === "grandparent";
   switch (a.relation) {
     case "child":
     case "adoptedChild":
       // 亡くなった方の子どうしは兄弟姉妹（養子も養親の子と兄弟姉妹になる。民法727条）。父母・祖父母は直系尊属
-      return b.relation === "spouse" || b.relation === "child" || b.relation === "adoptedChild" || ascendant;
+      return b.relation === "child" || b.relation === "adoptedChild" || ascendant;
     case "grandchild":
     case "greatGrandchild":
       if (!a.substituteOf) return false;
       // 同じ人の代わりに相続する人どうしは兄弟姉妹。ほかの子は、おじ・おばなので入れない
-      return b.relation === "spouse" || ((b.relation === "grandchild" || b.relation === "greatGrandchild") && b.substituteOf === a.substituteOf) || ascendant;
+      return ((b.relation === "grandchild" || b.relation === "greatGrandchild") && b.substituteOf === a.substituteOf) || ascendant;
     case "spouse":
-      return isDescendant(b);
+      // 配偶者と子（代襲相続人）は、配偶者がその子の親だと答えたときだけ（前の結婚の子なら姻族で、生計を一にしていなければ扶養義務者でない）
+      if (!isDescendant(b)) return false;
+      return assumeSpouseParent ? spouseParentAnswer(b, all) !== "no" : spouseParentAnswer(b, all) === "yes";
     case "parent":
       // 父母どうしは夫婦として数える。父母の両方を同じくする兄弟姉妹は父母の子
       return b.relation === "parent" || (b.relation === "sibling" && !b.halfBlood);
@@ -323,11 +340,12 @@ function kinOneWay(a: Person, b: Person): boolean {
  * 未成年者控除・障害者控除の引ききれない分を引ける扶養義務者か（相続税法19条の3第2項・19条の4第3項、相基通1の2-1）。
  * 扶養義務者は配偶者・直系血族・兄弟姉妹と、生計を一にする3親等内の親族など。相続コンパスは続柄から確かに言える
  * 配偶者・直系血族・兄弟姉妹だけを数え、おじ・おば・いとこ・配偶者の親族・相続人でない受遺者は入れない（生計を一にしていたかは聞いていない）。
- * 亡くなった方の配偶者は、亡くなった方の子全員の親（代襲相続人の祖父母）とする。直系血族は向きを問わないので両方向で調べる
+ * 亡くなった方の配偶者と子（代襲相続人）は、相続人の画面で「配偶者がこの子の親」と答えたときだけ親子（祖父母と孫）とする
+ * （assumeSpouseParent：答えていない人も親子とみなしたら、を調べるとき）。直系血族は向きを問わないので両方向で調べる
  */
-export function isSupporter(a: Person, b: Person): boolean {
+export function isSupporter(a: Person, b: Person, all: readonly Person[] = [], assumeSpouseParent = false): boolean {
   if (a.id === b.id || a.relation === "other" || b.relation === "other") return false;
-  return kinOneWay(a, b) || kinOneWay(b, a);
+  return kinOneWay(a, b, all, assumeSpouseParent) || kinOneWay(b, a, all, assumeSpouseParent);
 }
 
 /** 非課税限度額を受取額の比で各相続人に按分（相続税法12条1項5号・6号） */
@@ -1641,14 +1659,14 @@ function computeBase(c: Case, valueOf: (a: Asset) => Valuation) {
       const rent4 =
         kind === "rental" && (a.kind === "condo" || a.use === "rentedHouse" || a.use === "rentedLeasehold") ? ratio4(a.rentRatio ?? 1) : 10000;
       if (rent4 > 0 && rent4 < 10000 && area > 0) {
-        const area100 = Math.round(area * 100);
-        const rented100 = Number((BigInt(area100) * BigInt(rent4)) / 10000n);
+        const whole100 = area100(area);
+        const rented100 = Number((BigInt(whole100) * BigInt(rent4)) / 10000n);
         const rentedLand = valuation.rentedLandPart;
         landPart =
           rentedLand !== undefined && Number.isSafeInteger(rentedLand)
             ? Number((BigInt(Math.max(0, rentedLand)) * BigInt(share.numerator)) / BigInt(share.denominator))
             : // 貸している部分の評価額が分からないとき（ふつうは起きない）は、これまでどおり面積の割合で分ける
-              Number((BigInt(Math.max(0, landPart)) * BigInt(rented100)) / BigInt(area100));
+              Number((BigInt(Math.max(0, landPart)) * BigInt(rented100)) / BigInt(Math.max(1, whole100)));
         area = rented100 / 100;
         if (!rentNoted) {
           warnings.push(
@@ -1663,26 +1681,27 @@ function computeBase(c: Case, valueOf: (a: Asset) => Valuation) {
         areaMissing = true;
         continue;
       }
-      const area100 = Math.round(area * 100);
+      const lot100 = area100(area);
       // ⑤ 特例を使う面積の上限（その人が選んだ面積）。受け継いだ面積（③）より大きければ③まで使う
-      let cap100 = area100;
+      let cap100 = lot100;
       if (u.selectedSqm !== undefined && u.selectedSqm !== null) {
         const v = u.selectedSqm;
-        const v100 = typeof v === "number" && Number.isFinite(v) ? Math.floor(v * 100 + 1e-6) : NaN;
+        const v100 = typeof v === "number" && Number.isFinite(v) ? area100(v) : NaN;
         if (!(v100 > 0)) {
           blockers.push(
             `${label}で${whoText(u.acquirerId)}が小規模宅地等の特例を使う面積が正しくありません。0より大きい面積（㎡）を入れるか、空けてください（空けると、使えるだけ使います）。`,
           );
           continue;
         }
-        cap100 = Math.min(area100, v100);
+        cap100 = Math.min(lot100, v100);
       }
       srCandidates.push({
         line,
         part,
         landPart,
-        area,
-        area100,
+        // 付表1の③に書く面積も、計算と同じ0.01㎡未満切り捨ての値にする
+        area: lot100 / 100,
+        area100: lot100,
         cap100,
         acquirerId: u.acquirerId,
         kind,
@@ -2205,9 +2224,11 @@ function computeRest(c: Case, opts: EngineOptions, base: ComputeBase, srPlan?: S
     othersLeft: boolean;
     /** othersLeft のうち、続柄を「その他」で入れた人（もう1人の親など、扶養義務者かもしれない） */
     otherRelation: PersonTax[];
+    /** 配偶者がその子の親かを答えていない（「分からない」を含む）ため引いていない、配偶者・子（代襲相続人）で相続税が残っている人 */
+    spouseUnanswered: PersonTax[];
   }[] = [];
   const transfer = (from: PersonTax, kind: "minor" | "disability", excess: number) => {
-    const pool = persons.filter((q) => q !== from && isSupporter(from.person, q.person) && rem.get(q)! > 0);
+    const pool = persons.filter((q) => q !== from && isSupporter(from.person, q.person, c.persons) && rem.get(q)! > 0);
     const total = pool.reduce((a, q) => a + rem.get(q)!, 0);
     const give = pool.map((q) => (total <= excess ? rem.get(q)! : Number((BigInt(excess) * BigInt(rem.get(q)!)) / BigInt(total))));
     if (total > excess) {
@@ -2236,14 +2257,18 @@ function computeRest(c: Case, opts: EngineOptions, base: ComputeBase, srPlan?: S
     });
     // 扶養義務者と確かめられない人（おじ・おば、「その他」で入れた人など）で、まだ相続税が残っている人がいるか
     const left = persons.filter((q) => q !== from && !pool.includes(q) && rem.get(q)! > 0);
+    // 配偶者がその子の親と答えれば引ける人（答えていない・分からない）
+    const spouseUnanswered = left.filter((q) => isSupporter(from.person, q.person, c.persons, true));
     transferred.push({
       from,
       kind,
       excess,
       used: give.reduce((a, b) => a + b, 0),
       to,
-      othersLeft: left.length > 0,
+      // 配偶者と子の親子関係を答えれば引ける人のほかに、相続税が残っている人がいるか
+      othersLeft: left.length > spouseUnanswered.length,
       otherRelation: left.filter((q) => q.person.relation === "other"),
+      spouseUnanswered,
     });
   };
   // 以前の相続でも同じ控除を受けた人は、限度額（ふつうは最初の相続のときに受けられた額）から、これまでに受けた額（扶養義務者が引いた分を含む）を引いた残りが限度
@@ -2335,16 +2360,22 @@ function computeRest(c: Case, opts: EngineOptions, base: ComputeBase, srPlan?: S
     const name = t.from.person.name || "この方";
     const what = t.kind === "minor" ? "未成年者控除" : "障害者控除";
     if (t.used > 0) {
-      // 配偶者と子・代襲相続人のあいだで移すときは、配偶者がその子の親（代襲相続人の祖父母）だとしている
-      const spouseAssumed = [t.from, ...t.to].some((q) => q.person.relation === "spouse") && [t.from, ...t.to].some((q) => isDescendant(q.person));
       // 亡くなった方の父母どうしで移すときは、2人が夫婦だとしている
       const parentsAssumed = t.from.person.relation === "parent" && t.to.some((q) => q.person.relation === "parent");
       warnings.push(
-        `${name}さんの${what}のうち、${name}さんの相続税から引ききれない${yenText(t.used)}を、扶養義務者（配偶者・親子・祖父母と孫・兄弟姉妹で、同じ相続で財産を受け取った人）の${t.to.map((q) => `${q.person.name || "家族"}さん`).join("・")}の相続税から引いています。2人以上から引くときは相続税額の割合で分けていますが、扶養義務者どうしで話し合って別の分け方にすることもできます。${spouseAssumed ? "配偶者は、亡くなった方の子の親（代襲相続人の祖父母）として数えています。違うときは税理士にご相談ください。" : ""}${parentsAssumed ? "父母の2人は夫婦として数えています。離婚しているときなど、違うときは税理士にご相談ください。" : ""}`,
+        `${name}さんの${what}のうち、${name}さんの相続税から引ききれない${yenText(t.used)}を、扶養義務者（配偶者・親子・祖父母と孫・兄弟姉妹で、同じ相続で財産を受け取った人）の${t.to.map((q) => `${q.person.name || "家族"}さん`).join("・")}の相続税から引いています。2人以上から引くときは相続税額の割合で分けていますが、扶養義務者どうしで話し合って別の分け方にすることもできます。${parentsAssumed ? "父母の2人は夫婦として数えています。離婚しているときなど、違うときは税理士にご相談ください。" : ""}`,
       );
     }
     if (t.excess > t.used) {
       const others = t.otherRelation.map((q) => `${q.person.name || "家族"}さん`).join("・");
+      if (t.spouseUnanswered.length) {
+        // 配偶者と子の親子関係が分からないまま、控除を移さない（再婚の家族などで、前の結婚の子は配偶者の扶養義務者とは限らない）
+        const kids = [t.from, ...t.spouseUnanswered].filter((q) => q.person.relation !== "spouse").map((q) => `${q.person.name || "家族"}さん`);
+        warnings.push(
+          `${name}さんの${what}の引ききれない分は、配偶者と、配偶者を親とする子（代襲相続人の孫を含む）の相続税からも引けます。相続人の画面で、配偶者が${kids.join("・")}の親（実の親・養親）かを答えてください。答えるまでは、配偶者と子のあいだでは引かずに計算しています。`,
+        );
+        if (!t.othersLeft) continue;
+      }
       warnings.push(
         t.othersLeft
           ? `${name}さんの${what}のうち${yenText(t.excess - t.used)}は、続柄から扶養義務者と分かる家族の相続税からは引ききれません。${others ? `${others}が${name}さんの父母・祖父母・兄弟姉妹・配偶者なら（たとえば「その他」で入れたもう1人の親）、扶養義務者なので、その人の相続税からも引けます。` : ""}${name}さんと生計を一にしていた3親等内の親族（おじ・おば、配偶者の兄弟姉妹など）が財産を受け取っていれば、その人の相続税からも引ける場合があります。相続コンパスでは計算していないので、税理士にご相談ください。`

@@ -9,6 +9,7 @@ import type { Case, DeemedAsset, SmallLandKind } from "@/domain/types";
 import { wareki, yen } from "./format";
 import type { PageFill } from "./render";
 import { receiptShares } from "../domain/receipt";
+import { usedArea } from "../domain/area";
 
 const chunk = <T,>(xs: T[], n: number): T[][] => {
   const out: T[][] = [];
@@ -16,7 +17,8 @@ const chunk = <T,>(xs: T[], n: number): T[][] => {
   return out;
 };
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
-const sqm = (n: number) => (Math.round(n * 100) / 100).toLocaleString("ja-JP", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** 面積（㎡）。計算と同じく0.01㎡未満は切り捨て */
+const sqm = (n: number) => usedArea(n).toLocaleString("ja-JP", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // ---------------------------------------------------------------- 第9表・第10表
 

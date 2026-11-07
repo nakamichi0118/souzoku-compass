@@ -11,6 +11,7 @@
  * ただし倍率方式の宅地は、固定資産税評価額 × 倍率で評価し（通達21-2）、土地の形は固定資産税評価額に反映されているため、
  * 形がいびつでも形による補正はせず、そのまま計算する（地積規模の大きな宅地は21-2のただし書で比べるため、相談を案内する）。
  */
+import { area100 } from "../area";
 import type { Asset, CondoAsset, LandAsset, LandMethod, LandUse } from "../types";
 import type { District } from "./depth";
 import {
@@ -69,10 +70,10 @@ function mulDiv(a: number, b: number, d: number): number {
 
 /**
  * 1㎡当たりの価額（円）× 地積（㎡）。1円未満切捨て。
- * 地積は0.01㎡単位の整数にしてから掛け、浮動小数点の誤差で1円ずれないようにする。
+ * 地積は0.01㎡単位の整数（0.01㎡未満切捨て。area100）にしてから掛け、浮動小数点の誤差で1円ずれないようにする。
  */
 export function perSqmTimesArea(perSqm: number, areaSqm: number): number {
-  return mulDiv(Math.floor(perSqm), Math.round(areaSqm * 100), 100);
+  return mulDiv(Math.floor(perSqm), area100(areaSqm), 100);
 }
 
 /**
@@ -316,7 +317,7 @@ function largeLotArea(a: LandAsset): 500 | 1000 | null {
   const target = m.type === "multiplier" || (m.type === "rosenka" && LARGE_LOT_DISTRICTS.includes(m.district ?? "普通住宅地区"));
   if (!target) return null;
   const t = largeLotThreshold(a.location);
-  return Math.round(a.areaSqm * 100) >= t * 100 ? t : null;
+  return area100(a.areaSqm) >= t * 100 ? t : null;
 }
 
 /** 地積規模の大きな宅地にあたりうるときの案内 */
@@ -708,9 +709,10 @@ export function valueAsset(a: Asset): Valuation {
  */
 export function smallResidentialSelection(value: number, areaSqm: number, limitSqm = 330, ratePercent = 80) {
   if (areaSqm <= 0 || value <= 0) return { selectedArea: 0, selectedValue: 0, reduction: 0 };
-  const area100 = Math.round(areaSqm * 100);
-  const target100 = Math.min(area100, Math.max(0, Math.round(limitSqm * 100)));
-  const selectedValue = Number((BigInt(value) * BigInt(target100)) / BigInt(area100));
+  const whole100 = area100(areaSqm);
+  if (whole100 <= 0) return { selectedArea: 0, selectedValue: 0, reduction: 0 };
+  const target100 = Math.min(whole100, Math.max(0, Math.round(limitSqm * 100)));
+  const selectedValue = Number((BigInt(value) * BigInt(target100)) / BigInt(whole100));
   return { selectedArea: target100 / 100, selectedValue, reduction: Math.floor((selectedValue * ratePercent) / 100) };
 }
 

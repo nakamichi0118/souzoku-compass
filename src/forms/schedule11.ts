@@ -18,6 +18,7 @@
  * 第11表の合計表の「② 未分割財産の価額」に法定相続分で取得したものとした額を書く。
  */
 import type { AssetLine, PersonTax, TaxResult } from "@/domain/tax/engine";
+import { area100, usedArea } from "@/domain/area";
 import type { Case, LandUse } from "@/domain/types";
 import { type Usage, valueAsset } from "@/domain/valuation";
 import { smallLines } from "./attachments";
@@ -110,7 +111,8 @@ export function siteRightRatio(siteRight: string | undefined): string {
 const mulDiv = (a: number, b: number, d: number) => (d > 0 ? Number((BigInt(a) * BigInt(b)) / BigInt(d)) : 0);
 
 /** 面積（㎡）の表示。0.01㎡単位で持った値を「120」「16.8」のように書く */
-const areaText = (sqm: number) => sqm.toLocaleString("ja-JP", { maximumFractionDigits: 2 });
+/** 面積（㎡）。計算と同じく0.01㎡未満は切り捨て */
+const areaText = (sqm: number) => usedArea(sqm).toLocaleString("ja-JP", { maximumFractionDigits: 2 });
 
 /** 特例を使う人の、分け方で決まった持分（エンジンと同じく、最後の分け方の、その人の最初の正しい割合） */
 function srShare(c: Case, assetId: string, personId: string) {
@@ -140,7 +142,7 @@ function splitVacant(
   const partlyRented =
     a.kind === "land" ? (a.use === "rentedHouse" || a.use === "rentedLeasehold") && (a.rentRatio ?? 1) < 1 : a.kind === "condo" && !!a.rented && (a.rentRatio ?? 1) < 1;
   if (!srs.length || srs.some((x) => x.detail.kind !== "rental") || rentedLand === undefined || !partlyRented) return undefined;
-  const lot100 = Math.round(base.lotArea * 100);
+  const lot100 = area100(base.lotArea);
   const rest = [...base.parts];
   const rentedParts: Part[] = [];
   const vacantParts: Part[] = [];
@@ -154,8 +156,8 @@ function splitVacant(
     // 特例を使う人の持分に応じた面積（エンジンと同じく 0.01㎡ 単位）。持分が分からず、ほかに取得した人もいなければ全部
     const share = srShare(c, a.id, s.acquirerId) ?? (base.parts.length === 1 ? { numerator: 1, denominator: 1 } : undefined);
     if (!share) return undefined;
-    const share100 = Math.round(((base.lotArea * share.numerator) / share.denominator) * 100);
-    const r100 = Math.round(s.area * 100);
+    const share100 = area100((base.lotArea * share.numerator) / share.denominator);
+    const r100 = area100(s.area);
     const rentedValue = s.value - reduction; // 付表1の⑧
     const vacantValue = sr.amount + reduction - s.value; // 持分の価額 − 貸している部分の価額（④）
     if (!(rentedValue >= 0) || !(vacantValue > 0) || !(share100 > r100)) return undefined;

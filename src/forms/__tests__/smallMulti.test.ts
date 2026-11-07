@@ -354,3 +354,23 @@ describe("種類の違う宅地を何人かで使うとき（限度面積要件�
     totalsMatchEngine(c, r);
   });
 });
+
+describe("持分で分けた面積に0.01㎡未満の端数が出るとき、付表1の③⑤は計算と同じく切り捨て", () => {
+  // 100㎡を2/3ずつ → 66.666…㎡。計算は 66.66㎡ を使うので、③も⑤も 66.66、⑥は ④ × ⑤ / ③ ＝ ④
+  const c = mk([spouse, c1], [land("自宅", 100, 30_000_000, "s", HOME, undefined, { areaSqm: 100 }), dep("預金", 40_000_000)], [
+    share("自宅", ["s", 2, 3], ["c1", 1, 3]),
+    share("預金", ["c1", 1, 1]),
+  ]);
+  const r = calculate(c);
+
+  it("③ 66.66㎡、⑤ 66.66㎡、⑥ ＝ ④", () => {
+    expect(r.blockers).toEqual([]);
+    expect(r.assets[0].small).toMatchObject({ area: 66.66, selectedArea: 66.66 });
+    const pages = buildF1(c, r);
+    expect(pages[0].values["b0.area"]).toBe("66.66");
+    expect(pages[0].values["b0.selArea"]).toBe("66.66");
+    const [row] = f1Rows(pages);
+    expect(row.selValue).toBe(row.value);
+    totalsMatchEngine(c, r);
+  });
+});

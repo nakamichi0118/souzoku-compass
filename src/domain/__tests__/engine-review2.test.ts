@@ -32,8 +32,14 @@ const P = (id: string, relation: Person["relation"], over: Partial<Person> = {})
 
 describe("扶養義務者の範囲（相基通1の2-1：配偶者・直系血族・兄弟姉妹）", () => {
   const spouse = P("妻", "spouse");
-  const c1 = P("長男", "child");
-  const c2 = P("養子", "adoptedChild");
+  // 配偶者が子の親（実の親・養親）かは、相続人の画面で答える（答えた子だけ配偶者の子として数える）
+  const c1 = P("長男", "child", { spouseParent: "yes" });
+  const c2 = P("養子", "adoptedChild", { spouseParent: "yes" });
+  const c2nd = P("二男", "child", { predeceased: true, hasChildren: true, spouseParent: "yes" });
+  const stepChild = P("前妻の子", "child", { spouseParent: "no" });
+  const unknownChild = P("長女", "child", { spouseParent: "unknown" });
+  const unanswered = P("三女", "child");
+  const all = [spouse, c1, c2, c2nd, stepChild, unknownChild, unanswered];
   const gA1 = P("孫A1", "grandchild", { substituteOf: "二男" });
   const gA2 = P("孫A2", "grandchild", { substituteOf: "二男" });
   const gB = P("孫B", "grandchild", { substituteOf: "三男" });
@@ -67,6 +73,11 @@ describe("扶養義務者の範囲（相基通1の2-1：配偶者・直系血族
     // 配偶者：子と代襲相続人の孫（直系卑属）。亡くなった方の兄弟姉妹・父母は姻族
     [spouse, c1, true],
     [spouse, gA1, true],
+    // 配偶者が親でない（前の結婚の子など）・分からない・答えていない子は、配偶者の扶養義務者として数えない
+    [spouse, stepChild, false],
+    [spouse, unknownChild, false],
+    [spouse, unanswered, false],
+    [stepChild, c1, true],
     [spouse, gNoSub, false],
     [spouse, sib, false],
     [spouse, father, false],
@@ -92,8 +103,8 @@ describe("扶養義務者の範囲（相基通1の2-1：配偶者・直系血族
     [other, c1, false],
     [c1, c1, false],
   ])("%o の扶養義務者に %o は %s", (a, b, expected) => {
-    expect(isSupporter(a as Person, b as Person)).toBe(expected);
-    expect(isSupporter(b as Person, a as Person)).toBe(expected);
+    expect(isSupporter(a as Person, b as Person, all)).toBe(expected);
+    expect(isSupporter(b as Person, a as Person, all)).toBe(expected);
   });
 
   it("子のいない夫婦で障害者の妻：亡くなった方の兄弟姉妹（妻の義理の兄弟）からは引かず、生計を一にする親族のことを知らせる", () => {
@@ -114,13 +125,13 @@ describe("扶養義務者の範囲（相基通1の2-1：配偶者・直系血族
     // 孫の未成年者控除 (18−5)×10万 = 130万。本人の算出税額 462,189 → 残り 837,811 を、相続税が残っている妻から全部引く
     const w = P("妻", "spouse");
     const g = P("孫", "grandchild", { substituteOf: "二男", birthDate: "2021-01-01" });
-    const dead = P("二男", "child", { predeceased: true, hasChildren: true });
+    const dead = P("二男", "child", { predeceased: true, hasChildren: true, spouseParent: "yes" });
     const r = calculate(mk([w, c1, dead, g], [dep("W", 300_000_000), dep("A", 100_000_000), dep("G", 2_000_000)], [to("W", "妻"), to("A", "長男"), to("G", "孫")]));
     expect(r.blockers).toEqual([]);
     expect(of(r, "孫")).toMatchObject({ minorCredit: 462_189, minorExcess: 837_811 });
     expect(of(r, "妻").transfersIn).toEqual([{ fromId: "孫", kind: "minor", amount: 837_811 }]);
     expect(of(r, "長男").transfersIn).toEqual([]);
-    expect(r.warnings.some((x) => x.includes("妻さんの相続税から引いています") && x.includes("配偶者は、亡くなった方の子の親（代襲相続人の祖父母）として数えています"))).toBe(true);
+    expect(r.warnings.some((x) => x.includes("妻さんの相続税から引いています"))).toBe(true);
   });
 
   it("兄弟姉妹の代襲相続人（甥・姪）：同じ親の代わりに相続するきょうだいからは引き、いとこからは引かない", () => {
@@ -138,11 +149,34 @@ describe("扶養義務者の範囲（相基通1の2-1：配偶者・直系血族
   it("障害者の配偶者：子の相続税から引く", () => {
     // 妻（60歳・一般障害者）の控除 (85−60)×10万 = 250万。妻は税額軽減で0円 → 子2人から相続税額の割合で（同じ額なので半分ずつ）
     const w = P("妻", "spouse", { birthDate: "1966-01-01", disability: "general" });
-    const r = calculate(mk([w, c1, P("長女", "child")], [dep("W", 100_000_000), dep("A", 100_000_000), dep("B", 100_000_000)], [to("W", "妻"), to("A", "長男"), to("B", "長女")]));
+    const r = calculate(mk([w, c1, P("長女", "child", { spouseParent: "yes" })], [dep("W", 100_000_000), dep("A", 100_000_000), dep("B", 100_000_000)], [to("W", "妻"), to("A", "長男"), to("B", "長女")]));
     expect(r.blockers).toEqual([]);
     expect(of(r, "妻").disabilityExcess).toBe(2_500_000);
     expect(of(r, "長男").transfersIn).toEqual([{ fromId: "妻", kind: "disability", amount: 1_250_000 }]);
     expect(of(r, "長女").transfersIn).toEqual([{ fromId: "妻", kind: "disability", amount: 1_250_000 }]);
+  });
+
+  it("障害者の配偶者：配偶者が親でない子（前の結婚の子）からは引かず、答えていない子は答えるよう知らせる", () => {
+    const w = P("妻", "spouse", { birthDate: "1966-01-01", disability: "general" });
+    const assets = [dep("W", 100_000_000), dep("A", 100_000_000), dep("B", 100_000_000)];
+    const split = [to("W", "妻"), to("A", "長男"), to("B", "長女")];
+    // 長女は前の結婚の子：長男だけから引く（長男の相続税額の範囲まで）
+    const r = calculate(mk([w, c1, P("長女", "child", { spouseParent: "no" })], assets, split));
+    expect(r.blockers).toEqual([]);
+    expect(of(r, "長女").transfersIn).toEqual([]);
+    expect(of(r, "長男").transfersIn).toEqual([{ fromId: "妻", kind: "disability", amount: 2_500_000 }]);
+    expect(r.warnings.some((x) => x.includes("相続人の画面で、配偶者が"))).toBe(false);
+    // 長女について答えていない：長男だけから引き、長女について答えるよう知らせる
+    const u = calculate(mk([w, c1, P("長女", "child")], assets, split));
+    expect(of(u, "長女").transfersIn).toEqual([]);
+    expect(of(u, "長男").transfersIn).toEqual([{ fromId: "妻", kind: "disability", amount: 2_500_000 }]);
+    // 2人とも答えていない：だれからも引かず、2人について答えるよう知らせる
+    const none = calculate(mk([w, P("長男", "child"), P("長女", "child", { spouseParent: "unknown" })], assets, split));
+    expect(of(none, "長男").transfersIn).toEqual([]);
+    expect(of(none, "長女").transfersIn).toEqual([]);
+    const msg = none.warnings.find((x) => x.includes("相続人の画面で、配偶者が"))!;
+    expect(msg).toContain("長男さん・長女さんの親（実の親・養親）かを答えてください");
+    expect(none.warnings.some((x) => x.includes("ほかに相続税を納める家族がいないため"))).toBe(false);
   });
 });
 
