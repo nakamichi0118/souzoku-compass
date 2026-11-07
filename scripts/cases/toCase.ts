@@ -239,6 +239,8 @@ export function toCase(s: Scenario): ToCaseResult {
     if (m.halfBlood) p.halfBlood = true;
     if (m.adoptedCountsAsBiological) p.adoptedCountsAsBiological = true;
     if (m.disability) p.disability = m.disability;
+    // 正しい答えの計算は、亡くなった方の配偶者を子全員の親とする。画面では子ごとに「配偶者はこの子の親」と答える
+    if ((p.relation === "child" || p.relation === "adoptedChild") && s.members.some((x) => x.relation === "spouse")) p.spouseParent = "yes";
     if (m.nonResident) p.nonResident = true;
     // 前の相続でも未成年者控除・障害者控除を受けた：最初の相続の日と、これまでに控除を受けた額の合計（扶養義務者から引いた分を含む）
     if (m.priorMinorCredit) p.priorMinorCredit = { date: m.priorMinorCredit.date, amount: m.priorMinorCredit.amount };

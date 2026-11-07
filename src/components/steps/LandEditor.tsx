@@ -14,6 +14,7 @@ import { LEASE_LETTERS, LEASE_RATIO_BY_LETTER, type LeaseLetter, leaseLetterOf, 
 import { type Edge, type RoadInput, correctionRates, evaluateRoads } from "@/domain/valuation/roads";
 import { type Answer, SMALL_LAND_RULE, type SmallResidentialCheck, judgeSmallResidential, shouldApply, smallLandKind } from "@/domain/valuation/smallResidential";
 import { type DivisionInput, inOthers, smallLandDivisionGap, wholeTaker } from "@/lib/smallLand";
+import { area100, areaTrimmed, usedArea } from "@/domain/area";
 
 const ANSWERS: { value: Answer; label: string }[] = [
   { value: "yes", label: "はい" },
@@ -182,18 +183,26 @@ export function setSelectedSqm(sr: SmallLandRelief, who: number | null, v: numbe
 
 /**
  * 分け方で決めた、その人の分で特例の対象になる面積（㎡。付表1の③と同じ出し方）。分け方が入っていなければ undefined。
- * 持分に応ずる面積は0.01㎡未満を四捨五入し、空き部屋のある貸家などの貸付事業用は、そのうち貸している部分（0.01㎡未満切捨て）
+ * 持分に応ずる面積は0.01㎡未満を切り捨て（計算と同じ。area100）、空き部屋のある貸家などの貸付事業用は、そのうち貸している部分（0.01㎡未満切捨て）
  */
 export function acquiredSqm(a: Extract<Asset, { kind: "land" | "condo" }>, division: DivisionInput | undefined, personId: string | undefined): number | undefined {
   if (!division || !personId) return undefined;
   const full = a.kind === "condo" ? (a.smallResidential?.landShareSqm ?? a.landShareSqm) : a.areaSqm;
   const s = division.allocations.find((x) => x.assetId === a.id)?.shares.find((x) => x.personId === personId);
   if (!s || !(full > 0) || !Number.isInteger(s.numerator) || !Number.isInteger(s.denominator) || !(s.numerator > 0) || !(s.denominator > 0)) return undefined;
-  const area100 = Math.round(((full * s.numerator) / s.denominator) * 100);
+  const lot100 = area100((full * s.numerator) / s.denominator);
   const rented = smallLandKind(a) === "rental" && (a.kind === "condo" || a.use === "rentedHouse" || a.use === "rentedLeasehold");
   const rent4 = rented ? ratio4(a.rentRatio ?? 1) : 10000;
-  return (rent4 > 0 && rent4 < 10000 ? Math.floor((area100 * rent4) / 10000) : area100) / 100;
+  return (rent4 > 0 && rent4 < 10000 ? Math.floor((lot100 * rent4) / 10000) : lot100) / 100;
 }
+
+/** 0.01㎡未満の端数がある面積は、計算に使う面積を入力欄の下に見せる（入れた桁と計算に使う桁が違うことが分かるように） */
+function TrimmedArea({ value }: { value: number | undefined | null }) {
+  if (!areaTrimmed(value)) return null;
+  return <p className="mt-1 text-xs text-amber-800">計算には {fmtArea(usedArea(value!))}㎡ を使います（0.01㎡未満は切り捨て）</p>;
+}
+
+const fmtArea = (n: number) => n.toLocaleString("ja-JP", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 type Question = { key: keyof SmallResidentialCheck; q: string; hint?: string };
 
@@ -534,7 +543,10 @@ function PartialArea({
           const got = acquiredSqm(a, division, r.id);
           return (
             <Field key={`${r.who ?? "first"}:${r.id}`} label={many ? `${p.name || "（未入力）"}さん：特例を使う面積（㎡）` : "特例を使う面積（㎡）"} hint={got != null ? `特例の対象になる面積は${fmt(got)}㎡です` : undefined}>
-              <OptionalNumInput value={r.value} accept={(v) => v > 0} onChange={(v) => set(setSelectedSqm(sr, r.who, v))} />
+              <div>
+                <OptionalNumInput value={r.value} accept={(v) => v > 0} onChange={(v) => set(setSelectedSqm(sr, r.who, v))} />
+                <TrimmedArea value={r.value} />
+              </div>
             </Field>
           );
         })}
@@ -815,7 +827,10 @@ export function LandEditor({
         <TextInput value={a.location} onChange={(e) => patch({ location: e.target.value })} />
       </Field>
       <Field label="地積">
-        <NumInput value={a.areaSqm} onChange={(v) => patch({ areaSqm: v })} unit="㎡" />
+        <div>
+          <NumInput value={a.areaSqm} onChange={(v) => patch({ areaSqm: v })} unit="㎡" />
+          <TrimmedArea value={a.areaSqm} />
+        </div>
       </Field>
       <Field label="土地の使い方" hint="家族に無料で貸している土地も「自分で使っている」">
         <Select value={use} onChange={(v) => setUse(v as LandUse)} options={USE_OPTIONS} />

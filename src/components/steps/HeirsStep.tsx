@@ -106,6 +106,14 @@ export function HeirsStep() {
   } catch {
     /* 入力途中 */
   }
+  // 未成年者控除・障害者控除の引ききれない分を配偶者と子のあいだで引けるかは、配偶者がその子の親（実の親・養親）かで決まる。
+  // 控除を受ける人（障害者・18歳未満）がいるときだけ聞く（答えてあれば、いつでも直せるよう出したままにする）
+  const spousePerson = persons.find((x) => x.relation === "spouse" && !x.predeceased);
+  const creditHolder = persons.some(
+    (x) => !x.predeceased && ((x.disability !== undefined && x.disability !== "none") || (ageAt(x.birthDate, data.decedent.deathDate) ?? 99) < 18),
+  );
+  const askSpouseParent = (p: Person) =>
+    !!spousePerson && (p.relation === "child" || p.relation === "adoptedChild") && (!p.predeceased || !!p.hasChildren || persons.some((x) => x.substituteOf === p.id)) && (creditHolder || p.spouseParent !== undefined);
   const parentsFor = (p: Person) =>
     persons.filter((x) => x.id !== p.id && x.predeceased && (["grandchild", "greatGrandchild"].includes(p.relation) ? ["child", "adoptedChild", "grandchild"].includes(x.relation) : x.relation === "sibling"));
 
@@ -180,6 +188,20 @@ export function HeirsStep() {
                         { value: "none", label: "該当しない" },
                         { value: "general", label: "一般障害者" },
                         { value: "special", label: "特別障害者" },
+                      ]}
+                    />
+                  </Field>
+                )}
+                {askSpouseParent(p) && (
+                  <Field label={`${spousePerson?.name || "配偶者"}さんは、この人の親ですか`} hint="未成年者控除・障害者控除の計算に使います">
+                    <Select
+                      value={p.spouseParent ?? ""}
+                      onChange={(v) => patch(p.id, { spouseParent: (v || undefined) as Person["spouseParent"] })}
+                      options={[
+                        { value: "", label: "選んでください" },
+                        { value: "yes", label: "はい（実の親・養親）" },
+                        { value: "no", label: "いいえ（前の結婚の子など）" },
+                        { value: "unknown", label: "分からない" },
                       ]}
                     />
                   </Field>

@@ -54,6 +54,12 @@ export interface Person {
   alsoSubstituteHeir?: boolean;
   /** 障害者控除の区分 */
   disability?: "none" | "general" | "special";
+  /**
+   * 子（先に亡くなった子を含む）の場合：亡くなった方の配偶者が、この子の親（実の親・養親）か。
+   * 未成年者控除・障害者控除の引ききれない分を、配偶者と子（代襲相続人）のあいだで引けるか（扶養義務者か）を決める。
+   * 答えていないとき・「分からない」のときは、親子として数えない
+   */
+  spouseParent?: "yes" | "no" | "unknown";
   /** 住所（申告書第1表・遺産分割協議書用） */
   address?: string;
   occupation?: string;

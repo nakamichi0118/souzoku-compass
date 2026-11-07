@@ -513,11 +513,11 @@ describe("共有で受け継いだ土地・面積の一部だけに特例を使�
     expect(h).toContain('value="60"');
   });
 
-  it("特例の対象になる面積は、付表1の③と同じく、分け方の割合から 0.01㎡未満を四捨五入して出す", () => {
+  it("特例の対象になる面積は、計算（付表1の③）と同じく、分け方の割合から 0.01㎡未満を切り捨てて出す", () => {
     const a = land({ areaSqm: 100 });
     const division = { allocations: [{ assetId: "L1", shares: [{ personId: "w", numerator: 1, denominator: 3 }, { personId: "c", numerator: 2, denominator: 3 }] }] };
     expect(acquiredSqm(a, division, "w")).toBe(33.33);
-    expect(acquiredSqm(a, division, "c")).toBe(66.67);
+    expect(acquiredSqm(a, division, "c")).toBe(66.66);
     expect(acquiredSqm(a, division, "d")).toBeUndefined();
     expect(acquiredSqm(a, undefined, "w")).toBeUndefined();
     expect(acquiredSqm(land({ areaSqm: 0 }), division, "w")).toBeUndefined();
